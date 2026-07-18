@@ -1,7 +1,13 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Images from dicebear (used in seed data org logos) and unsplash (admin avatars)
+  images: {
+    remotePatterns: [
+      { hostname: 'api.dicebear.com' },
+      { hostname: 'images.unsplash.com' },
+    ],
+  },
 };
 
 export default nextConfig;

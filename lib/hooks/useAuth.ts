@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getCurrentSession, login, logout, updateSessionRole, getCurrentSessionSync } from '@/lib/api/auth';
+import { getCurrentSession, login, logout, updateSessionRole, getCurrentSessionSync, verifyOtpCode } from '@/lib/api/auth';
 import { AdminRole, AdminSession } from '@/lib/types';
 import { useEffect, useState } from 'react';
 
@@ -36,8 +36,13 @@ export function useCurrentAdmin() {
   });
 
   const loginMutation = useMutation({
-    mutationFn: ({ email, password, role }: { email: string; password: string; role?: AdminRole }) =>
-      login(email, password, role),
+    mutationFn: ({ email, password }: { email: string; password: string; role?: AdminRole }) =>
+      login(email, password),
+  });
+
+  const verifyOtpMutation = useMutation({
+    mutationFn: ({ email, otp }: { email: string; otp: string }) =>
+      verifyOtpCode(email, otp),
     onSuccess: (data) => {
       setLocalSession(data);
       queryClient.setQueryData(['auth', 'session'], data);
@@ -88,6 +93,9 @@ export function useCurrentAdmin() {
     login: loginMutation.mutateAsync,
     isLoggingIn: loginMutation.isPending,
     loginError: loginMutation.error,
+    verifyOtp: verifyOtpMutation.mutateAsync,
+    isVerifyingOtp: verifyOtpMutation.isPending,
+    verifyOtpError: verifyOtpMutation.error,
     logout: logoutMutation.mutateAsync,
     isLoggingOut: logoutMutation.isPending,
     switchRole: switchRoleMutation.mutate,

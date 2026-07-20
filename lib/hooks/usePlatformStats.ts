@@ -6,7 +6,7 @@ import { getPlatformStats } from '@/lib/api/overview';
 export function usePlatformStats() {
   const query = useQuery({
     queryKey: ['platformStats'],
-    queryFn: getPlatformStats,
+    queryFn: () => getPlatformStats(),
   });
 
   return {

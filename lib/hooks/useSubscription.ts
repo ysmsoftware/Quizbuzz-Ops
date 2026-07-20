@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getOrganizationSubscription,
+  assignInitialSubscriptionPlan,
   changeOrganizationPlan,
   addSubscriptionOverride,
   removeSubscriptionOverride,
@@ -30,6 +31,15 @@ export function useSubscription(orgId: string) {
     queryKey: ['organizations', 'usage', orgId, subQuery.data?.id],
     queryFn: () => getUsageSnapshot(orgId, subQuery.data!),
     enabled: !!orgId && !!subQuery.data,
+  });
+
+  const assignInitialPlanMutation = useMutation({
+    mutationFn: (planId: string) => assignInitialSubscriptionPlan(orgId, planId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      queryClient.invalidateQueries({ queryKey: ['plans'] });
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+    }
   });
 
   const changePlanMutation = useMutation({
@@ -70,6 +80,9 @@ export function useSubscription(orgId: string) {
     usage: usageQuery.data || null,
     isUsageLoading: usageQuery.isLoading,
 
+    assignInitialPlan: assignInitialPlanMutation.mutateAsync,
+    isAssigningInitialPlan: assignInitialPlanMutation.isPending,
+
     changePlan: changePlanMutation.mutateAsync,
     isChangingPlan: changePlanMutation.isPending,
 
@@ -80,3 +93,4 @@ export function useSubscription(orgId: string) {
     isRemovingOverride: removeOverrideMutation.isPending,
   };
 }
+

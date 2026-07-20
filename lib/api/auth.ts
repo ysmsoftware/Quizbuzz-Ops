@@ -1,48 +1,46 @@
 'use client';
 
 import { AdminSession, AdminRole } from '@/lib/types';
-import { simulateLatency } from '@/lib/api/utils';
+import { apiRequest } from '@/lib/api/utils';
 
 const SESSION_KEY = 'quizbuzz_super_admin_session';
 
-const DEFAULT_ADMINS: Record<AdminRole, Omit<AdminSession, 'role'>> = {
-  SUPER_ADMIN: {
-    name: 'Vikram Grover',
-    email: 'admin@quizbuzz.internal',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&fit=crop&q=80',
-  },
-  SUPPORT: {
-    name: 'Karan Mehra',
-    email: 'support@quizbuzz.internal',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&fit=crop&q=80',
-  },
-  BILLING_ADMIN: {
-    name: 'Pooja Hegde',
-    email: 'billing@quizbuzz.internal',
-    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&fit=crop&q=80',
-  },
-};
-
-export async function login(email: string, password: string, role: AdminRole = 'SUPER_ADMIN'): Promise<AdminSession> {
-  await simulateLatency();
-
-  if (password !== 'demo1234') {
-    throw new Error('Invalid credentials. Password must be "demo1234" for demo access.');
-  }
-
-  const defaultDetails = DEFAULT_ADMINS[role] || DEFAULT_ADMINS.SUPER_ADMIN;
-
-  const session: AdminSession = {
-    email: email.trim().toLowerCase(),
-    role,
-    name: defaultDetails.name,
-    avatarUrl: defaultDetails.avatarUrl,
-  };
-
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  return session;
+export interface LoginResult {
+  otpRequired: boolean;
+  email: string;
+  otpCode?: string;
 }
 
+/**
+ * Initiates the administrator login.
+ * Returns OTP details (OTP is generated and logged to backend console).
+ */
+export async function login(email: string, password: string): Promise<LoginResult> {
+  return apiRequest<LoginResult>('/api/v1/ops/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+/**
+ * Submits the 6-digit verification code to complete authentication.
+ * Stores the retrieved profile in localStorage as a visual cache.
+ */
+export async function verifyOtpCode(email: string, otp: string): Promise<AdminSession> {
+  const result = await apiRequest<{ admin: AdminSession }>('/api/v1/ops/auth/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp }),
+  });
+  
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(result.admin));
+  }
+  return result.admin;
+}
+
+/**
+ * Returns the cached session synchronously to prevent visual UI flicker during load.
+ */
 export function getCurrentSessionSync(): AdminSession | null {
   if (typeof window === 'undefined') return null;
   const stored = localStorage.getItem(SESSION_KEY);
@@ -54,36 +52,55 @@ export function getCurrentSessionSync(): AdminSession | null {
   }
 }
 
+/**
+ * Fetches the current admin profile from the backend session cookie.
+ */
 export async function getCurrentSession(): Promise<AdminSession | null> {
-  await simulateLatency(100, 200);
-  return getCurrentSessionSync();
+  try {
+    const result = await apiRequest<{ admin: AdminSession }>('/api/v1/ops/auth/me');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(result.admin));
+    }
+    return result.admin;
+  } catch (err) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(SESSION_KEY);
+    }
+    return null;
+  }
 }
 
+/**
+ * Terminate the administrator session and clear cookies.
+ */
 export async function logout(): Promise<void> {
-  await simulateLatency(100, 200);
-  localStorage.removeItem(SESSION_KEY);
+  try {
+    await apiRequest('/api/v1/ops/auth/logout', { method: 'POST' });
+  } finally {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  }
 }
 
+/**
+ * Simulates a role switch locally for developer dashboard navigation testing.
+ */
 export async function updateSessionRole(role: AdminRole): Promise<AdminSession> {
-  await simulateLatency(100, 200);
   const current = getCurrentSessionSync();
   if (!current) {
-    throw new Error('No active session to update.');
+    throw new Error('No active session found.');
   }
 
-  const defaultDetails = DEFAULT_ADMINS[role];
   const updated: AdminSession = {
     ...current,
     role,
-    name: defaultDetails.name,
-    email: defaultDetails.email,
-    avatarUrl: defaultDetails.avatarUrl,
   };
 
-  localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
-  
-  // Custom event to notify components that are listening
-  window.dispatchEvent(new Event('quizbuzz_session_update'));
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event('quizbuzz_session_update'));
+  }
   
   return updated;
 }

@@ -28,6 +28,14 @@ export interface SupportNote {
   tags: string[];
 }
 
+export interface Member {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  joinedDate: string;
+}
+
 export interface Organization {
   id: string;
   name: string;
@@ -131,6 +139,7 @@ export interface SubscriptionPlan {
   maxQuizzes?: number;
   maxParticipantsPerQuiz?: number;
   customBranding?: boolean;
+  organizationCount?: number;
 }
 
 export interface SubscriptionOverride {

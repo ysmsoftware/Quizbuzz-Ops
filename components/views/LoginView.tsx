@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -20,9 +20,14 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginView() {
-  const { admin, login, isLoggingIn } = useCurrentAdmin();
+  const { admin, login, isLoggingIn, verifyOtp, isVerifyingOtp } = useCurrentAdmin();
   const { toast } = useToast();
   const router = useRouter();
+
+  // OTP login flow state
+  const [showOtp, setShowOtp] = useState(false);
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
 
   useEffect(() => {
     if (admin) {
@@ -39,8 +44,8 @@ export default function LoginView() {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: 'admin@quizbuzz.internal',
-      password: 'demo1234',
+      email: 'admin@ysmquizbuzz.com',
+      password: 'YsmSecureOps2026!',
       role: 'SUPER_ADMIN',
     },
   });
@@ -49,25 +54,53 @@ export default function LoginView() {
 
   const onSubmit = async (values: LoginFormValues) => {
     try {
-      await login({
+      const result = await login({
         email: values.email,
         password: values.password,
-        role: values.role,
+      });
+
+      if (result && result.otpRequired) {
+        setOtpEmail(result.email);
+        setShowOtp(true);
+        setOtpCode(''); // reset code input
+        toast(
+          'Verification Required',
+          'A 6-digit OTP code has been generated. Please check your VPS console or server terminal logs.',
+          'success'
+        );
+      }
+    } catch (e: any) {
+      toast('Login Failed', e.message || 'Incorrect password.', 'error');
+    }
+  };
+
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode || otpCode.length !== 6) {
+      toast('Invalid Code', 'OTP must be exactly 6 digits.', 'error');
+      return;
+    }
+
+    try {
+      await verifyOtp({
+        email: otpEmail,
+        otp: otpCode,
       });
       toast(
         'Welcome Back!',
-        `Logged in successfully as ${values.role.replace('_', ' ')}.`,
+        'Logged in successfully.',
         'success'
       );
       router.push('/dashboard');
     } catch (e: any) {
-      toast('Login Failed', e.message || 'Incorrect password.', 'error');
+      toast('Verification Failed', e.message || 'Incorrect OTP code.', 'error');
     }
   };
 
   const handleRoleSelect = (role: AdminRole, defaultEmail: string) => {
     setValue('role', role);
     setValue('email', defaultEmail);
+    setShowOtp(false); // reset OTP view if switching roles
   };
 
   return (
@@ -100,13 +133,15 @@ export default function LoginView() {
           </p>
         </div>
 
-        {/* Demo Warning Information */}
+        {/* Informative Warning for Seeding */}
         <div className="bg-secondary/40 border border-border/50 rounded-lg p-3.5 mb-6 flex gap-3 text-xs text-muted-foreground font-sans">
           <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
           <div>
-            <span className="font-semibold text-foreground">Sandbox Credentials:</span> Use password{' '}
-            <code className="font-mono bg-card px-1.5 py-0.5 rounded text-primary font-bold">demo1234</code>. 
-            Select an operator profile below to instantly populate credentials and roles.
+            <span className="font-semibold text-foreground">Initial Seeding:</span> Use seeded credentials:
+            <div className="mt-1 font-mono bg-card px-2 py-1 rounded text-primary">
+              admin@ysmquizbuzz.com / YsmSecureOps2026!
+            </div>
+            The 6-digit OTP will be logged directly to the server terminal/console.
           </div>
         </div>
 
@@ -117,9 +152,9 @@ export default function LoginView() {
           </label>
           <div className="grid grid-cols-3 gap-2">
             {[
-              { role: 'SUPER_ADMIN', label: 'Super Admin', email: 'admin@quizbuzz.internal', desc: 'Full permissions' },
-              { role: 'SUPPORT', label: 'Support Ops', email: 'support@quizbuzz.internal', desc: 'Audits & Impersonate' },
-              { role: 'BILLING_ADMIN', label: 'Billing Manager', email: 'billing@quizbuzz.internal', desc: 'Plans & Refunds' },
+              { role: 'SUPER_ADMIN', label: 'Super Admin', email: 'admin@ysmquizbuzz.com', desc: 'Full permissions' },
+              { role: 'SUPPORT', label: 'Support Ops', email: 'support@ysmquizbuzz.com', desc: 'Audits & Impersonate' },
+              { role: 'BILLING_ADMIN', label: 'Billing Manager', email: 'billing@ysmquizbuzz.com', desc: 'Plans & Refunds' },
             ].map((item) => {
               const active = selectedRole === item.role;
               return (
@@ -142,61 +177,108 @@ export default function LoginView() {
           </div>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 font-sans">
-          {/* Email input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground block">
-              Operator Corporate Email
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
-                <Mail className="h-4 w-4" />
-              </span>
-              <input
-                {...register('email')}
-                type="text"
-                className="w-full pl-9 pr-4 py-2 text-sm bg-secondary/20 border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground placeholder:text-muted-foreground/50"
-                placeholder="name@quizbuzz.internal"
-              />
+        {/* Conditional rendering for Form (Login Credentials vs. OTP code) */}
+        {!showOtp ? (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 font-sans">
+            {/* Email input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground block">
+                Operator Corporate Email
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                  <Mail className="h-4 w-4" />
+                </span>
+                <input
+                  {...register('email')}
+                  type="text"
+                  className="w-full pl-9 pr-4 py-2 text-sm bg-secondary/20 border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground placeholder:text-muted-foreground/50"
+                  placeholder="admin@ysmquizbuzz.com"
+                />
+              </div>
+              {errors.email && (
+                <p className="text-[11px] text-destructive font-medium mt-1 leading-none">{errors.email.message}</p>
+              )}
             </div>
-            {errors.email && (
-              <p className="text-[11px] text-destructive font-medium mt-1 leading-none">{errors.email.message}</p>
-            )}
-          </div>
 
-          {/* Password input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground block">
-              Authorization Password
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
-                <KeyRound className="h-4 w-4" />
-              </span>
-              <input
-                {...register('password')}
-                type="password"
-                className="w-full pl-9 pr-4 py-2 text-sm bg-secondary/20 border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground placeholder:text-muted-foreground/50"
-                placeholder="••••••••"
-              />
+            {/* Password input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground block">
+                Authorization Password
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                </span>
+                <input
+                  {...register('password')}
+                  type="password"
+                  className="w-full pl-9 pr-4 py-2 text-sm bg-secondary/20 border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground placeholder:text-muted-foreground/50"
+                  placeholder="••••••••"
+                />
+              </div>
+              {errors.password && (
+                <p className="text-[11px] text-destructive font-medium mt-1 leading-none">{errors.password.message}</p>
+              )}
             </div>
-            {errors.password && (
-              <p className="text-[11px] text-destructive font-medium mt-1 leading-none">{errors.password.message}</p>
-            )}
-          </div>
 
-          {/* Submit Button */}
-          <button
-            id="login-submit-btn"
-            type="submit"
-            disabled={isLoggingIn}
-            className="w-full mt-6 bg-primary text-primary-foreground font-semibold text-sm h-10 rounded-md hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
-          >
-            <Shield className="h-4 w-4" />
-            <span>{isLoggingIn ? 'Authenticating Operator...' : 'Authorize Secure Access'}</span>
-          </button>
-        </form>
+            {/* Submit Button */}
+            <button
+              id="login-submit-btn"
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full mt-6 bg-primary text-primary-foreground font-semibold text-sm h-10 rounded-md hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              <Shield className="h-4 w-4" />
+              <span>{isLoggingIn ? 'Authenticating Operator...' : 'Authorize Secure Access'}</span>
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleOtpSubmit} className="space-y-4 font-sans">
+            {/* OTP input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground block">
+                Verification OTP sent to {otpEmail}
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                </span>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                  className="w-full pl-9 pr-4 py-2 text-sm bg-secondary/20 border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground placeholder:text-muted-foreground/50 tracking-[0.3em] font-mono"
+                  placeholder="000000"
+                  required
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground/70 mt-1">
+                The 6-digit OTP code has been logged to the server terminal/console.
+              </p>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              id="otp-submit-btn"
+              type="submit"
+              disabled={isVerifyingOtp}
+              className="w-full mt-6 bg-primary text-primary-foreground font-semibold text-sm h-10 rounded-md hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              <Shield className="h-4 w-4" />
+              <span>{isVerifyingOtp ? 'Verifying OTP...' : 'Verify OTP Code'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowOtp(false)}
+              className="w-full text-center text-xs text-muted-foreground hover:text-primary transition-all mt-2 block"
+            >
+              Back to Password Login
+            </button>
+          </form>
+        )}
 
         {/* Footer Credit */}
         <p className="text-center text-[10px] text-muted-foreground/60 mt-8 leading-none">

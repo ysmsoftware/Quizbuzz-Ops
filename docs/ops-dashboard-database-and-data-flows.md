@@ -22,25 +22,25 @@ The main app database already contains the operational data needed for Phase 1.
 
 Important main app models:
 
-| Model | Purpose in ops |
-|---|---|
-| `Organization` | Tenant root, status, plan cache, onboarding status |
-| `OrganizationProfile` | Onboarding/business profile fields |
-| `OrgMember` | Members and roles inside an org |
-| `Admin` | Org admin identity for owners/admins/viewers |
-| `Contest` | Contest list, status, schedule, limits, payment flag |
-| `PaymentConfig` | Contest registration fee configuration |
-| `Contact` | Deduplicated participant identity per org |
-| `Participant` | Registration row for contact x contest |
-| `Payment` | Contest registration payment records |
-| `Submission` | Quiz submission/result state |
-| `LeaderboardEntry` | Ranking and score data |
-| `Certificate` | Certificate generation status |
-| `ProctoringEvent` | Proctoring event details |
-| `ProctoringScore` | Participant proctoring score summary |
-| `MessageLog` | Notification history |
-| `ScheduledJob` | BullMQ job audit trail |
-| `ContestAnalyticsSnapshot` | Precomputed contest analytics |
+| Model                      | Purpose in ops                                       |
+| ----------------------------| ------------------------------------------------------|
+| `Organization`             | Tenant root, status, plan cache, onboarding status   |
+| `OrganizationProfile`      | Onboarding/business profile fields                   |
+| `OrgMember`                | Members and roles inside an org                      |
+| `Admin`                    | Org admin identity for owners/admins/viewers         |
+| `Contest`                  | Contest list, status, schedule, limits, payment flag |
+| `PaymentConfig`            | Contest registration fee configuration               |
+| `Contact`                  | Deduplicated participant identity per org            |
+| `Participant`              | Registration row for contact x contest               |
+| `Payment`                  | Contest registration payment records                 |
+| `Submission`               | Quiz submission/result state                         |
+| `LeaderboardEntry`         | Ranking and score data                               |
+| `Certificate`              | Certificate generation status                        |
+| `ProctoringEvent`          | Proctoring event details                             |
+| `ProctoringScore`          | Participant proctoring score summary                 |
+| `MessageLog`               | Notification history                                 |
+| `ScheduledJob`             | BullMQ job audit trail                               |
+| `ContestAnalyticsSnapshot` | Precomputed contest analytics                        |
 
 ## 3. Main App Fields Ops May Write
 

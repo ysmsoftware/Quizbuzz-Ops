@@ -13,3 +13,40 @@ export function simulateLatency(min = 300, max = 600): Promise<void> {
 export function shouldFail(chance = 0.02): boolean {
   return Math.random() < chance;
 }
+
+/**
+ * Shared wrapper for Next.js API requests.
+ * Parses the standard envelope, checks success status, and returns the payload data.
+ */
+export async function apiRequest<T = any>(
+  path: string,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  });
+
+  let body: any;
+  try {
+    body = await response.json();
+  } catch (err) {
+    body = {};
+  }
+
+  if (!response.ok) {
+    const errorMsg = body.message || response.statusText || `Request failed with status ${response.status}`;
+    throw new Error(errorMsg);
+  }
+
+  // Handle case where custom envelope was returned
+  if (body.success === false) {
+    const errorMsg = body.message || (body.error && body.error.code) || 'API Request failed';
+    throw new Error(errorMsg);
+  }
+
+  return body.success ? body.data : body;
+}

@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Operational PostgreSQL Database
+  ops-db:
+    image: postgres:15-alpine
+    container_name: quizbuzz-ops-db
+    restart: always
+    environment:
+      POSTGRES_DB: quizbuzz_ops
+      POSTGRES_USER: ${OPS_DB_USER:-quizbuzz_ops_owner}
+      POSTGRES_PASSWORD: ${OPS_DB_PASSWORD:-ops_password_secure}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ops_db_data:/var/lib/postgresql/data
+    networks:
+      - quizbuzz-net
+
+  # Next.js Full-Stack Application
+  ops-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quizbuzz-ops-app
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - OPS_DATABASE_URL=postgresql://${OPS_DB_USER:-quizbuzz_ops_owner}:${OPS_DB_PASSWORD:-ops_password_secure}@ops-db:5432/quizbuzz_ops?schema=public
+      - MAIN_DATABASE_URL=${MAIN_DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis-server:6379}
+      - OPS_JWT_ACCESS_SECRET=${OPS_JWT_ACCESS_SECRET}
+      - OPS_JWT_REFRESH_SECRET=${OPS_JWT_REFRESH_SECRET}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+      - OTP_EXPIRY_MINUTES=${OTP_EXPIRY_MINUTES:-5}
+    depends_on:
+      - ops-db
+    networks:
+      - quizbuzz-net
+
+volumes:
+  ops_db_data:
+
+networks:
+  quizbuzz-net:
+    external: true
+    name: quizbuzznew_default

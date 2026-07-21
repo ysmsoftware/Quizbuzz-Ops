@@ -260,6 +260,22 @@ Main app dependency:
 - Enforce `planLimitsCache` in contest creation and participant registration.
 - Redirect selected plan/payment flow to the ops-hosted billing page.
 
+### Phase 2.5: Organization Payout Management (prerequisite to Phase 3)
+
+Inserted 2026-07-21, after the main app shipped Razorpay Route payout distribution (`OrganizationPayoutAccount`, `PaymentRouteTransfer`, org-facing `/payout-accounts/*` endpoints, contest-publish gate). Ops needs visibility and light control over that system before Phase 3's billing views have anything real to roll up.
+
+Scope:
+
+- Read payout account status per organization and platform-wide (Billing & Revenue Desk "Payouts" tab).
+- Read route transfer history per organization and platform-wide.
+- Attach a Razorpay Linked Account ID on an org's behalf (manual onboarding completion).
+- Mark a payout account `VERIFICATION_FAILED` / `DISABLED` / back to `ACTIVE`, with reason.
+- Audit entries for both writes.
+
+Explicitly not in scope: ops creating Linked Accounts via the Razorpay API, retrying failed/stuck transfers, refunds or reversals. See `ops-dashboard-backend-payouts-guide.md`.
+
+Main app dependency: none — the payout system, its tables, and the contest-publish gate are already shipped. This phase only needs a main DB role grant expansion (see `ops-dashboard-database-and-data-flows.md` Section 4).
+
 ### Phase 3: Billing Depth, Audit Read UI, and Impersonation
 
 Scope:

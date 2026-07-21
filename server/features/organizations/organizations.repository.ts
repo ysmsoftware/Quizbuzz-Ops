@@ -135,7 +135,7 @@ export class OrganizationsRepository {
     // Also get the SUCCESS payments count to compute actual revenue per contest
     const revenueRows = await queryMainDb(`
       SELECT "contestId", COALESCE(SUM(amount), 0)::bigint as total
-      FROM "Payment"
+      FROM payments
       WHERE "organizationId" = $1 AND status = 'SUCCESS' AND "isDeleted" = false
       GROUP BY "contestId"
     `, [orgId]);
@@ -174,7 +174,7 @@ export class OrganizationsRepository {
         p."createdAt" as "registeredAt"
       FROM participants p
       JOIN contacts c ON p."contactId" = c.id
-      LEFT JOIN "Payment" pay ON pay."participantId" = p.id
+      LEFT JOIN payments pay ON pay."participantId" = p.id
       WHERE p."organizationId" = $1
       ORDER BY p."createdAt" DESC
     `, [orgId]);
@@ -204,7 +204,7 @@ export class OrganizationsRepository {
         pay."razorpayPaymentId" as "referenceId",
         c."firstName" || ' ' || COALESCE(c."lastName", '') as "payeeName",
         cont.title as "contestTitle"
-      FROM "Payment" pay
+      FROM payments pay
       JOIN contacts c ON pay."contactId" = c.id
       JOIN contests cont ON pay."contestId" = cont.id
       WHERE pay."organizationId" = $1 AND pay.status = 'SUCCESS' AND pay."isDeleted" = false

@@ -41,6 +41,8 @@ Important main app models:
 | `MessageLog`               | Notification history                                 |
 | `ScheduledJob`             | BullMQ job audit trail                               |
 | `ContestAnalyticsSnapshot` | Precomputed contest analytics                        |
+| `OrganizationPayoutAccount`| Razorpay Route Linked Account status per org (added with the payout milestone, ahead of Phase 3) |
+| `PaymentRouteTransfer`     | Per-payment Route transfer ledger — gross/fee/transfer amounts and status |
 
 ## 3. Main App Fields Ops May Write
 
@@ -52,6 +54,9 @@ Ops should have a restricted database role. In Phase 1 and Phase 2, allowed main
 | `organizations` | `planSlug` | Current plan cache |
 | `organizations` | `planStaus` or `planStatus` | Current subscription status cache |
 | `organizations` | `planLimitsCache` | Effective entitlement cache |
+| `organization_payout_accounts` | `status` | Manual verification-failed/disabled/reactivate |
+| `organization_payout_accounts` | `razorpayLinkedAccountId` | Attach Linked Account created in Razorpay Dashboard |
+| `organization_payout_accounts` | `activatedAt` | Set when status flips to `ACTIVE` |
 
 The main app currently has `planStaus` misspelled. Before Phase 2 implementation, choose one path:
 
@@ -87,11 +92,16 @@ GRANT SELECT ON
   proctoring_scores,
   message_logs,
   scheduled_jobs,
-  contest_analytics_snapshots
+  contest_analytics_snapshots,
+  organization_payout_accounts,
+  payment_route_transfers
 TO quizbuzz_ops_reader;
 
 GRANT UPDATE ("isActive", "planSlug", "planStaus", "planLimitsCache")
   ON organizations TO quizbuzz_ops_reader;
+
+GRANT UPDATE ("status", "razorpayLinkedAccountId", "activatedAt")
+  ON organization_payout_accounts TO quizbuzz_ops_reader;
 ```
 
 If the typo is migrated to `planStatus`, update the grant accordingly.
@@ -367,7 +377,8 @@ These are designed now but can be migrated later:
 - `ContestBooking`
 - `FeatureFlag`
 - `OpsMessageLog`
-- Razorpay Route linked-account metadata, if ops owns onboarding status.
+
+Decision made on Razorpay Route linked-account metadata (previously listed here as an open question): ops does **not** own a shadow copy of onboarding status. `OrganizationPayoutAccount` and `PaymentRouteTransfer` live only in the main app DB, same treatment as `Payment` — ops reads and performs the narrow writes listed in Section 3, nothing more. See `ops-dashboard-backend-payouts-guide.md` and `api-payouts.md`.
 
 ## 6. Data Flow: Platform Overview
 
@@ -530,17 +541,17 @@ Current main app behavior:
 - Razorpay webhook is source of truth.
 - On captured payment, participant moves from `PENDING_PAYMENT` to `REGISTERED`.
 
-Later Razorpay Route flow:
+Razorpay Route flow (shipped in the main app ahead of Phase 3, not a Phase 1/2 item):
 
 ```txt
 payment.captured webhook
 → mark main app Payment SUCCESS
 → confirm participant registration
-→ create Razorpay transfer to org linked account
-→ store route/transfer metadata
+→ create Razorpay transfer to org linked account (payments.transfer, payment-bound)
+→ store PaymentRouteTransfer row (gross/fee/transfer amounts, status)
 ```
 
-This is not Phase 1 or Phase 2.
+Ops's role here is read/support only — see Section 17.
 
 ## 16. Reconciliation
 
@@ -553,3 +564,34 @@ Phase 2 must include a nightly reconciliation sweep:
 5. Audit `system.cache_reconciled` with drift counts.
 
 This makes cross-database consistency self-healing.
+
+## 17. Data Flow: Organization Payout Management
+
+Prerequisite milestone before Phase 3. Full detail in `ops-dashboard-backend-payouts-guide.md` and `api-payouts.md`; summarized here for consistency with the rest of this document.
+
+```txt
+GET /api/v1/ops/organizations/:orgId/payout-account
+→ payouts.repository reads main DB organization_payout_accounts + payment_route_transfers aggregates
+→ response
+```
+
+```txt
+PATCH /api/v1/ops/organizations/:orgId/payout-account/link
+→ verify operator role SUPER_ADMIN or BILLING_ADMIN
+→ read main DB organization_payout_accounts, 404 if none
+→ update main DB: status = ACTIVE, razorpayLinkedAccountId, activatedAt = now()
+→ insert ops DB PlatformAuditLog org.payout_account_linked
+→ response
+```
+
+```txt
+PATCH /api/v1/ops/organizations/:orgId/payout-account/status
+→ verify operator role SUPER_ADMIN or BILLING_ADMIN
+→ update main DB organization_payout_accounts.status
+→ insert ops DB PlatformAuditLog org.payout_account_status_changed
+→ response
+```
+
+Same no-cross-DB-transaction caveat as Section 9 (Suspend Organization): the main DB write commits first, and an ops-side audit-insert failure does not roll back an already-correct payout account state.
+
+Non-goals for this milestone: ops does not create Razorpay Linked Accounts via API, does not retry `FAILED`/stuck-`PENDING` transfers, and does not process refunds or reversals — those are Phase 3 billing-depth items.

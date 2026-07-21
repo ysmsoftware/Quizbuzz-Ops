@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Operational PostgreSQL Database
   ops-db:
@@ -48,4 +46,5 @@ volumes:
 networks:
   quizbuzz-net:
     external: true
-    name: quizbuzznew_default
+    name: quizbuzz-new_default
+

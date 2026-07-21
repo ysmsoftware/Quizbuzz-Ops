@@ -45,13 +45,13 @@ export class OverviewRepository {
     // Payment.amount is in paise. Divide by 100 to convert to INR.
     const allTimeRows = await queryMainDb(`
       SELECT COALESCE(SUM(amount), 0)::bigint as total 
-      FROM "Payment" 
+      FROM payments 
       WHERE status = 'SUCCESS' AND "isDeleted" = false
     `);
 
     const thisMonthRows = await queryMainDb(`
       SELECT COALESCE(SUM(amount), 0)::bigint as total 
-      FROM "Payment" 
+      FROM payments 
       WHERE status = 'SUCCESS' AND "isDeleted" = false
         AND "createdAt" >= date_trunc('month', CURRENT_DATE)
     `);

@@ -1,7 +1,17 @@
 import { queryMainDb } from '../../db/main-db-pool';
 import { PlatformOverviewStats, OrgGrowthPoint, UpcomingContest, RecentOrg } from './overview.types';
 
-export class OverviewRepository {
+export interface IOverviewRepository {
+  getOrgStats(): Promise<{ total: number; active: number; suspended: number; deleted: number }>;
+  getContestStats(): Promise<{ total: number; byStatus: Record<string, number> }>;
+  getParticipantStats(): Promise<{ total: number }>;
+  getRevenueStats(): Promise<{ allTime: number; thisMonth: number; currency: string }>;
+  getOrgGrowth(weeks?: number): Promise<OrgGrowthPoint[]>;
+  getUpcomingContests(days?: number): Promise<UpcomingContest[]>;
+  getRecentOrgs(limit?: number): Promise<RecentOrg[]>;
+}
+
+export class OverviewRepository implements IOverviewRepository {
   async getOrgStats() {
     const rows = await queryMainDb(`
       SELECT 
@@ -126,3 +136,4 @@ export class OverviewRepository {
     }));
   }
 }
+export default OverviewRepository;

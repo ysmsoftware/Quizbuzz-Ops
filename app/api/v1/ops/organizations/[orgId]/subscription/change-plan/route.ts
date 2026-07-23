@@ -1,4 +1,4 @@
-import { SubscriptionsController } from '../../../../../../../../server/features/subscriptions/subscriptions.controller';
+import { subscriptionsController } from '../../../../../../../../server/container';
 import { handleRouteError } from '../../../../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
@@ -9,8 +9,7 @@ export async function POST(
 ) {
   try {
     const { orgId } = await context.params;
-    const controller = new SubscriptionsController();
-    return await controller.changePlan(req, orgId);
+    return await subscriptionsController.changePlan(req, orgId);
   } catch (err) {
     return handleRouteError(err);
   }

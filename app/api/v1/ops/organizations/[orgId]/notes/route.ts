@@ -1,4 +1,4 @@
-import { OrganizationsController } from '../../../../../../../server/features/organizations/organizations.controller';
+import { organizationsController } from '../../../../../../../server/container';
 import { handleRouteError } from '../../../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
@@ -9,8 +9,7 @@ export async function GET(
 ) {
   try {
     const { orgId } = await context.params;
-    const controller = new OrganizationsController();
-    return await controller.getNotes(orgId);
+    return await organizationsController.getNotes(orgId);
   } catch (err) {
     return handleRouteError(err);
   }
@@ -22,8 +21,7 @@ export async function POST(
 ) {
   try {
     const { orgId } = await context.params;
-    const controller = new OrganizationsController();
-    return await controller.addNote(req, orgId);
+    return await organizationsController.addNote(req, orgId);
   } catch (err) {
     return handleRouteError(err);
   }

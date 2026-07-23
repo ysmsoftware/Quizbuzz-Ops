@@ -1,79 +1,60 @@
 'use client';
 
-import { Payment, BillingRecord } from '@/lib/types';
-import { getDatabase, saveDatabase } from '@/lib/data/db';
-import { simulateLatency } from '@/lib/api/utils';
-import { writeAuditLogEntry } from '@/lib/api/auditLog';
+import { apiRequest } from '@/lib/api/utils';
+import { Payment } from '@/lib/types';
+import {
+  BillingPaymentsListQueryParams,
+  PlatformPaymentItem,
+  PlatformBillingSummary,
+} from '@/server/features/billing/billing.types';
 
-export async function getBillingRecords(): Promise<BillingRecord[]> {
-  await simulateLatency();
-  const db = getDatabase();
-  return db.billing;
+export async function getPlatformBillingSummary(): Promise<PlatformBillingSummary> {
+  return apiRequest<PlatformBillingSummary>('/api/v1/ops/billing/summary');
 }
 
-export async function refundBillingRecord(billingId: string): Promise<BillingRecord> {
-  await simulateLatency();
-  const db = getDatabase();
-  const index = db.billing.findIndex((b) => b.id === billingId);
+export async function getPlatformPayments(
+  params?: Partial<BillingPaymentsListQueryParams>
+): Promise<{
+  data: PlatformPaymentItem[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const query = new URLSearchParams();
+  if (params?.page) query.set('page', params.page.toString());
+  if (params?.limit) query.set('limit', params.limit.toString());
+  if (params?.status && params.status !== 'all') query.set('status', params.status);
+  if (params?.search) query.set('search', params.search);
+  if (params?.orgId) query.set('orgId', params.orgId);
 
-  if (index === -1) {
-    throw new Error('Billing record not found');
-  }
-
-  const record = db.billing[index];
-  const updatedRecord: BillingRecord = {
-    ...record,
-    status: 'FAILED',
-  };
-
-  db.billing[index] = updatedRecord;
-
-  writeAuditLogEntry('payment.refunded', 'payment', billingId, record.transactionId, {
-    amount: record.amountINR,
-    legacy: true
-  });
-
-  saveDatabase(db);
-  return updatedRecord;
+  const url = `/api/v1/ops/billing/payments${query.toString() ? `?${query.toString()}` : ''}`;
+  return apiRequest<{
+    data: PlatformPaymentItem[];
+    total: number;
+    page: number;
+    limit: number;
+  }>(url);
 }
 
+/**
+ * Legacy compatibility wrapper for getPayments()
+ */
 export async function getPayments(): Promise<Payment[]> {
-  await simulateLatency(100, 300);
-  const db = getDatabase();
-  if (!db.payments) {
-    db.payments = [];
-  }
-  return db.payments;
-}
-
-export async function refundPayment(paymentId: string, reason: string): Promise<Payment> {
-  await simulateLatency(200, 400);
-  const db = getDatabase();
-  if (!db.payments) {
-    db.payments = [];
-  }
-  const index = db.payments.findIndex((p) => p.id === paymentId);
-
-  if (index === -1) {
-    throw new Error('Payment not found');
-  }
-
-  const payment = db.payments[index];
-  const updatedPayment: Payment = {
-    ...payment,
-    status: 'REFUNDED',
-    refundedAt: new Date().toISOString(),
-    refundReason: reason,
-  };
-
-  db.payments[index] = updatedPayment;
-
-  writeAuditLogEntry('payment.refunded', 'payment', paymentId, payment.contestTitle, {
-    amount: payment.amount,
-    reason,
-    participantName: payment.participantName,
-  });
-
-  saveDatabase(db);
-  return updatedPayment;
+  const res = await getPlatformPayments({ limit: 100 });
+  return res.data.map((p) => ({
+    id: p.id,
+    organizationId: p.organizationId,
+    organizationName: p.organizationName,
+    contestId: p.contestId || '',
+    contestTitle: p.contestTitle || 'N/A',
+    participantName: p.payeeName,
+    amount: p.amount,
+    currency: p.currency,
+    status: p.status as Payment['status'],
+    provider: p.provider as Payment['provider'],
+    paidAt: p.paidAt,
+    refundedAt: null,
+    refundReason: null,
+    createdAt: p.createdAt,
+  }));
 }

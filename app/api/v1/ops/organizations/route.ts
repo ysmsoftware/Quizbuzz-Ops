@@ -1,12 +1,11 @@
-import { OrganizationsController } from '../../../../../server/features/organizations/organizations.controller';
+import { organizationsController } from '../../../../../server/container';
 import { handleRouteError } from '../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
 
 export async function GET(req: Request) {
   try {
-    const controller = new OrganizationsController();
-    return await controller.getOrganizationsList(req);
+    return await organizationsController.getOrganizationsList(req);
   } catch (err) {
     return handleRouteError(err);
   }

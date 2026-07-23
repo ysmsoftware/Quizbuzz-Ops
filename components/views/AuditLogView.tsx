@@ -67,6 +67,10 @@ export default function AuditLogView() {
         return `Initiated impersonation session for organization "${log.targetLabel}"`;
       case 'org.impersonation_ended':
         return `Terminated impersonation session for organization "${log.targetLabel}"`;
+      case 'org.payout_account_linked':
+        return `Linked Razorpay account ${log.metadata?.razorpayLinkedAccountId || ''} for organization "${log.targetLabel}"`;
+      case 'org.payout_account_status_changed':
+        return `Changed payout account status for "${log.targetLabel}" from ${log.metadata?.from || 'N/A'} to ${log.metadata?.to || 'N/A'}${log.metadata?.reason ? `: ${log.metadata.reason}` : ''}`;
       default:
         return `Executed action "${log.action}" on ${log.targetType} "${log.targetLabel}"`;
     }

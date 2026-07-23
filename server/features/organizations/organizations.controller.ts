@@ -1,12 +1,12 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseQueryParams, parseRequest } from '../../http/validation';
 import { orgListQuerySchema, createNoteSchema, suspendOrgSchema, reactivateOrgSchema } from './organizations.validator';
-import { OrganizationsService } from './organizations.service';
+import { IOrganizationsService, OrganizationsService } from './organizations.service';
 import { okResponse, errorResponse } from '../../http/envelope';
 import { PlatformAdminRole } from '@prisma/client';
 
 export class OrganizationsController {
-  private service = new OrganizationsService();
+  constructor(private service: IOrganizationsService = new OrganizationsService()) {}
 
   async getOrganizationsList(req: Request) {
     await getSessionAdmin();
@@ -96,4 +96,5 @@ export class OrganizationsController {
     return okResponse(null, 'Organization reactivated successfully.');
   }
 }
+
 export default OrganizationsController;

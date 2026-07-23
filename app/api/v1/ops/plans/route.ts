@@ -1,12 +1,11 @@
-import { PlansController } from '../../../../../server/features/plans/plans.controller';
+import { plansController } from '../../../../../server/container';
 import { handleRouteError } from '../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
 
 export async function GET(req: Request) {
   try {
-    const controller = new PlansController();
-    return await controller.getPlans(req);
+    return await plansController.getPlans(req);
   } catch (err) {
     return handleRouteError(err);
   }
@@ -14,8 +13,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const controller = new PlansController();
-    return await controller.createPlan(req);
+    return await plansController.createPlan(req);
   } catch (err) {
     return handleRouteError(err);
   }

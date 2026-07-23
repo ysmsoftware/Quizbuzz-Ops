@@ -1,4 +1,4 @@
-import { PlansController } from '../../../../../../../server/features/plans/plans.controller';
+import { plansController } from '../../../../../../../server/container';
 import { handleRouteError } from '../../../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
@@ -9,8 +9,7 @@ export async function GET(
 ) {
   try {
     const { planId } = await context.params;
-    const controller = new PlansController();
-    return await controller.getImpact(planId);
+    return await plansController.getImpact(planId);
   } catch (err) {
     return handleRouteError(err);
   }

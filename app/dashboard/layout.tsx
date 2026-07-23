@@ -23,7 +23,8 @@ import {
   X,
   Shield,
   Cpu,
-  Sliders
+  Sliders,
+  Landmark,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -40,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'organizations', label: 'Organizations', phase: 'phase 1', href: '/dashboard/organizations', icon: Building2 },
   { id: 'plans', label: 'Subscription Plans', phase: 'phase 2', href: '/dashboard/plans', icon: Sparkles },
   { id: 'billing', label: 'Billing & Revenue', phase: 'phase 2', href: '/dashboard/billing', icon: Receipt },
+  { id: 'payouts', label: 'Payout Accounts', phase: 'phase 2', href: '/dashboard/payouts', icon: Landmark },
   { id: 'audit', label: 'Audit Log', phase: 'phase 3', href: '/dashboard/audit-log', icon: Database },
   { id: 'calculator', label: 'Contest Calculator', phase: 'phase 4', href: '/dashboard/calculator', icon: Calculator },
   { id: 'bookings', label: 'Bookings', phase: 'phase 4', href: '/dashboard/bookings', icon: CalendarClock },
@@ -48,7 +50,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { admin, logout } = useCurrentAdmin();
+  const { admin, isLoading, logout } = useCurrentAdmin();
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
@@ -114,13 +116,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
-  // Auth guard: localStorage-based session, so this must be client-side
+  // Auth guard: wait for session query to settle before deciding user is logged out
   useEffect(() => {
-    if (!admin) {
+    if (!isLoading && !admin) {
       router.push('/login');
     }
-  }, [admin, router]);
+  }, [admin, isLoading, router]);
 
+  if (isLoading) return null;
   if (!admin) return null;
 
   const handleSelectOrgFromSearch = (orgId: string) => {

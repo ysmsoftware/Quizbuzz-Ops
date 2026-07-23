@@ -1,13 +1,26 @@
-import { PlansRepository } from './plans.repository';
-import { prisma } from '../../db/ops-prisma';
-import { syncOrgPlanLimitsCache } from '../subscriptions/subscriptions.service';
+import { IPlansRepository, PlansRepository } from './plans.repository';
+import { IEntitlementsService, EntitlementsService } from '../entitlements/entitlements.service';
+import { ISubscriptionsRepository, SubscriptionsRepository } from '../subscriptions/subscriptions.repository';
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
 import { generateUlid } from '../../utils/ulid';
 import { SubscriptionPlanDetail } from './plans.types';
 
-export class PlansService {
-  private repo = new PlansRepository();
+export interface IPlansService {
+  getPlans(includeInactive?: boolean): Promise<SubscriptionPlanDetail[]>;
+  getPlanById(id: string): Promise<SubscriptionPlanDetail | null>;
+  createPlan(input: any, actor: AuditActor): Promise<any>;
+  updatePlan(id: string, updates: any, actor: AuditActor): Promise<any>;
+  getImpact(id: string): Promise<{ organizationCount: number; organizations: { id: string }[] }>;
+  deactivatePlan(id: string, actor: AuditActor): Promise<any>;
+}
+
+export class PlansService implements IPlansService {
+  constructor(
+    private repo: IPlansRepository = new PlansRepository(),
+    private entitlementsService: IEntitlementsService = new EntitlementsService(),
+    private subscriptionsRepo: ISubscriptionsRepository = new SubscriptionsRepository()
+  ) {}
 
   async getPlans(includeInactive = false): Promise<SubscriptionPlanDetail[]> {
     const rawPlans = await this.repo.getPlans(includeInactive);
@@ -88,12 +101,12 @@ export class PlansService {
     const updatedPlan = await this.repo.updatePlan(id, updates);
 
     // Sync effective limits for all active subscribers on this plan
-    const activeSubs = await prisma.organizationSubscription.findMany({
-      where: { planId: id, status: 'ACTIVE' },
-    });
+    const activeSubs = await this.subscriptionsRepo.findActiveSubscriptionsByPlanId(id);
 
     // Recompute and push to main DB for each affected org
-    await Promise.all(activeSubs.map((sub) => syncOrgPlanLimitsCache(sub.organizationId)));
+    await Promise.all(
+      activeSubs.map((sub) => this.entitlementsService.syncOrgPlanLimitsCache(sub.organizationId))
+    );
 
     await writeAuditLogEntry(
       actor,
@@ -108,9 +121,7 @@ export class PlansService {
   }
 
   async getImpact(id: string) {
-    const activeSubs = await prisma.organizationSubscription.findMany({
-      where: { planId: id, status: 'ACTIVE' },
-    });
+    const activeSubs = await this.subscriptionsRepo.findActiveSubscriptionsByPlanId(id);
     return {
       organizationCount: activeSubs.length,
       organizations: activeSubs.map((s) => ({ id: s.organizationId })),

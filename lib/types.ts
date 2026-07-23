@@ -220,9 +220,11 @@ export interface Payment {
 export interface AuditLogEntry {
   id: string;
   actorAdminName: string;
-  actorAdminRole: AdminRole;
+  actorAdminRole: AdminRole | 'SYSTEM';
   action: string; // e.g. "org.suspended", "plan.updated", "override.added", "payment.refunded", "org.impersonated", "pricing_config.updated"
-  targetType: 'organization' | 'plan' | 'payment' | 'booking' | 'pricing_config' | 'feature_flag';
+  // Real backend uses Prisma's AuditTargetType enum casing (e.g. "ORGANIZATION", "SUBSCRIPTION"),
+  // widened to string here since mocked domains (bookings, feature flags) still write lowercase values.
+  targetType: string;
   targetId: string;
   targetLabel: string; // human-readable, e.g. org name
   metadata: any; // a small before/after or details object

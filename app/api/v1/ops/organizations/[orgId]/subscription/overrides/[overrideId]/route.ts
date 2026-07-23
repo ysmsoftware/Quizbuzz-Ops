@@ -1,4 +1,4 @@
-import { SubscriptionsController } from '../../../../../../../../../server/features/subscriptions/subscriptions.controller';
+import { subscriptionsController } from '../../../../../../../../../server/container';
 import { handleRouteError } from '../../../../../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
@@ -9,8 +9,7 @@ export async function DELETE(
 ) {
   try {
     const { orgId, overrideId } = await context.params;
-    const controller = new SubscriptionsController();
-    return await controller.removeOverride(req, orgId, overrideId);
+    return await subscriptionsController.removeOverride(req, orgId, overrideId);
   } catch (err) {
     return handleRouteError(err);
   }

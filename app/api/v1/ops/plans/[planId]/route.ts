@@ -1,4 +1,4 @@
-import { PlansController } from '../../../../../../server/features/plans/plans.controller';
+import { plansController } from '../../../../../../server/container';
 import { handleRouteError } from '../../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
@@ -9,8 +9,7 @@ export async function GET(
 ) {
   try {
     const { planId } = await context.params;
-    const controller = new PlansController();
-    return await controller.getPlanById(planId);
+    return await plansController.getPlanById(planId);
   } catch (err) {
     return handleRouteError(err);
   }
@@ -22,8 +21,7 @@ export async function PATCH(
 ) {
   try {
     const { planId } = await context.params;
-    const controller = new PlansController();
-    return await controller.updatePlan(req, planId);
+    return await plansController.updatePlan(req, planId);
   } catch (err) {
     return handleRouteError(err);
   }

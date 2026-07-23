@@ -1,15 +1,31 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { env } from '../../config/env';
-import { signJwt, verifyJwt } from '../../utils/jwt';
-import { PlatformAuthRepository } from './platform-auth.repository';
+import { signJwt } from '../../utils/jwt';
+import { IPlatformAuthRepository, PlatformAuthRepository } from './platform-auth.repository';
 import { AuthenticationError } from '../../http/errors';
 import { writeAuditLogEntry } from '../../audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
 import { LoginResult, TokenSession } from './platform-auth.types';
 
-export class PlatformAuthService {
-  private repo = new PlatformAuthRepository();
+export interface IPlatformAuthService {
+  login(email: string, password: string): Promise<LoginResult>;
+  verifyOtp(
+    email: string,
+    otp: string,
+    deviceInfo?: string | null,
+    ipAddress?: string | null
+  ): Promise<TokenSession>;
+  refresh(
+    refreshToken: string,
+    deviceInfo?: string | null,
+    ipAddress?: string | null
+  ): Promise<{ accessToken: string; admin: TokenSession['admin'] }>;
+  logout(refreshToken: string): Promise<void>;
+}
+
+export class PlatformAuthService implements IPlatformAuthService {
+  constructor(private repo: IPlatformAuthRepository = new PlatformAuthRepository()) {}
 
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');

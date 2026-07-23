@@ -1,13 +1,13 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseQueryParams, parseRequest } from '../../http/validation';
 import { planCreateSchema, planUpdateSchema } from './plans.validator';
-import { PlansService } from './plans.service';
+import { IPlansService, PlansService } from './plans.service';
 import { okResponse, errorResponse } from '../../http/envelope';
 import { PlatformAdminRole } from '@prisma/client';
 import { z } from 'zod';
 
 export class PlansController {
-  private service = new PlansService();
+  constructor(private service: IPlansService = new PlansService()) {}
 
   async getPlans(req: Request) {
     await getSessionAdmin();

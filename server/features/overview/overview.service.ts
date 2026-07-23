@@ -1,9 +1,16 @@
-import { OverviewRepository } from './overview.repository';
+import { IOverviewRepository, OverviewRepository } from './overview.repository';
 import { cache } from '../../cache/cache';
 import { PlatformOverviewStats, OrgGrowthPoint, UpcomingContest, RecentOrg } from './overview.types';
 
-export class OverviewService {
-  private repo = new OverviewRepository();
+export interface IOverviewService {
+  getStats(): Promise<PlatformOverviewStats>;
+  getOrgGrowth(weeks?: number): Promise<OrgGrowthPoint[]>;
+  getUpcomingContests(days?: number): Promise<UpcomingContest[]>;
+  getRecentOrgs(limit?: number): Promise<RecentOrg[]>;
+}
+
+export class OverviewService implements IOverviewService {
+  constructor(private repo: IOverviewRepository = new OverviewRepository()) {}
 
   async getStats(): Promise<PlatformOverviewStats> {
     const cacheKey = 'ops:cache:overview:stats';

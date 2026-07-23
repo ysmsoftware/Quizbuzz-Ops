@@ -1,6 +1,15 @@
 import { prisma } from '../../db/ops-prisma';
 
-export class PlansRepository {
+export interface IPlansRepository {
+  getPlans(includeInactive?: boolean): Promise<any[]>;
+  getPlanById(id: string): Promise<any | null>;
+  getPlanBySlug(slug: string): Promise<any | null>;
+  createPlan(data: any): Promise<any>;
+  updatePlan(id: string, data: any): Promise<any>;
+  deactivatePlan(id: string): Promise<any>;
+}
+
+export class PlansRepository implements IPlansRepository {
   async getPlans(includeInactive = false) {
     return prisma.subscriptionPlan.findMany({
       where: includeInactive ? {} : { isActive: true },

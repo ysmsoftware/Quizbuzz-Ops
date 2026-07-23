@@ -6,7 +6,7 @@ import { useOrganizationDetail } from '@/lib/hooks/useOrganizations';
 import { usePlans } from '@/lib/hooks/usePlans';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
-import { Globe, Users, Trophy, User, CreditCard, Notebook, Layers } from 'lucide-react';
+import { Globe, Users, Trophy, User, CreditCard, Notebook, Layers, Landmark } from 'lucide-react';
 import { writeAuditLogEntry } from '@/lib/api/auditLog';
 
 import OrgDetailHeader from './organization-detail/OrgDetailHeader';
@@ -15,6 +15,7 @@ import OrgMembersTab from './organization-detail/tabs/OrgMembersTab';
 import OrgContestsTab from './organization-detail/tabs/OrgContestsTab';
 import OrgParticipantsTab from './organization-detail/tabs/OrgParticipantsTab';
 import OrgPaymentsTab from './organization-detail/tabs/OrgPaymentsTab';
+import OrgPayoutAccountTab from './organization-detail/tabs/OrgPayoutAccountTab';
 import OrgNotesTab from './organization-detail/tabs/OrgNotesTab';
 import OrganizationSubscriptionTab from './OrganizationSubscriptionTab';
 
@@ -28,7 +29,7 @@ interface DetailViewProps {
   onBack?: () => void;
 }
 
-type DetailTab = 'overview' | 'members' | 'contests' | 'participants' | 'payments' | 'notes' | 'subscription';
+type DetailTab = 'overview' | 'members' | 'contests' | 'participants' | 'payments' | 'payout_account' | 'notes' | 'subscription';
 
 export default function OrganizationDetailView({ orgId, onBack }: DetailViewProps) {
   const router = useRouter();
@@ -214,6 +215,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
     { id: 'contests', label: 'Contests', icon: Trophy },
     { id: 'participants', label: 'Participants', icon: User },
     { id: 'payments', label: 'Payments', icon: CreditCard },
+    { id: 'payout_account', label: 'Payout Account', icon: Landmark },
     { id: 'notes', label: 'Support Notes', icon: Notebook },
     { id: 'subscription', label: 'Subscription', icon: Layers },
   ];
@@ -294,6 +296,13 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
             payments={payments}
             isLoadingPayments={isLoadingPayments}
             paymentAggregates={paymentAggregates}
+          />
+        )}
+
+        {activeTab === 'payout_account' && (
+          <OrgPayoutAccountTab
+            orgId={organization.id}
+            orgName={organization.name}
           />
         )}
 

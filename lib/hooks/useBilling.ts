@@ -1,47 +1,38 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getBillingRecords, refundBillingRecord, getPayments, refundPayment } from '@/lib/api/billing';
+import { useQuery } from '@tanstack/react-query';
+import { getPlatformBillingSummary, getPlatformPayments } from '@/lib/api/billing';
+import { BillingPaymentsListQueryParams } from '@/server/features/billing/billing.types';
 
+export function useBillingSummary() {
+  return useQuery({
+    queryKey: ['billing', 'summary'],
+    queryFn: () => getPlatformBillingSummary(),
+  });
+}
+
+export function useBillingPayments(params?: Partial<BillingPaymentsListQueryParams>) {
+  return useQuery({
+    queryKey: ['billing', 'payments', params],
+    queryFn: () => getPlatformPayments(params),
+  });
+}
+
+/**
+ * Backwards compatibility hook wrapper
+ */
 export function useBilling() {
-  const queryClient = useQueryClient();
-
-  const billingQuery = useQuery({
-    queryKey: ['billing', 'list'],
-    queryFn: getBillingRecords,
-  });
-
-  const paymentsQuery = useQuery({
-    queryKey: ['payments', 'list'],
-    queryFn: getPayments,
-  });
-
-  const refundMutation = useMutation({
-    mutationFn: (billingId: string) => refundBillingRecord(billingId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['billing'] });
-      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
-    },
-  });
-
-  const refundPaymentMutation = useMutation({
-    mutationFn: ({ paymentId, reason }: { paymentId: string; reason: string }) => refundPayment(paymentId, reason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
-    },
-  });
+  const summaryQuery = useBillingSummary();
+  const paymentsQuery = useBillingPayments({ limit: 100 });
 
   return {
-    records: billingQuery.data || [],
-    isLoading: billingQuery.isLoading,
-    isError: billingQuery.isError,
-    refundRecord: refundMutation.mutateAsync,
-    isRefunding: refundMutation.isPending,
+    summary: summaryQuery.data,
+    isSummaryLoading: summaryQuery.isLoading,
+    isSummaryError: summaryQuery.isError,
 
-    payments: paymentsQuery.data || [],
+    payments: paymentsQuery.data?.data || [],
+    paymentsTotal: paymentsQuery.data?.total || 0,
     isPaymentsLoading: paymentsQuery.isLoading,
-    refundPayment: refundPaymentMutation.mutateAsync,
-    isRefundingPayment: refundPaymentMutation.isPending,
+    isPaymentsError: paymentsQuery.isError,
   };
 }

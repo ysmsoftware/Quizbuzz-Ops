@@ -1,11 +1,28 @@
-import { OrganizationsRepository } from './organizations.repository';
-import { prisma } from '../../db/ops-prisma';
+import { IOrganizationsRepository, OrganizationsRepository } from './organizations.repository';
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
 import { OrgListMember, OrgProfileDetail, OrgMemberDetail, OrgContestDetail, OrgParticipantDetail, OrgPaymentDetail, SupportNoteDetail } from './organizations.types';
 
-export class OrganizationsService {
-  private repo = new OrganizationsRepository();
+export interface IOrganizationsService {
+  getOrganizationsList(params: {
+    page: number;
+    limit: number;
+    search?: string;
+    status: 'all' | 'active' | 'suspended' | 'deleted';
+  }): Promise<{ data: OrgListMember[]; total: number; page: number; limit: number }>;
+  getOrganizationDetail(orgId: string): Promise<OrgProfileDetail | null>;
+  getMembers(orgId: string): Promise<OrgMemberDetail[]>;
+  getContests(orgId: string): Promise<OrgContestDetail[]>;
+  getParticipants(orgId: string): Promise<OrgParticipantDetail[]>;
+  getPayments(orgId: string): Promise<OrgPaymentDetail[]>;
+  getNotes(orgId: string): Promise<SupportNoteDetail[]>;
+  addNote(orgId: string, actor: AuditActor, body: string, tags: string[]): Promise<SupportNoteDetail>;
+  suspend(orgId: string, actor: AuditActor, reason: string): Promise<void>;
+  reactivate(orgId: string, actor: AuditActor, reason?: string): Promise<void>;
+}
+
+export class OrganizationsService implements IOrganizationsService {
+  constructor(private repo: IOrganizationsRepository = new OrganizationsRepository()) {}
 
   async getOrganizationsList(params: {
     page: number;
@@ -16,11 +33,7 @@ export class OrganizationsService {
     const { rows, total } = await this.repo.getOrganizationsList(params);
     const orgIds = rows.map((r) => r.id);
 
-    // Pull plans and subscriptions from ops DB to merge in-memory
-    const subscriptions = await prisma.organizationSubscription.findMany({
-      where: { organizationId: { in: orgIds } },
-      include: { plan: true },
-    });
+    const subscriptions = await this.repo.getSubscriptionsForOrgs(orgIds);
 
     const subMap = new Map<string, typeof subscriptions[0]>();
     for (const sub of subscriptions) {
@@ -67,10 +80,7 @@ export class OrganizationsService {
     const rawOrg = await this.repo.getOrganizationDetail(orgId);
     if (!rawOrg) return null;
 
-    const sub = await prisma.organizationSubscription.findUnique({
-      where: { organizationId: orgId },
-      include: { plan: true },
-    });
+    const sub = await this.repo.getSubscriptionForOrg(orgId);
 
     const planInfo = sub
       ? {
@@ -89,9 +99,7 @@ export class OrganizationsService {
       const suspensions = await this.repo.getOrganizationSuspensions(orgId);
       const openSusp = suspensions.find((s) => s.liftedAt === null);
       if (openSusp) {
-        const operator = await prisma.platformAdmin.findUnique({
-          where: { id: openSusp.suspendedById },
-        });
+        const operator = await this.repo.getPlatformAdmin(openSusp.suspendedById);
         suspensionInfo = {
           reason: openSusp.reason,
           suspendedAt: openSusp.suspendedAt.toISOString(),
@@ -156,7 +164,6 @@ export class OrganizationsService {
 
     const note = await this.repo.createOrganizationNote(orgId, actor.id!, body, tags);
 
-    // Audit logs for support additions
     await writeAuditLogEntry(
       actor,
       'org.note_added',
@@ -182,13 +189,9 @@ export class OrganizationsService {
     if (!rawOrg) throw new Error('Organization not found');
     if (!rawOrg.isActive) throw new Error('Organization is already suspended');
 
-    // 1. Enforce on Main DB first (commit state check)
     await this.repo.updateMainDbOrganizationStatus(orgId, false);
-
-    // 2. Track audit detail local DB
     await this.repo.createOrganizationSuspension(orgId, reason, actor.id!);
 
-    // 3. Log Audit details
     await writeAuditLogEntry(
       actor,
       'org.suspended',
@@ -204,13 +207,9 @@ export class OrganizationsService {
     if (!rawOrg) throw new Error('Organization not found');
     if (rawOrg.isActive) throw new Error('Organization is already active');
 
-    // 1. Commit main DB state first
     await this.repo.updateMainDbOrganizationStatus(orgId, true);
-
-    // 2. Lift suspension local DB
     await this.repo.closeOrganizationSuspension(orgId, actor.id!, reason);
 
-    // 3. Log Audit details
     await writeAuditLogEntry(
       actor,
       'org.reactivated',
@@ -221,4 +220,5 @@ export class OrganizationsService {
     );
   }
 }
+
 export default OrganizationsService;

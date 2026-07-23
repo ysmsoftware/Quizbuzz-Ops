@@ -1,4 +1,4 @@
-import { PlansController } from '../../../../../../../server/features/plans/plans.controller';
+import { plansController } from '../../../../../../../server/container';
 import { handleRouteError } from '../../../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
@@ -9,8 +9,7 @@ export async function POST(
 ) {
   try {
     const { planId } = await context.params;
-    const controller = new PlansController();
-    return await controller.deactivatePlan(req, planId);
+    return await plansController.deactivatePlan(req, planId);
   } catch (err) {
     return handleRouteError(err);
   }

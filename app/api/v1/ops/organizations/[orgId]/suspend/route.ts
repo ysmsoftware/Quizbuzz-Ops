@@ -1,4 +1,4 @@
-import { OrganizationsController } from '../../../../../../../server/features/organizations/organizations.controller';
+import { organizationsController } from '../../../../../../../server/container';
 import { handleRouteError } from '../../../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
@@ -9,8 +9,7 @@ export async function POST(
 ) {
   try {
     const { orgId } = await context.params;
-    const controller = new OrganizationsController();
-    return await controller.suspend(req, orgId);
+    return await organizationsController.suspend(req, orgId);
   } catch (err) {
     return handleRouteError(err);
   }

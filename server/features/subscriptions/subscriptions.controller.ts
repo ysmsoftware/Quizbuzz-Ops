@@ -1,12 +1,12 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseRequest } from '../../http/validation';
 import { assignPlanSchema, changePlanSchema, addOverrideSchema, removeOverrideSchema } from './subscriptions.validator';
-import { SubscriptionsService } from './subscriptions.service';
+import { ISubscriptionsService, SubscriptionsService } from './subscriptions.service';
 import { okResponse, errorResponse } from '../../http/envelope';
 import { PlatformAdminRole } from '@prisma/client';
 
 export class SubscriptionsController {
-  private service = new SubscriptionsService();
+  constructor(private service: ISubscriptionsService = new SubscriptionsService()) {}
 
   async getSubscription(orgId: string) {
     await getSessionAdmin();

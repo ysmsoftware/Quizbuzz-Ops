@@ -336,32 +336,49 @@ the two new `org.payout_account_*` actions from §3.2). Add the payout actions t
 
 ## 5. Main App / DB Coordination Checklist
 
-Already fully specified in `ops-dashboard-backend-payouts-guide.md` §4 — restating here so it's not
-missed as a blocker before §3.2 ships:
-
-- [ ] Grant `quizbuzz_ops_reader` `SELECT` on `organization_payout_accounts`, `payment_route_transfers`.
-- [ ] Grant `quizbuzz_ops_reader` `UPDATE` on `organization_payout_accounts` columns `status`,
-      `"razorpayLinkedAccountId"`, `"activatedAt"` only.
-- [ ] No grant changes needed for `payments` — already granted (used by Overview/Organizations today).
-- [ ] No main app schema changes needed for either Billing or Audit Log — everything read here
-      already exists.
+- [x] **Done 2026-07-21.** `quizbuzz_ops_reader` role + grants written as a runnable script —
+      `prisma/grants/001_quizbuzz_ops_reader.sql` — and tested against a local copy of the main app
+      DB. Grants `SELECT` on all Phase 1/2 tables plus `organization_payout_accounts` and
+      `payment_route_transfers`, and narrow `UPDATE` on `organizations` (`isActive`, `planSlug`,
+      `planStatus`, `planLimitsCache`) and `organization_payout_accounts` (`status`,
+      `razorpayLinkedAccountId`, `activatedAt`, `statusReason`). Verified column-by-column via
+      `information_schema.column_privileges` — no broader access landed anywhere. Still needs running
+      against the real (non-local) main app database by whoever holds superuser credentials there —
+      that's an infra action this repo's tooling can't perform on its own.
+- [x] Found and fixed while testing: the `planStaus` typo `ops-dashboard-database-and-data-flows.md`
+      flagged as an open decision was already resolved on the main app side (column is `planStatus`).
+      Docs updated to match; no compatibility-debt path needed.
+- [x] No grant changes needed for `payments` — already granted (used by Overview/Organizations today).
+- [x] No main app schema changes needed for Billing or Audit Log's own data — everything read there
+      already exists. (The `statusReason` column is new, but it's a payout/onboarding-UX addition
+      from `Quizbuzz-new/payout-manual-onboarding-ux-plan.md`, not something Billing or Audit Log
+      themselves required.)
 
 ---
 
 ## 6. Implementation Order
 
-1. **Audit Log first** — smallest, lowest-risk, no main-DB coordination needed (ops DB only), and
-   validates the read-API pattern cleanly before touching payout/billing writes.
-2. DB role grants for payout tables (§5) — coordinate with infra, not a code change in this repo.
+1. ~~**Audit Log first**~~ — **done 2026-07-21.** `server/features/audit-log/` (repository, service,
+   controller, validator, types) + `app/api/v1/ops/audit-log/route.ts`, live-tested end to end
+   (logged in as the seeded Super Admin, confirmed real `platform_audit_logs` rows render in
+   `AuditLogView.tsx` with correct actor/role parsing and casing). `lib/api/auditLog.ts`'s
+   `getAuditLogs()` now hits the real endpoint; `writeAuditLogEntry()` in the same file was
+   deliberately **not** deleted yet — `lib/api/{ops,bookings}.ts` and `OrganizationDetailView.tsx`
+   still import it for their own still-mocked domains (feature flags, bookings, impersonation), and
+   removing it now would break those. Revisit once those domains get real backends too.
+2. ~~DB role grants for payout tables~~ — **script written and tested 2026-07-21**, see §5. Actually
+   applying it to the real (non-local) main app database is still an infra action outside this
+   repo's tooling.
 3. `server/features/payouts/` — repository → service → controller → routes, in the org-scoped
    routes first (`GET .../payout-account`, `GET .../transfers`), then the two writes
    (`link`, `status`), then the platform-wide list routes, then the queue framing and note-join
-   from §3.2.1.
+   from §3.2.1. **Not started.**
 4. `server/features/billing/` — payments rollup + revenue summary (read-only, no coordination
-   needed).
-5. Frontend: `lib/api/{billing,payouts,auditLog}.ts` and hooks, then wire `BillingView.tsx`
-   (Payouts tab), `OrganizationDetailView.tsx` (Payout Account tab), `AuditLogView.tsx`.
-6. Disable/hide the refund action per §3.4 rather than leaving it wired to nothing.
+   needed). **Not started.**
+5. Frontend: `lib/api/{billing,payouts}.ts` and hooks, then wire `BillingView.tsx` (Payouts tab),
+   `OrganizationDetailView.tsx` (Payout Account tab). **Not started** — `lib/api/auditLog.ts` is
+   already done per step 1.
+6. Disable/hide the refund action per §3.4 rather than leaving it wired to nothing. **Not started.**
 
 ## 7. Testing Strategy
 

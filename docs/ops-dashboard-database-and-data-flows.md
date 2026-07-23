@@ -52,59 +52,34 @@ Ops should have a restricted database role. In Phase 1 and Phase 2, allowed main
 |---|---|---|
 | `organizations` | `isActive` | Suspend/reactivate org |
 | `organizations` | `planSlug` | Current plan cache |
-| `organizations` | `planStaus` or `planStatus` | Current subscription status cache |
+| `organizations` | `planStatus` | Current subscription status cache |
 | `organizations` | `planLimitsCache` | Effective entitlement cache |
 | `organization_payout_accounts` | `status` | Manual verification-failed/disabled/reactivate |
 | `organization_payout_accounts` | `razorpayLinkedAccountId` | Attach Linked Account created in Razorpay Dashboard |
 | `organization_payout_accounts` | `activatedAt` | Set when status flips to `ACTIVE` |
+| `organization_payout_accounts` | `statusReason` | Human-readable reason shown in the org's own Settings page on `VERIFICATION_FAILED`/`DISABLED` |
 
-The main app currently has `planStaus` misspelled. Before Phase 2 implementation, choose one path:
+**Resolved 2026-07-21:** the `planStaus` typo this section used to flag as an open decision is
+already fixed on the main app side — confirmed live against the schema, the column is `planStatus`.
+No compatibility-debt path needed; write `planStatus` directly.
 
-1. Fix the main app schema/migration to `planStatus`, preferred.
-2. Keep writing `planStaus` and document the compatibility debt.
+## 4. Main DB Role Grants
 
-Do not silently assume `planStatus` exists.
+Actual runnable script, not just an example: [`prisma/grants/001_quizbuzz_ops_reader.sql`](../prisma/grants/001_quizbuzz_ops_reader.sql).
+Tested 2026-07-21 against a local copy of the main app database — role creation is idempotent
+(guarded by a `\gexec` existence check, not a bare `CREATE ROLE` — dollar-quoted `DO $$` blocks don't
+get psql's `:'var'` substitution, so the script avoids that shape entirely), and grants were verified
+column-by-column against `information_schema.column_privileges` to land on exactly the columns listed
+above — no broader access anywhere. Run it against the real main app database with:
 
-## 4. Suggested Main DB Role Grants
-
-Example shape, adjusted to exact production table names and ownership:
-
-```sql
-CREATE ROLE quizbuzz_ops_reader LOGIN PASSWORD '...';
-
-GRANT CONNECT ON DATABASE quizbuzz TO quizbuzz_ops_reader;
-GRANT USAGE ON SCHEMA public TO quizbuzz_ops_reader;
-
-GRANT SELECT ON
-  organizations,
-  organization_profiles,
-  org_members,
-  admins,
-  contests,
-  payment_configs,
-  contacts,
-  participants,
-  payments,
-  submissions,
-  leaderboard_entries,
-  certificates,
-  proctoring_events,
-  proctoring_scores,
-  message_logs,
-  scheduled_jobs,
-  contest_analytics_snapshots,
-  organization_payout_accounts,
-  payment_route_transfers
-TO quizbuzz_ops_reader;
-
-GRANT UPDATE ("isActive", "planSlug", "planStaus", "planLimitsCache")
-  ON organizations TO quizbuzz_ops_reader;
-
-GRANT UPDATE ("status", "razorpayLinkedAccountId", "activatedAt")
-  ON organization_payout_accounts TO quizbuzz_ops_reader;
+```sh
+psql "$MAIN_DATABASE_URL_AS_SUPERUSER" -v ops_reader_password='<set a real secret>' \
+  -f prisma/grants/001_quizbuzz_ops_reader.sql
 ```
 
-If the typo is migrated to `planStatus`, update the grant accordingly.
+One correction from the earlier version of this doc: `PaymentConfig` is the actual table name
+(mixed-case, needs quoting — `"PaymentConfig"`), not `payment_configs`. The script uses the correct
+name; note it here so nobody copies the old lowercase form from this doc's history.
 
 Application-side pool constraints:
 

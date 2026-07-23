@@ -1,11 +1,11 @@
 import { getSessionAdmin } from '../../http/auth-guard';
 import { parseQueryParams } from '../../http/validation';
 import { z } from 'zod';
-import { OverviewService } from './overview.service';
+import { IOverviewService, OverviewService } from './overview.service';
 import { okResponse } from '../../http/envelope';
 
 export class OverviewController {
-  private service = new OverviewService();
+  constructor(private service: IOverviewService = new OverviewService()) {}
 
   async getStats() {
     await getSessionAdmin(); // ensure authenticated operator

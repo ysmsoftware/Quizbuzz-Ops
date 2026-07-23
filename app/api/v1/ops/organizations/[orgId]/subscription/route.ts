@@ -1,4 +1,4 @@
-import { SubscriptionsController } from '../../../../../../../server/features/subscriptions/subscriptions.controller';
+import { subscriptionsController } from '../../../../../../../server/container';
 import { handleRouteError } from '../../../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
@@ -9,8 +9,7 @@ export async function GET(
 ) {
   try {
     const { orgId } = await context.params;
-    const controller = new SubscriptionsController();
-    return await controller.getSubscription(orgId);
+    return await subscriptionsController.getSubscription(orgId);
   } catch (err) {
     return handleRouteError(err);
   }
@@ -22,8 +21,7 @@ export async function POST(
 ) {
   try {
     const { orgId } = await context.params;
-    const controller = new SubscriptionsController();
-    return await controller.assignPlan(req, orgId);
+    return await subscriptionsController.assignPlan(req, orgId);
   } catch (err) {
     return handleRouteError(err);
   }

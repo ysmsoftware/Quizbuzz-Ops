@@ -3,7 +3,30 @@ import { prisma } from '../../db/ops-prisma';
 import { generateUlid } from '../../utils/ulid';
 import { OrgMemberDetail, OrgContestDetail, OrgParticipantDetail } from './organizations.types';
 
-export class OrganizationsRepository {
+export interface IOrganizationsRepository {
+  getOrganizationsList(params: {
+    page: number;
+    limit: number;
+    search?: string;
+    status: 'all' | 'active' | 'suspended' | 'deleted';
+  }): Promise<{ rows: any[]; total: number }>;
+  getOrganizationDetail(orgId: string): Promise<any | null>;
+  getOrganizationMembers(orgId: string): Promise<OrgMemberDetail[]>;
+  getOrganizationContests(orgId: string): Promise<OrgContestDetail[]>;
+  getOrganizationParticipants(orgId: string): Promise<OrgParticipantDetail[]>;
+  getOrganizationPayments(orgId: string): Promise<any[]>;
+  getOrganizationNotes(orgId: string): Promise<any[]>;
+  createOrganizationNote(orgId: string, authorId: string, body: string, tags: string[]): Promise<any>;
+  getOrganizationSuspensions(orgId: string): Promise<any[]>;
+  createOrganizationSuspension(orgId: string, reason: string, suspendedById: string): Promise<any>;
+  closeOrganizationSuspension(orgId: string, liftedById: string, liftReason?: string): Promise<any>;
+  updateMainDbOrganizationStatus(orgId: string, isActive: boolean): Promise<void>;
+  getSubscriptionsForOrgs(orgIds: string[]): Promise<any[]>;
+  getSubscriptionForOrg(orgId: string): Promise<any | null>;
+  getPlatformAdmin(adminId: string): Promise<any | null>;
+}
+
+export class OrganizationsRepository implements IOrganizationsRepository {
   async getOrganizationsList(params: {
     page: number;
     limit: number;
@@ -132,7 +155,6 @@ export class OrganizationsRepository {
       ORDER BY c."startTime" DESC
     `, [orgId]);
 
-    // Also get the SUCCESS payments count to compute actual revenue per contest
     const revenueRows = await queryMainDb(`
       SELECT "contestId", COALESCE(SUM(amount), 0)::bigint as total
       FROM payments
@@ -224,8 +246,6 @@ export class OrganizationsRepository {
     }));
   }
 
-  // --- OPS DATABASE OPERATOR ACTIONS (PRISMA) ---
-
   async getOrganizationNotes(orgId: string) {
     return prisma.organizationNote.findMany({
       where: { organizationId: orgId },
@@ -290,6 +310,26 @@ export class OrganizationsRepository {
       SET "isActive" = $1, "updatedAt" = NOW() 
       WHERE id = $2
     `, [isActive, orgId]);
+  }
+
+  async getSubscriptionsForOrgs(orgIds: string[]): Promise<any[]> {
+    return prisma.organizationSubscription.findMany({
+      where: { organizationId: { in: orgIds } },
+      include: { plan: true },
+    });
+  }
+
+  async getSubscriptionForOrg(orgId: string): Promise<any | null> {
+    return prisma.organizationSubscription.findUnique({
+      where: { organizationId: orgId },
+      include: { plan: true },
+    });
+  }
+
+  async getPlatformAdmin(adminId: string): Promise<any | null> {
+    return prisma.platformAdmin.findUnique({
+      where: { id: adminId },
+    });
   }
 }
 export default OrganizationsRepository;

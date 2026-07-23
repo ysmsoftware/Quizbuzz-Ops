@@ -2,7 +2,24 @@ import { prisma } from '../../db/ops-prisma';
 import { PlatformAdmin, PlatformAdminRefreshToken } from '@prisma/client';
 import { generateUlid } from '../../utils/ulid';
 
-export class PlatformAuthRepository {
+export interface IPlatformAuthRepository {
+  findAdminByEmail(email: string): Promise<PlatformAdmin | null>;
+  findAdminById(id: string): Promise<PlatformAdmin | null>;
+  updateAdminOtp(id: string, otpCode: string | null, otpExpiresAt: Date | null): Promise<PlatformAdmin>;
+  updateLastLogin(id: string): Promise<PlatformAdmin>;
+  createRefreshToken(
+    adminId: string,
+    tokenHash: string,
+    expiresAt: Date,
+    deviceInfo?: string | null,
+    ipAddress?: string | null
+  ): Promise<PlatformAdminRefreshToken>;
+  findRefreshToken(tokenHash: string): Promise<(PlatformAdminRefreshToken & { admin: PlatformAdmin }) | null>;
+  deleteRefreshToken(tokenHash: string): Promise<void>;
+  revokeAllAdminTokens(adminId: string): Promise<void>;
+}
+
+export class PlatformAuthRepository implements IPlatformAuthRepository {
   async findAdminByEmail(email: string): Promise<PlatformAdmin | null> {
     return prisma.platformAdmin.findUnique({
       where: { email: email.trim().toLowerCase() },

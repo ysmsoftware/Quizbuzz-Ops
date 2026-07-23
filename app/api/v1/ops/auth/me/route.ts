@@ -1,12 +1,11 @@
-import { PlatformAuthController } from '../../../../../../server/features/platform-auth/platform-auth.controller';
+import { platformAuthController } from '../../../../../../server/container';
 import { handleRouteError } from '../../../../../../server/http/errors';
 
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    const controller = new PlatformAuthController();
-    return await controller.me();
+    return await platformAuthController.me();
   } catch (err) {
     return handleRouteError(err);
   }

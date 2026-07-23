@@ -1,12 +1,12 @@
 import { parseRequest } from '../../http/validation';
 import { loginSchema, verifyOtpSchema } from './platform-auth.validator';
-import { PlatformAuthService } from './platform-auth.service';
+import { IPlatformAuthService, PlatformAuthService } from './platform-auth.service';
 import { okResponse } from '../../http/envelope';
 import { cookies } from 'next/headers';
 import { getSessionAdmin } from '../../http/auth-guard';
 
 export class PlatformAuthController {
-  private service = new PlatformAuthService();
+  constructor(private service: IPlatformAuthService = new PlatformAuthService()) {}
 
   async login(req: Request) {
     const input = await parseRequest(req, loginSchema);

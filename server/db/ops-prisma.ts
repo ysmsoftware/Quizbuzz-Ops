@@ -8,7 +8,9 @@ const globalForPrisma = globalThis as unknown as {
   pool: Pool | undefined;
 };
 
-// Create the PG pool specifically for the Ops Database client
+const isProduction = process.env.NODE_ENV === 'production';
+const hasSslMode = env.OPS_DATABASE_URL.includes('sslmode=');
+
 const pool =
   globalForPrisma.pool ??
   new Pool({
@@ -16,6 +18,7 @@ const pool =
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
+    ...(isProduction && !hasSslMode ? { ssl: { rejectUnauthorized: false } } : {}),
   });
 
 const adapter = new PrismaPg(pool);

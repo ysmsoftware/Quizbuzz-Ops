@@ -9,6 +9,10 @@ import { BillingController } from './features/billing/billing.controller';
 import { EntitlementsRepository } from './features/entitlements/entitlements.repository';
 import { EntitlementsService } from './features/entitlements/entitlements.service';
 
+import { MessagingRepository } from './features/messaging/messaging.repository';
+import { MessagingService } from './features/messaging/messaging.service';
+import { MessagingController } from './features/messaging/messaging.controller';
+
 import { OrganizationsRepository } from './features/organizations/organizations.repository';
 import { OrganizationsService } from './features/organizations/organizations.service';
 import { OrganizationsController } from './features/organizations/organizations.controller';
@@ -37,6 +41,7 @@ import { SubscriptionsController } from './features/subscriptions/subscriptions.
 export const auditLogRepository = new AuditLogRepository();
 export const billingRepository = new BillingRepository();
 export const entitlementsRepository = new EntitlementsRepository();
+export const messagingRepository = new MessagingRepository();
 export const organizationsRepository = new OrganizationsRepository();
 export const overviewRepository = new OverviewRepository();
 export const payoutsRepository = new PayoutsRepository();
@@ -48,6 +53,7 @@ export const subscriptionsRepository = new SubscriptionsRepository();
 export const auditLogService = new AuditLogService(auditLogRepository);
 export const billingService = new BillingService(billingRepository);
 export const entitlementsService = new EntitlementsService(entitlementsRepository);
+export const messagingService = new MessagingService(messagingRepository);
 export const organizationsService = new OrganizationsService(organizationsRepository);
 export const overviewService = new OverviewService(overviewRepository);
 export const payoutsService = new PayoutsService(payoutsRepository);
@@ -58,6 +64,7 @@ export const platformAuthService = new PlatformAuthService(platformAuthRepositor
 // ─── Controllers ────────────────────────────────────────────
 export const auditLogController = new AuditLogController(auditLogService);
 export const billingController = new BillingController(billingService);
+export const messagingController = new MessagingController(messagingService);
 export const organizationsController = new OrganizationsController(organizationsService);
 export const overviewController = new OverviewController(overviewService);
 export const payoutsController = new PayoutsController(payoutsService);

@@ -218,6 +218,66 @@ model SubscriptionChangeLog {
   @@map("subscription_change_logs")
 }
 
+enum OpsMessageChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum OpsMessageStatus {
+  QUEUED
+  PROCESSING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum OpsMessageTemplate {
+  BILLING_PAYMENT_SUCCESS
+  BILLING_PAYMENT_FAILED
+  SUBSCRIPTION_PAST_DUE
+  SUBSCRIPTION_CANCELLED
+  SUBSCRIPTION_PLAN_CHANGED
+  PAYOUT_ACCOUNT_LINKED
+  PAYOUT_ACCOUNT_STATUS_CHANGED
+  ORG_SUSPENDED
+  ORG_REACTIVATED
+  CUSTOM
+}
+
+// Ops -> organization-admin outbound messaging log.
+// Distinct from the main app's participant-facing MessageLog — this table
+// belongs entirely to the ops dashboard and tracks platform-admin-initiated
+// notifications (billing, subscription, payout events).
+//
+// The channel enum includes WHATSAPP so the schema never needs another
+// migration when WhatsApp is switched on — the *code* fully supports it
+// today, but the public send API only accepts EMAIL until
+// WHATSAPP_MESSAGING_ENABLED is turned on (see server/config/messaging.config.ts).
+model OpsMessageLog {
+  id             String             @id
+  organizationId String
+  channel        OpsMessageChannel
+  template       OpsMessageTemplate
+  recipient      String             // email address or E.164 phone number
+  subject        String?            // email subject (unused for WhatsApp)
+  params         Json?              // template parameters used to render the message
+  metadata       Json?              // raw provider response, for audit/debugging
+  status         OpsMessageStatus   @default(QUEUED)
+  providerMsgId  String?
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  failureReason  String?
+  retryCount     Int                @default(0)
+  attemptCount   Int                @default(1)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([organizationId])
+  @@index([status, createdAt])
+  @@index([template])
+  @@map("ops_message_logs")
+}
+
 model OpsPayment {
   id                String           @id
   organizationId    String

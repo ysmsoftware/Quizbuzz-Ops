@@ -23,6 +23,20 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
+
+  // WhatsApp is fully implemented (provider + templates + worker) but kept
+  // OFF by default — WHATSAPP_MESSAGING_ENABLED gates whether the service
+  // layer will accept a WHATSAPP channel at all. The public "send message"
+  // API only ever accepts EMAIL regardless of this flag; this only affects
+  // internal/system-triggered sends. Flip it on later with zero code changes.
+  WHATSAPP_API_URL: z.string().optional(),
+  WHATSAPP_API_KEY: z.string().optional(),
+  WHATSAPP_MESSAGING_ENABLED: z.coerce.boolean().default(false),
+
+  MESSAGE_QUEUE_PREFIX: z.string().default('ops'),
+  MESSAGE_QUEUE_RETRY_ATTEMPTS: z.coerce.number().default(3),
+  MESSAGE_QUEUE_BACKOFF_DELAY_MS: z.coerce.number().default(5000),
+  MESSAGE_WORKER_CONCURRENCY: z.coerce.number().default(10),
 });
 
 const parseEnv = () => {

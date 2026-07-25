@@ -8,6 +8,14 @@ export interface IPayoutsRepository {
   getOrganizationTransferSummary(orgId: string): Promise<any>;
   getOrganizationRouteTransfers(orgId: string, params: RouteTransfersListQueryParams): Promise<{ rows: any[]; total: number }>;
   getPlatformRouteTransfers(params: RouteTransfersListQueryParams): Promise<{ rows: any[]; total: number }>;
+  getPlatformTransferSummary(): Promise<any>;
+  findRegistrationsForTimeline(search: string, limit?: number): Promise<any[]>;
+  getNeedsAttention(params: {
+    page: number;
+    limit: number;
+    missingTransferGraceMinutes: number;
+    stuckTransferGraceMinutes: number;
+  }): Promise<{ rows: any[]; total: number }>;
   attachLinkedAccount(orgId: string, razorpayLinkedAccountId: string): Promise<any | null>;
   updatePayoutStatus(orgId: string, status: string, reason: string): Promise<any | null>;
   getOrganizationDetail(orgId: string): Promise<any | null>;
@@ -184,6 +192,8 @@ export class PayoutsRepository implements IPayoutsRepository {
         COALESCE(c.title, 'Contest Fee') as "contestTitle",
         prt."grossAmount",
         prt."platformFeeAmount",
+        prt."gatewayFeeAmount",
+        prt."gstAmount",
         prt."transferAmount",
         prt.currency,
         prt.status,
@@ -243,6 +253,8 @@ export class PayoutsRepository implements IPayoutsRepository {
         COALESCE(c.title, 'Contest Fee') as "contestTitle",
         prt."grossAmount",
         prt."platformFeeAmount",
+        prt."gatewayFeeAmount",
+        prt."gstAmount",
         prt."transferAmount",
         prt.currency,
         prt.status,
@@ -265,6 +277,167 @@ export class PayoutsRepository implements IPayoutsRepository {
       rows: dataResult,
       total: countResult[0]?.count || 0,
     };
+  }
+
+  async getPlatformTransferSummary(): Promise<any> {
+    const rows = await queryMainDb(`
+      SELECT
+        COUNT(CASE WHEN status = 'PROCESSED' THEN 1 END)::int as "processedCount",
+        COUNT(CASE WHEN status = 'PENDING' THEN 1 END)::int as "pendingCount",
+        COUNT(CASE WHEN status = 'FAILED' THEN 1 END)::int as "failedCount",
+        COALESCE(SUM(CASE WHEN status = 'PROCESSED' THEN "grossAmount" ELSE 0 END), 0)::bigint as "totalGrossPaise",
+        COALESCE(SUM(CASE WHEN status = 'PROCESSED' THEN "platformFeeAmount" ELSE 0 END), 0)::bigint as "totalCommissionPaise",
+        COALESCE(SUM(CASE WHEN status = 'PROCESSED' THEN "gatewayFeeAmount" ELSE 0 END), 0)::bigint as "totalGatewayFeePaise",
+        COALESCE(SUM(CASE WHEN status = 'PROCESSED' THEN "gstAmount" ELSE 0 END), 0)::bigint as "totalGstPaise",
+        COALESCE(SUM(CASE WHEN status = 'PROCESSED' THEN "transferAmount" ELSE 0 END), 0)::bigint as "totalTransferredPaise"
+      FROM payment_route_transfers prt
+      JOIN organizations o ON prt."organizationId" = o.id
+      WHERE o."isDeleted" = false
+    `);
+    return rows[0] || {};
+  }
+
+  /**
+   * Looks up registrations matching a search term — a support ticket is far more
+   * likely to hand you "participant Jane Doe, contest X" or a registration reference
+   * than an internal payment id, so this is anchored on `participants`, not
+   * `payments`. Payment and transfer are LEFT JOINed (a participant may have neither
+   * yet — free contest, or paid contest where they never completed checkout).
+   *
+   * Matches on: participant id, registration reference (unique, human-readable, the
+   * thing actually shown to the participant), contact email, contact phone, or —
+   * still supported for continuity with the old payment-anchored search — payment id,
+   * Razorpay order id, or Razorpay payment id.
+   *
+   * Returns an array, not a single row: email/phone can match more than one
+   * registration (`@@unique([contactId, contestId])` — the same person can register
+   * for many contests). The caller decides what to do with >1 match.
+   */
+  async findRegistrationsForTimeline(search: string, limit = 25): Promise<any[]> {
+    return queryMainDb(
+      `
+      SELECT
+        pt.id as "participantId",
+        pt."registrationRef",
+        pt.status as "participantStatus",
+        pt."createdAt" as "participantCreatedAt",
+        pt."organizationId",
+        o.name as "organizationName",
+        ct.email as "contactEmail",
+        ct.phone as "contactPhone",
+        ct."firstName",
+        ct."lastName",
+        c.id as "contestId",
+        c.title as "contestTitle",
+        c."paymentEnabled",
+        p.id as "paymentId",
+        p."razorpayOrderId",
+        p."razorpayPaymentId",
+        p.amount as "grossAmount",
+        p.currency,
+        p.status as "paymentStatus",
+        p."paidAt",
+        p."webhookConfirmed",
+        p."failureReason" as "paymentFailureReason",
+        p."createdAt" as "paymentCreatedAt",
+        p."updatedAt" as "paymentUpdatedAt",
+        prt.id as "transferId",
+        prt.status as "transferStatus",
+        prt."grossAmount" as "transferGrossAmount",
+        prt."platformFeeAmount",
+        prt."gatewayFeeAmount",
+        prt."gstAmount",
+        prt."transferAmount",
+        prt."razorpayTransferId",
+        prt."failureReason" as "transferFailureReason",
+        prt."createdAt" as "transferCreatedAt",
+        prt."processedAt" as "transferProcessedAt",
+        prt."updatedAt" as "transferUpdatedAt"
+      FROM participants pt
+      JOIN organizations o ON pt."organizationId" = o.id
+      JOIN contacts ct ON pt."contactId" = ct.id
+      LEFT JOIN contests c ON pt."contestId" = c.id
+      LEFT JOIN payments p ON p."participantId" = pt.id
+      LEFT JOIN payment_route_transfers prt ON prt."paymentId" = p.id
+      WHERE pt.id = $1
+        OR pt."registrationRef" = $1
+        OR ct.email ILIKE $1
+        OR ct.phone = $1
+        OR p.id = $1
+        OR p."razorpayOrderId" = $1
+        OR p."razorpayPaymentId" = $1
+      ORDER BY pt."createdAt" DESC
+      LIMIT ${limit}
+    `,
+      [search]
+    );
+  }
+
+  /**
+   * The "needs attention" list — payments/transfers a human should look at without
+   * already knowing a specific id. Two shapes of problem, same underlying query the
+   * main app's own reconciliation sweep uses: a SUCCESS payment with no transfer row
+   * at all (the enqueue itself never happened), or a PENDING transfer with no failure
+   * reason sitting well past the point a healthy attempt would have resolved it.
+   */
+  async getNeedsAttention(params: {
+    page: number;
+    limit: number;
+    missingTransferGraceMinutes: number;
+    stuckTransferGraceMinutes: number;
+  }): Promise<{ rows: any[]; total: number }> {
+    const offset = (params.page - 1) * params.limit;
+
+    const unionQuery = `
+      (
+        SELECT
+          'MISSING_TRANSFER' as "issueType",
+          p.id as "paymentId",
+          NULL::text as "transferId",
+          p."organizationId",
+          o.name as "organizationName",
+          p."razorpayPaymentId",
+          p.amount as "grossAmount",
+          p.currency,
+          p."createdAt"
+        FROM payments p
+        JOIN organizations o ON p."organizationId" = o.id
+        LEFT JOIN payment_route_transfers prt ON prt."paymentId" = p.id
+        WHERE p.status = 'SUCCESS'
+          AND prt.id IS NULL
+          AND p."createdAt" < NOW() - ($1 || ' minutes')::interval
+      )
+      UNION ALL
+      (
+        SELECT
+          'STUCK_PENDING' as "issueType",
+          prt."paymentId",
+          prt.id as "transferId",
+          prt."organizationId",
+          o.name as "organizationName",
+          prt."razorpayPaymentId",
+          prt."grossAmount",
+          prt.currency,
+          prt."createdAt"
+        FROM payment_route_transfers prt
+        JOIN organizations o ON prt."organizationId" = o.id
+        WHERE prt.status = 'PENDING'
+          AND prt."failureReason" IS NULL
+          AND prt."createdAt" < NOW() - ($2 || ' minutes')::interval
+      )
+    `;
+
+    const countResult = await queryMainDb(
+      `SELECT COUNT(*)::int as count FROM (${unionQuery}) t`,
+      [params.missingTransferGraceMinutes, params.stuckTransferGraceMinutes]
+    );
+
+    const dataResult = await queryMainDb(
+      `SELECT * FROM (${unionQuery}) t ORDER BY "createdAt" ASC LIMIT ${params.limit} OFFSET ${offset}`,
+      [params.missingTransferGraceMinutes, params.stuckTransferGraceMinutes]
+    );
+
+    return { rows: dataResult, total: countResult[0]?.count || 0 };
   }
 
   async attachLinkedAccount(orgId: string, razorpayLinkedAccountId: string): Promise<any | null> {

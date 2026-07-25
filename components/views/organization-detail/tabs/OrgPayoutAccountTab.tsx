@@ -340,6 +340,8 @@ export default function OrgPayoutAccountTab({ orgId, orgName }: OrgPayoutAccount
                     <th className="py-2.5 px-4 font-semibold">Contest</th>
                     <th className="py-2.5 px-4 font-semibold">Gross</th>
                     <th className="py-2.5 px-4 font-semibold">Platform Fee</th>
+                    <th className="py-2.5 px-4 font-semibold">Gateway Fee</th>
+                    <th className="py-2.5 px-4 font-semibold">GST</th>
                     <th className="py-2.5 px-4 font-semibold">Org Share</th>
                     <th className="py-2.5 px-4 font-semibold">Status</th>
                     <th className="py-2.5 px-4 font-semibold text-right">Date</th>
@@ -354,6 +356,8 @@ export default function OrgPayoutAccountTab({ orgId, orgName }: OrgPayoutAccount
                       </td>
                       <td className="py-2.5 px-4 font-mono font-bold text-foreground">₹{t.grossAmount}</td>
                       <td className="py-2.5 px-4 font-mono text-muted-foreground">₹{t.platformFeeAmount}</td>
+                      <td className="py-2.5 px-4 font-mono text-muted-foreground">₹{t.gatewayFeeAmount}</td>
+                      <td className="py-2.5 px-4 font-mono text-muted-foreground">₹{t.gstAmount}</td>
                       <td className="py-2.5 px-4 font-mono font-bold text-emerald-600">₹{t.transferAmount}</td>
                       <td className="py-2.5 px-4">
                         <span

@@ -33,3 +33,14 @@ export const updatePayoutStatusSchema = z.object({
     message: 'Reason must be at least 3 characters long',
   }),
 });
+
+export const paymentTimelineQuerySchema = z.object({
+  search: z.string().trim().min(3, {
+    message: 'Provide a payment id, Razorpay order id, or Razorpay payment id to search for',
+  }),
+});
+
+export const needsAttentionQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+});

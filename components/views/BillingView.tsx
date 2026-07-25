@@ -2,8 +2,16 @@
 
 import React, { useState } from 'react';
 import { useBillingSummary, useBillingPayments } from '@/lib/hooks/useBilling';
-import { usePayoutAccounts, useRouteTransfers, useAttachLinkedAccount, useUpdatePayoutStatus } from '@/lib/hooks/usePayouts';
+import {
+  usePayoutAccounts,
+  useRouteTransfers,
+  useAttachLinkedAccount,
+  useUpdatePayoutStatus,
+  usePlatformTransferSummary,
+  useRouteTransferQueueHealth,
+} from '@/lib/hooks/usePayouts';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
+import PayoutInvestigationPanel from '@/components/views/PayoutInvestigationPanel';
 import { useToast } from '@/components/ui/Toast';
 import { format } from 'date-fns';
 import {
@@ -40,7 +48,7 @@ import {
 } from 'recharts';
 
 interface BillingViewProps {
-  initialTab?: 'payments' | 'payouts' | 'transfers';
+  initialTab?: 'payments' | 'payouts' | 'transfers' | 'investigate';
 }
 
 export default function BillingView({ initialTab = 'payments' }: BillingViewProps) {
@@ -49,7 +57,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
   const canEdit = admin?.role === 'SUPER_ADMIN' || admin?.role === 'BILLING_ADMIN';
 
   // Sub-Tab State
-  const [activeTab, setActiveTab] = useState<'payments' | 'payouts' | 'transfers'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'payments' | 'payouts' | 'transfers' | 'investigate'>(initialTab);
 
   // --- Real Billing Summary Query ---
   const { data: summary, isLoading: isLoadingSummary } = useBillingSummary();
@@ -89,6 +97,10 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
     status: transfersStatus as any,
     reason: transfersReason || undefined,
   });
+
+  // --- 4. Platform Transfer Summary & Queue Health Queries ---
+  const { data: transferSummary, isLoading: isLoadingTransferSummary } = usePlatformTransferSummary();
+  const { data: queueHealth, isLoading: isLoadingQueueHealth } = useRouteTransferQueueHealth();
 
   // Mutations for Payout Accounts Queue
   const attachMutation = useAttachLinkedAccount();
@@ -304,8 +316,88 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
             <ArrowUpRight className="h-4 w-4" />
             <span>Route Transfers</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('investigate')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
+              activeTab === 'investigate'
+                ? 'border-primary text-primary bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/20'
+            }`}
+          >
+            <ShieldAlert className="h-4 w-4" />
+            <span>Investigate</span>
+          </button>
         </div>
       </div>
+
+      {/* Queue Health Card (BullMQ route-transfer-queue live state) */}
+      {(activeTab === 'payouts' || activeTab === 'transfers') && (
+        <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm space-y-3 font-sans">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-indigo-500/10 text-indigo-500 rounded-lg shrink-0">
+                <Layers className="h-4 w-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
+                  <span>Route Transfer Queue Health (BullMQ)</span>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Live Queue
+                  </span>
+                </h4>
+                <p className="text-[11px] text-muted-foreground">
+                  Real-time Redis state for main app's route-transfer-queue
+                </p>
+              </div>
+            </div>
+            {queueHealth?.failed ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-rose-600 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                <span>{queueHealth.failed} job(s) failed retries</span>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+            <div className="p-3 bg-secondary/20 rounded-lg space-y-1">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Waiting</span>
+              <div className="text-base font-bold font-mono text-amber-600">
+                {isLoadingQueueHealth ? '...' : queueHealth?.waiting || 0}
+              </div>
+            </div>
+
+            <div className="p-3 bg-secondary/20 rounded-lg space-y-1">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Active</span>
+              <div className="text-base font-bold font-mono text-indigo-500">
+                {isLoadingQueueHealth ? '...' : queueHealth?.active || 0}
+              </div>
+            </div>
+
+            <div className="p-3 bg-secondary/20 rounded-lg space-y-1">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Delayed (Safety Window)</span>
+              <div className="text-base font-bold font-mono text-purple-500">
+                {isLoadingQueueHealth ? '...' : queueHealth?.delayed || 0}
+              </div>
+            </div>
+
+            <div className={`p-3 rounded-lg space-y-1 ${queueHealth?.failed ? 'bg-rose-500/10 border border-rose-500/20' : 'bg-secondary/20'}`}>
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Failed (Exhausted)</span>
+              <div className={`text-base font-bold font-mono ${queueHealth?.failed ? 'text-rose-600' : 'text-foreground'}`}>
+                {isLoadingQueueHealth ? '...' : queueHealth?.failed || 0}
+              </div>
+            </div>
+
+            <div className="p-3 bg-secondary/20 rounded-lg space-y-1">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Completed</span>
+              <div className="text-base font-bold font-mono text-emerald-600">
+                {isLoadingQueueHealth ? '...' : queueHealth?.completed || 0}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: PAYMENTS LEDGER */}
       {activeTab === 'payments' && (
@@ -717,67 +809,153 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
 
       {/* TAB 3: ROUTE TRANSFERS LEDGER */}
       {activeTab === 'transfers' && (
-        <div className="rounded-xl border border-border/50 bg-card shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-border/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="font-semibold text-foreground text-sm">Platform Payment Route Transfers</h3>
-              <p className="text-xs text-muted-foreground">
-                Cross-organization breakdown of Razorpay Route split payment transfers
-              </p>
+        <div className="space-y-6">
+          {/* Platform Transfer Summary KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Total Gross */}
+            <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm flex items-center justify-between font-sans">
+              <div className="space-y-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                  Total Gross Volume
+                </span>
+                <div className="text-xl font-bold font-mono tracking-tight text-foreground flex items-baseline">
+                  <IndianRupee className="h-4 w-4 mr-0.5" />
+                  {isLoadingTransferSummary ? '...' : (transferSummary?.totalGrossAmount || 0).toLocaleString('en-IN')}
+                </div>
+                <span className="text-[10px] text-muted-foreground block">
+                  {transferSummary?.processedCount || 0} processed transfers
+                </span>
+              </div>
+              <div className="p-2.5 bg-blue-500/10 text-blue-500 rounded-lg">
+                <TrendingUp className="h-5 w-5" />
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <select
-                value={transfersStatus}
-                onChange={(e) => {
-                  setTransfersStatus(e.target.value);
-                  setTransfersPage(1);
-                }}
-                className="text-xs font-sans bg-secondary/20 border border-border/40 rounded-lg px-2.5 py-1.5 focus:outline-none text-muted-foreground"
-              >
-                <option value="all">All Statuses</option>
-                <option value="PROCESSED">PROCESSED</option>
-                <option value="PENDING">PENDING</option>
-                <option value="FAILED">FAILED</option>
-                <option value="REVERSED">REVERSED</option>
-              </select>
+            {/* Card 2: Platform Commission */}
+            <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm flex items-center justify-between font-sans">
+              <div className="space-y-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                  Platform Commission
+                </span>
+                <div className="text-xl font-bold font-mono tracking-tight text-indigo-500 flex items-baseline">
+                  <IndianRupee className="h-4 w-4 mr-0.5" />
+                  {isLoadingTransferSummary ? '...' : (transferSummary?.totalCommissionAmount || 0).toLocaleString('en-IN')}
+                </div>
+                <span className="text-[10px] text-muted-foreground block">
+                  Platform cut collected
+                </span>
+              </div>
+              <div className="p-2.5 bg-indigo-500/10 text-indigo-500 rounded-lg">
+                <Layers className="h-5 w-5" />
+              </div>
+            </div>
+
+            {/* Card 3: Gateway Fee + GST */}
+            <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm flex items-center justify-between font-sans">
+              <div className="space-y-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                  Gateway Fee + GST
+                </span>
+                <div className="text-xl font-bold font-mono tracking-tight text-amber-600 flex items-baseline">
+                  <IndianRupee className="h-4 w-4 mr-0.5" />
+                  {isLoadingTransferSummary
+                    ? '...'
+                    : ((transferSummary?.totalGatewayFeeAmount || 0) + (transferSummary?.totalGstAmount || 0)).toLocaleString('en-IN')}
+                </div>
+                <span className="text-[10px] text-muted-foreground block">
+                  Fee: ₹{(transferSummary?.totalGatewayFeeAmount || 0).toLocaleString('en-IN')} | GST: ₹{(transferSummary?.totalGstAmount || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="p-2.5 bg-amber-500/10 text-amber-600 rounded-lg">
+                <Receipt className="h-5 w-5" />
+              </div>
+            </div>
+
+            {/* Card 4: Net Transferred */}
+            <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm flex items-center justify-between font-sans">
+              <div className="space-y-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                  Net Transferred to Orgs
+                </span>
+                <div className="text-xl font-bold font-mono tracking-tight text-emerald-600 flex items-baseline">
+                  <IndianRupee className="h-4 w-4 mr-0.5" />
+                  {isLoadingTransferSummary ? '...' : (transferSummary?.totalTransferredAmount || 0).toLocaleString('en-IN')}
+                </div>
+                <span className="text-[10px] text-muted-foreground block">
+                  Settled to Razorpay linked accounts
+                </span>
+              </div>
+              <div className="p-2.5 bg-emerald-500/10 text-emerald-600 rounded-lg">
+                <ArrowUpRight className="h-5 w-5" />
+              </div>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            {isLoadingTransfers ? (
-              <div className="py-12 text-center text-xs text-muted-foreground font-mono animate-pulse">
-                Fetching platform route transfers...
+          <div className="rounded-xl border border-border/50 bg-card shadow-sm overflow-hidden font-sans">
+            <div className="p-4 border-b border-border/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-semibold text-foreground text-sm">Platform Payment Route Transfers</h3>
+                <p className="text-xs text-muted-foreground">
+                  Cross-organization breakdown of Razorpay Route split payment transfers
+                </p>
               </div>
-            ) : !transfersData?.data || transfersData.data.length === 0 ? (
-              <div className="py-16 text-center text-xs text-muted-foreground">
-                No route transfers recorded.
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={transfersStatus}
+                  onChange={(e) => {
+                    setTransfersStatus(e.target.value);
+                    setTransfersPage(1);
+                  }}
+                  className="text-xs font-sans bg-secondary/20 border border-border/40 rounded-lg px-2.5 py-1.5 focus:outline-none text-muted-foreground"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="PROCESSED">PROCESSED</option>
+                  <option value="PENDING">PENDING</option>
+                  <option value="FAILED">FAILED</option>
+                  <option value="REVERSED">REVERSED</option>
+                </select>
               </div>
-            ) : (
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-secondary/20 text-muted-foreground border-b border-border/40">
-                    <th className="py-3 px-4 font-semibold">Transfer ID</th>
-                    <th className="py-3 px-4 font-semibold">Tenant Org</th>
-                    <th className="py-3 px-4 font-semibold">Contest</th>
-                    <th className="py-3 px-4 font-semibold">Gross</th>
-                    <th className="py-3 px-4 font-semibold">Platform Fee</th>
-                    <th className="py-3 px-4 font-semibold">Transfer Amount</th>
-                    <th className="py-3 px-4 font-semibold">Status</th>
-                    <th className="py-3 px-4 font-semibold text-right">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/30">
-                  {transfersData.data.map((t) => (
-                    <tr key={t.id} className="hover:bg-secondary/15 transition-all font-sans">
-                      <td className="py-3 px-4 font-mono font-bold text-foreground">{t.id}</td>
-                      <td className="py-3 px-4 font-semibold text-foreground">{t.organizationName || '—'}</td>
-                      <td className="py-3 px-4 text-muted-foreground font-medium max-w-[140px] truncate">
-                        {t.contestTitle}
-                      </td>
-                      <td className="py-3 px-4 font-mono font-bold text-foreground">₹{t.grossAmount}</td>
-                      <td className="py-3 px-4 font-mono text-muted-foreground">₹{t.platformFeeAmount}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-emerald-600">₹{t.transferAmount}</td>
+            </div>
+
+            <div className="overflow-x-auto">
+              {isLoadingTransfers ? (
+                <div className="py-12 text-center text-xs text-muted-foreground font-mono animate-pulse">
+                  Fetching platform route transfers...
+                </div>
+              ) : !transfersData?.data || transfersData.data.length === 0 ? (
+                <div className="py-16 text-center text-xs text-muted-foreground">
+                  No route transfers recorded.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-secondary/20 text-muted-foreground border-b border-border/40">
+                      <th className="py-3 px-4 font-semibold">Transfer ID</th>
+                      <th className="py-3 px-4 font-semibold">Tenant Org</th>
+                      <th className="py-3 px-4 font-semibold">Contest</th>
+                      <th className="py-3 px-4 font-semibold">Gross</th>
+                      <th className="py-3 px-4 font-semibold">Platform Fee</th>
+                      <th className="py-3 px-4 font-semibold">Gateway Fee</th>
+                      <th className="py-3 px-4 font-semibold">GST</th>
+                      <th className="py-3 px-4 font-semibold">Transfer Amount</th>
+                      <th className="py-3 px-4 font-semibold">Status</th>
+                      <th className="py-3 px-4 font-semibold text-right">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/30">
+                    {transfersData.data.map((t) => (
+                      <tr key={t.id} className="hover:bg-secondary/15 transition-all font-sans">
+                        <td className="py-3 px-4 font-mono font-bold text-foreground">{t.id}</td>
+                        <td className="py-3 px-4 font-semibold text-foreground">{t.organizationName || '—'}</td>
+                        <td className="py-3 px-4 text-muted-foreground font-medium max-w-[140px] truncate">
+                          {t.contestTitle}
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-foreground">₹{t.grossAmount}</td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">₹{t.platformFeeAmount}</td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">₹{t.gatewayFeeAmount}</td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">₹{t.gstAmount}</td>
+                        <td className="py-3 px-4 font-mono font-bold text-emerald-600">₹{t.transferAmount}</td>
                       <td className="py-3 px-4">
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -806,7 +984,11 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
             )}
           </div>
         </div>
+      </div>
       )}
+
+      {/* TAB 4: INVESTIGATE — chain of events + needs-attention */}
+      {activeTab === 'investigate' && <PayoutInvestigationPanel canEdit={canEdit} />}
 
       {/* Attach Linked Account Modal */}
       {isAttachModalOpen && (

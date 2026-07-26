@@ -10,6 +10,10 @@ const globalForPrisma = globalThis as unknown as {
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hasSslMode = env.OPS_DATABASE_URL.includes('sslmode=');
+const isLocalhost =
+  env.OPS_DATABASE_URL.includes('localhost') ||
+  env.OPS_DATABASE_URL.includes('127.0.0.1') ||
+  env.OPS_DATABASE_URL.includes('::1');
 
 const pool =
   globalForPrisma.pool ??
@@ -18,7 +22,7 @@ const pool =
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
-    ...(isProduction && !hasSslMode ? { ssl: { rejectUnauthorized: false } } : {}),
+    ...(isProduction && !hasSslMode && !isLocalhost ? { ssl: { rejectUnauthorized: false } } : {}),
   });
 
 const adapter = new PrismaPg(pool);

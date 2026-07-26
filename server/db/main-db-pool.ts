@@ -7,6 +7,10 @@ const globalForPool = globalThis as unknown as {
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hasSslMode = env.MAIN_DATABASE_URL.includes('sslmode=');
+const isLocalhost =
+  env.MAIN_DATABASE_URL.includes('localhost') ||
+  env.MAIN_DATABASE_URL.includes('127.0.0.1') ||
+  env.MAIN_DATABASE_URL.includes('::1');
 
 export const mainDbPool =
   globalForPool.pool ??
@@ -16,7 +20,7 @@ export const mainDbPool =
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
     statement_timeout: env.MAIN_DB_STATEMENT_TIMEOUT_MS,
-    ...(isProduction && !hasSslMode ? { ssl: { rejectUnauthorized: false } } : {}),
+    ...(isProduction && !hasSslMode && !isLocalhost ? { ssl: { rejectUnauthorized: false } } : {}),
   });
 
 export const queryMainDb = async <T = any>(

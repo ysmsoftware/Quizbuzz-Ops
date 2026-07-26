@@ -36,8 +36,16 @@ yarn-error.log*
 # vercel
 .vercel
 
-# claude
+# AI Agents & IDEs
+.cursor/
+.cursorrules
+.cursorignore
+.gemini/
 .claude*
+.agents*
+CLAUDE.md*
+AGENTS.md*
+cursor.json
 
 # typescript
 *.tsbuildinfo

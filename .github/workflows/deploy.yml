@@ -94,6 +94,7 @@ jobs:
             # 4. Run Prisma database migrations against AWS RDS
             echo "🗄️ Executing Prisma Database Migrations..."
             if [ -f .env.production ]; then
+              sed -i 's/\r$//' .env.production 2>/dev/null || true
               docker run --rm \
                 --env-file .env.production \
                 ${NEW_IMAGE} npx prisma migrate deploy

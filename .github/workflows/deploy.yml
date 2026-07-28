@@ -72,7 +72,7 @@ jobs:
           script: |
             set -e
 
-            APP_DIR="/var/www/quizbuzz-ops-next"
+            APP_DIR="/var/www/quizbuzz-ops"
             NEW_IMAGE="${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
 
             echo "🚀 Starting Deployment for Image: ${NEW_IMAGE}"

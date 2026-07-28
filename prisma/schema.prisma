@@ -242,6 +242,14 @@ enum OpsMessageTemplate {
   ORG_SUSPENDED
   ORG_REACTIVATED
   CUSTOM
+  // Platform-admin login OTP. Sent directly via getEmailProvider() from
+  // platform-auth.service.ts — bypasses OpsMessageLog/the BullMQ queue on
+  // purpose (this isn't an organization-scoped message: OpsMessageLog.organizationId
+  // is required and a platform admin login has no organization to attach it
+  // to, and a login OTP needs to go out synchronously, not queued).
+  // Included in this enum purely so it can reuse the shared
+  // IMessageProvider/getEmailTemplate rendering pipeline.
+  PLATFORM_ADMIN_OTP
 }
 
 // Ops -> organization-admin outbound messaging log.

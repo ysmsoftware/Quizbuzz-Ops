@@ -6,7 +6,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/Toast';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import ThemeToggle from '@/components/ui/ThemeToggle';
-import RoleSwitcher from '@/components/ui/RoleSwitcher';
 import CommandPalette from '@/components/ui/CommandPalette';
 import { useOps } from '@/lib/hooks/useOps';
 import {
@@ -22,6 +21,7 @@ import {
   Menu,
   X,
   Shield,
+  ShieldCheck,
   Cpu,
   Sliders,
   Landmark,
@@ -518,8 +518,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </kbd>
             </button>
 
-            {/* Quick role toggler */}
-            <RoleSwitcher />
+            {/* Read-only role badge — reflects the admin's actual DB-assigned
+                role from the session (JWT-backed), not something a user can
+                change from the UI. There is deliberately no client-side role
+                switcher: it previously let an admin locally spoof their own
+                displayed role, which the real backend never trusted anyway,
+                but which made the dashboard show unlocked actions that would
+                then fail server-side. */}
+            <span
+              id="current-role-badge"
+              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-border/50 bg-card text-muted-foreground"
+              title="Your role is assigned by a Super Admin and cannot be changed from this menu."
+            >
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+              {admin.role.replace('_', ' ')}
+            </span>
 
             {/* Theme switcher */}
             <ThemeToggle />

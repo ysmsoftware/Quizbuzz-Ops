@@ -1,6 +1,6 @@
 'use client';
 
-import { AdminSession, AdminRole } from '@/lib/types';
+import { AdminSession } from '@/lib/types';
 import { apiRequest } from '@/lib/api/utils';
 
 const SESSION_KEY = 'quizbuzz_super_admin_session';
@@ -13,7 +13,7 @@ export interface LoginResult {
 
 /**
  * Initiates the administrator login.
- * Returns OTP details (OTP is generated and logged to backend console).
+ * The OTP itself is emailed to the admin by the backend — never returned here.
  */
 export async function login(email: string, password: string): Promise<LoginResult> {
   return apiRequest<LoginResult>('/api/v1/ops/auth/login', {
@@ -81,26 +81,4 @@ export async function logout(): Promise<void> {
       localStorage.removeItem(SESSION_KEY);
     }
   }
-}
-
-/**
- * Simulates a role switch locally for developer dashboard navigation testing.
- */
-export async function updateSessionRole(role: AdminRole): Promise<AdminSession> {
-  const current = getCurrentSessionSync();
-  if (!current) {
-    throw new Error('No active session found.');
-  }
-
-  const updated: AdminSession = {
-    ...current,
-    role,
-  };
-
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event('quizbuzz_session_update'));
-  }
-  
-  return updated;
 }

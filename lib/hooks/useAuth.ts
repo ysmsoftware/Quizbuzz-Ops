@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getCurrentSession, login, logout, updateSessionRole, getCurrentSessionSync, verifyOtpCode } from '@/lib/api/auth';
+import { getCurrentSession, login, logout, getCurrentSessionSync, verifyOtpCode } from '@/lib/api/auth';
 import { AdminRole, AdminSession } from '@/lib/types';
 import { useEffect, useState } from 'react';
 
@@ -15,19 +15,6 @@ export function useCurrentAdmin() {
   useEffect(() => {
     setLocalSession(getCurrentSessionSync());
   }, []);
-
-  // Listen to cross-component session updates (e.g. role switches)
-  useEffect(() => {
-    const handleUpdate = () => {
-      setLocalSession(getCurrentSessionSync());
-      queryClient.invalidateQueries({ queryKey: ['auth', 'session'] });
-    };
-
-    window.addEventListener('quizbuzz_session_update', handleUpdate);
-    return () => {
-      window.removeEventListener('quizbuzz_session_update', handleUpdate);
-    };
-  }, [queryClient]);
 
   const { data: session, isLoading, refetch } = useQuery({
     queryKey: ['auth', 'session'],
@@ -56,15 +43,6 @@ export function useCurrentAdmin() {
       setLocalSession(null);
       queryClient.setQueryData(['auth', 'session'], null);
       queryClient.clear();
-    },
-  });
-
-  const switchRoleMutation = useMutation({
-    mutationFn: (role: AdminRole) => updateSessionRole(role),
-    onSuccess: (data) => {
-      setLocalSession(data);
-      queryClient.setQueryData(['auth', 'session'], data);
-      queryClient.invalidateQueries();
     },
   });
 
@@ -98,8 +76,6 @@ export function useCurrentAdmin() {
     verifyOtpError: verifyOtpMutation.error,
     logout: logoutMutation.mutateAsync,
     isLoggingOut: logoutMutation.isPending,
-    switchRole: switchRoleMutation.mutate,
-    isSwitchingRole: switchRoleMutation.isPending,
     hasPermission,
     refetchSession: refetch,
   };

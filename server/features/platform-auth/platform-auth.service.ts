@@ -3,9 +3,10 @@ import crypto from 'crypto';
 import { env } from '../../config/env';
 import { signJwt } from '../../utils/jwt';
 import { IPlatformAuthRepository, PlatformAuthRepository } from './platform-auth.repository';
-import { AuthenticationError } from '../../http/errors';
+import { AppError, AuthenticationError } from '../../http/errors';
 import { writeAuditLogEntry } from '../../audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
+import { getEmailProvider } from '../../providers/email.provider';
 import { LoginResult, TokenSession } from './platform-auth.types';
 
 export interface IPlatformAuthService {
@@ -46,10 +47,31 @@ export class PlatformAuthService implements IPlatformAuthService {
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpiresAt = new Date(Date.now() + env.OTP_EXPIRY_MINUTES * 60 * 1000);
 
+    // Send the code by email *before* persisting it. If delivery throws, we
+    // deliberately never call updateAdminOtp — otherwise a valid-but-never-
+    // received code would sit active in the DB until it expires.
+    try {
+      await getEmailProvider().send('PLATFORM_ADMIN_OTP', admin.email, {
+        otpCode,
+        expiryMinutes: env.OTP_EXPIRY_MINUTES,
+        firstName: admin.firstName,
+      });
+    } catch (err) {
+      console.error(`Failed to send login OTP email to ${admin.email}:`, err);
+      throw new AppError(
+        'Could not send the verification email. Check SMTP configuration or contact your system administrator.',
+        'OTP_EMAIL_DELIVERY_FAILED',
+        502
+      );
+    }
+
     await this.repo.updateAdminOtp(admin.id, otpCode, otpExpiresAt);
 
-    // Print OTP to server console/logs for operator access in VPS and development environments
-    console.log(`\n🔑 [OTP CODE] Verification code for ${admin.email}: ${otpCode}\n`);
+    // Local-dev convenience only, for when SMTP isn't configured against a
+    // real mailbox on a dev machine. Never runs in production.
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`\n🔑 [OTP CODE] Verification code for ${admin.email}: ${otpCode}\n`);
+    }
 
     // Write audit log row
     await writeAuditLogEntry(

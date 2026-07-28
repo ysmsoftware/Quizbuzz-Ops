@@ -1,20 +1,21 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env.production') });
 dotenv.config();
 
 import { defineConfig } from '@prisma/config';
 
-const getEnvVar = (name: string) => {
-  const val = process.env[name];
-  return val && val.trim() !== '' ? val.trim() : null;
+const clean = (val: string | undefined): string | null => {
+  if (!val) return null;
+  const trimmed = val.replace(/\r/g, '').trim().replace(/^["']|["']$/g, '').trim();
+  return trimmed.length > 0 ? trimmed : null;
 };
 
 const dbUrl =
-  getEnvVar('OPS_DATABASE_URL') ||
-  getEnvVar('DATABASE_URL') ||
-  getEnvVar('DIRECT_URL') ||
+  clean(process.env.OPS_DATABASE_URL) ||
+  clean(process.env.DATABASE_URL) ||
+  clean(process.env.PRISMA_DATABASE_URL) ||
+  clean(process.env.DIRECT_URL) ||
   '';
 
 export default defineConfig({

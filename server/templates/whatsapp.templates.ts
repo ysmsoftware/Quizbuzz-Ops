@@ -56,6 +56,17 @@ const WHATSAPP_TEMPLATES: Record<OpsMessageTemplate, WhatsAppTemplateBuilder> = 
     campaignName: 'ops_custom_broadcast',
     templateParams: [p.adminName, p.body || ''],
   }),
+  // Not actually sent over WhatsApp today — platform-admin OTP goes out via
+  // EmailProvider directly (see platform-auth.service.ts), bypassing this
+  // channel-agnostic template pipeline entirely, because OTP delivery needs
+  // to be synchronous and OpsMessageLog requires an organizationId that a
+  // platform-admin login doesn't have. This entry exists only so the
+  // Record<OpsMessageTemplate, ...> map stays exhaustive and the build
+  // compiles; it becomes real the moment WhatsApp OTP delivery is wired up.
+  PLATFORM_ADMIN_OTP: (p) => ({
+    campaignName: 'ops_platform_admin_otp',
+    templateParams: [p.firstName || '', String(p.otpCode || ''), String(p.expiryMinutes || '')],
+  }),
 };
 
 export function getWhatsAppTemplate(template: OpsMessageTemplate, params: Record<string, any>): RenderedWhatsApp {

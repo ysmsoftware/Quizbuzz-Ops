@@ -18,7 +18,7 @@ export const mainDbPool =
     connectionString: env.MAIN_DATABASE_URL,
     max: env.MAIN_DB_POOL_MAX,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 15000,
     statement_timeout: env.MAIN_DB_STATEMENT_TIMEOUT_MS,
     ...(isProduction && !hasSslMode && !isLocalhost ? { ssl: { rejectUnauthorized: false } } : {}),
   });

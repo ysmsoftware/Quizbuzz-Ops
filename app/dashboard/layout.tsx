@@ -34,6 +34,11 @@ interface NavItem {
   phase: string;
   href: string;
   icon: any;
+  // When true, the item is intentionally kept in this list (routing, icons,
+  // phase metadata all stay intact) but omitted from the rendered sidebar.
+  // Used for features that are built but deliberately not surfaced yet
+  // (e.g. Infra & Cost needs a real AWS integration before it's shown).
+  hidden?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -45,9 +50,14 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'audit', label: 'Audit Log', phase: 'phase 3', href: '/dashboard/audit-log', icon: Database },
   { id: 'calculator', label: 'Contest Calculator', phase: 'phase 4', href: '/dashboard/calculator', icon: Calculator },
   { id: 'bookings', label: 'Bookings', phase: 'phase 4', href: '/dashboard/bookings', icon: CalendarClock },
-  { id: 'infra', label: 'Infra & Cost', phase: 'phase 5', href: '/dashboard/infra', icon: Cpu },
+  { id: 'infra', label: 'Infra & Cost', phase: 'phase 5', href: '/dashboard/infra', icon: Cpu, hidden: true },
   { id: 'flags', label: 'Feature Flags', phase: 'phase 6', href: '/dashboard/flags', icon: Sliders },
 ];
+
+// Items actually rendered in the sidebar — `hidden` items stay defined above
+// (route, icon, phase label untouched) but are skipped here until they're
+// ready to ship. Nothing about the underlying page/route is removed.
+const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.hidden);
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { admin, isLoading, logout } = useCurrentAdmin();
@@ -253,7 +263,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 {/* Nav Links */}
                 <nav className="space-y-1">
-                  {NAV_ITEMS.map((item) => {
+                  {VISIBLE_NAV_ITEMS.map((item) => {
                     const Icon = item.icon;
                     const isActive = isNavItemActive(item);
 
@@ -358,7 +368,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Navigation Links */}
           <nav className="space-y-1">
-            {NAV_ITEMS.map((item) => {
+            {VISIBLE_NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = isNavItemActive(item);
 

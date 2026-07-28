@@ -19,7 +19,7 @@ services:
       - NODE_ENV=production
       - OPS_DATABASE_URL=${OPS_DATABASE_URL}
       - MAIN_DATABASE_URL=${MAIN_DATABASE_URL}
-      - REDIS_URL=${REDIS_URL:-redis://ops-redis:6379}
+      - REDIS_URL=redis://ops-redis:6379
       - OPS_JWT_ACCESS_SECRET=${OPS_JWT_ACCESS_SECRET}
       - OPS_JWT_REFRESH_SECRET=${OPS_JWT_REFRESH_SECRET}
       - OPS_ALLOWED_ORIGINS=${OPS_ALLOWED_ORIGINS:-https://ops.ysmquizbuzz.com}

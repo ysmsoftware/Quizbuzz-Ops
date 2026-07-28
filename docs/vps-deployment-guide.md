@@ -22,9 +22,9 @@ This guide covers the initial setup, environment configuration, database connect
 ### 1. Directory Structure
 Log into your AlmaLinux VPS via SSH and create the target deployment directory:
 ```bash
-sudo mkdir -p /var/www/quizbuzz-ops-next
-sudo chown -R $USER:$USER /var/www/quizbuzz-ops-next
-cd /var/www/quizbuzz-ops-next
+sudo mkdir -p /var/www/quizbuzz-ops
+sudo chown -R $USER:$USER /var/www/quizbuzz-ops
+cd /var/www/quizbuzz-ops
 ```
 
 ### 2. Copy Production Files

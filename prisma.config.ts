@@ -6,10 +6,15 @@ dotenv.config();
 
 import { defineConfig } from '@prisma/config';
 
+const getEnvVar = (name: string) => {
+  const val = process.env[name];
+  return val && val.trim() !== '' ? val.trim() : null;
+};
+
 const dbUrl =
-  process.env.OPS_DATABASE_URL ||
-  process.env.DATABASE_URL ||
-  process.env.DIRECT_URL ||
+  getEnvVar('OPS_DATABASE_URL') ||
+  getEnvVar('DATABASE_URL') ||
+  getEnvVar('DIRECT_URL') ||
   '';
 
 export default defineConfig({

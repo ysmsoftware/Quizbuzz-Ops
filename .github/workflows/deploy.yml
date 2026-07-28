@@ -101,6 +101,7 @@ jobs:
 
             # 5. Deploy new image
             echo "🔄 Updating container..."
+            docker network create quizbuzz-new_default 2>/dev/null || true
             export DOCKER_IMAGE=${NEW_IMAGE}
             docker compose -f docker-compose.prod.yml --env-file .env.production up -d --force-recreate
 

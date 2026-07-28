@@ -1,10 +1,9 @@
 // Load environment variables first
 require('dotenv').config();
 
-const { PrismaClient, PlatformAdminRole, BillingCycle } = require('@prisma/client');
+const { PrismaClient, BillingCycle } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
-const bcrypt = require('bcryptjs');
 
 // Initialize the PG pool and Prisma adapter for Prisma 7 compatibility
 const pool = new Pool({
@@ -119,33 +118,15 @@ async function main() {
     console.log(`Plan seeded: ${plan.name} (${plan.slug})`);
   }
 
-  // 2. Create Initial Super Admin
-  const adminEmail = 'admin@ysmquizbuzz.com';
-  const passwordHash = await bcrypt.hash('YsmSecureOps2026!', 10);
+  // NOTE: this script intentionally does NOT seed a platform admin account.
+  // It used to upsert a fixed admin@ysmquizbuzz.com / YsmSecureOps2026!
+  // super admin on every run — a real, known, working credential that would
+  // silently get re-created (and re-activated) any time `npm run db:seed`
+  // was run again, including by accident against a live production database.
+  // Platform admins are provisioned directly against the database (or via a
+  // dedicated one-off admin-creation script that generates a random password
+  // and forces a reset), never via this shared seed script.
 
-  const admin = {
-    id: 'admin_01HJ8E4TY9Q5X5M3K8E4TY9Q5X',
-    email: adminEmail,
-    passwordHash,
-    firstName: 'Super',
-    lastName: 'Admin',
-    role: PlatformAdminRole.SUPER_ADMIN,
-    isActive: true,
-  };
-
-  await prisma.platformAdmin.upsert({
-    where: { email: adminEmail },
-    update: {
-      passwordHash,
-      firstName: admin.firstName,
-      lastName: admin.lastName,
-      role: admin.role,
-      isActive: admin.isActive,
-    },
-    create: admin,
-  });
-
-  console.log(`Initial Super Admin seeded: ${adminEmail} (Password: YsmSecureOps2026!)`);
   console.log('✅ Seeding completed successfully.');
 }
 

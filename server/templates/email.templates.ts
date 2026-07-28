@@ -86,6 +86,15 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
     subject: p.subject || 'Notification from QuizBuzz',
     html: wrap(`<p>${escape(p.body || '')}</p>`),
   }),
+  PLATFORM_ADMIN_OTP: (p) => ({
+    subject: `${escape(p.otpCode)} is your QuizBuzz Ops verification code`,
+    html: wrap(`
+      <p>Hi ${escape(p.firstName || 'there')},</p>
+      <p>Your verification code to sign in to QuizBuzz Ops is:</p>
+      <p style="font-size:28px;font-weight:700;letter-spacing:6px;margin:16px 0;">${escape(p.otpCode)}</p>
+      <p>This code expires in ${escape(p.expiryMinutes)} minute${p.expiryMinutes === 1 ? '' : 's'}. If you did not request this, you can safely ignore this email — nobody can access your account without it.</p>
+    `),
+  }),
 };
 
 export function getEmailTemplate(template: OpsMessageTemplate, params: Record<string, any>): RenderedEmail {

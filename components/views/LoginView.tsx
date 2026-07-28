@@ -7,14 +7,12 @@ import * as z from 'zod';
 import { useRouter } from 'next/navigation';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
-import { Shield, Sparkles, KeyRound, Mail, AlertTriangle } from 'lucide-react';
+import { Shield, Sparkles, KeyRound, Mail } from 'lucide-react';
 import { motion } from 'motion/react';
-import { AdminRole } from '@/lib/types';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Enter a valid corporate email address.' }),
   password: z.string().min(1, { message: 'Password is required.' }),
-  role: z.enum(['SUPER_ADMIN', 'SUPPORT', 'BILLING_ADMIN'] as const),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -38,19 +36,14 @@ export default function LoginView() {
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: 'admin@ysmquizbuzz.com',
-      password: 'YsmSecureOps2026!',
-      role: 'SUPER_ADMIN',
+      email: '',
+      password: '',
     },
   });
-
-  const selectedRole = watch('role');
 
   const onSubmit = async (values: LoginFormValues) => {
     try {
@@ -65,7 +58,7 @@ export default function LoginView() {
         setOtpCode(''); // reset code input
         toast(
           'Verification Required',
-          'A 6-digit OTP code has been generated. Please check your VPS console or server terminal logs.',
+          `A 6-digit verification code has been sent to ${result.email}.`,
           'success'
         );
       }
@@ -95,12 +88,6 @@ export default function LoginView() {
     } catch (e: any) {
       toast('Verification Failed', e.message || 'Incorrect OTP code.', 'error');
     }
-  };
-
-  const handleRoleSelect = (role: AdminRole, defaultEmail: string) => {
-    setValue('role', role);
-    setValue('email', defaultEmail);
-    setShowOtp(false); // reset OTP view if switching roles
   };
 
   return (
@@ -133,50 +120,6 @@ export default function LoginView() {
           </p>
         </div>
 
-        {/* Informative Warning for Seeding */}
-        <div className="bg-secondary/40 border border-border/50 rounded-lg p-3.5 mb-6 flex gap-3 text-xs text-muted-foreground font-sans">
-          <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold text-foreground">Initial Seeding:</span> Use seeded credentials:
-            <div className="mt-1 font-mono bg-card px-2 py-1 rounded text-primary">
-              admin@ysmquizbuzz.com / YsmSecureOps2026!
-            </div>
-            The 6-digit OTP will be logged directly to the server terminal/console.
-          </div>
-        </div>
-
-        {/* Role Quick Pickers */}
-        <div className="mb-6">
-          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-2 font-sans">
-            Quick Pick Administrator Persona
-          </label>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { role: 'SUPER_ADMIN', label: 'Super Admin', email: 'admin@ysmquizbuzz.com', desc: 'Full permissions' },
-              { role: 'SUPPORT', label: 'Support Ops', email: 'support@ysmquizbuzz.com', desc: 'Audits & Impersonate' },
-              { role: 'BILLING_ADMIN', label: 'Billing Manager', email: 'billing@ysmquizbuzz.com', desc: 'Plans & Refunds' },
-            ].map((item) => {
-              const active = selectedRole === item.role;
-              return (
-                <button
-                  id={`role-btn-${item.role.toLowerCase()}`}
-                  key={item.role}
-                  type="button"
-                  onClick={() => handleRoleSelect(item.role as AdminRole, item.email)}
-                  className={`px-3 py-2.5 rounded-lg border text-left transition-all ${
-                    active
-                      ? 'border-primary/50 bg-primary/10 text-primary shadow-sm'
-                      : 'border-border/50 bg-secondary/20 text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
-                  }`}
-                >
-                  <p className="text-xs font-bold font-sans truncate leading-none mb-1">{item.label}</p>
-                  <span className="text-[9px] block text-muted-foreground/80 leading-none">{item.desc}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         {/* Conditional rendering for Form (Login Credentials vs. OTP code) */}
         {!showOtp ? (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 font-sans">
@@ -193,7 +136,7 @@ export default function LoginView() {
                   {...register('email')}
                   type="text"
                   className="w-full pl-9 pr-4 py-2 text-sm bg-secondary/20 border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground placeholder:text-muted-foreground/50"
-                  placeholder="admin@ysmquizbuzz.com"
+                  placeholder="you@ysmquizbuzz.com"
                 />
               </div>
               {errors.email && (
@@ -255,7 +198,7 @@ export default function LoginView() {
                 />
               </div>
               <p className="text-[11px] text-muted-foreground/70 mt-1">
-                The 6-digit OTP code has been logged to the server terminal/console.
+                Check your inbox for the 6-digit verification code. It expires shortly, so request a new one if it doesn't arrive in a few minutes.
               </p>
             </div>
 

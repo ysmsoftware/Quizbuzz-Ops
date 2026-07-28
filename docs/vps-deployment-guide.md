@@ -28,10 +28,10 @@ cd /var/www/quizbuzz-ops
 ```
 
 ### 2. Copy Production Files
-Copy `docker-compose.prod.yml` and `.env.production` into `/var/www/quizbuzz-ops-next/`:
+Copy `docker-compose.prod.yml` and `.env.production` into `/var/www/quizbuzz-ops/`:
 ```bash
 # Create .env.production on VPS
-nano /var/www/quizbuzz-ops-next/.env.production
+nano /var/www/quizbuzz-ops/.env.production
 ```
 *(Populate variables using [.env.production.example](file:///Users/austinmakasare/Desktop/YSM/quizbuzz-ops-next/.env.production.example))*
 

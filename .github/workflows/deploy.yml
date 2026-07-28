@@ -96,7 +96,7 @@ jobs:
             if [ -f .env.production ]; then
               docker run --rm \
                 --env-file .env.production \
-                ${NEW_IMAGE} npx prisma migrate deploy || echo "⚠️ Migration completed or skipped."
+                ${NEW_IMAGE} npx prisma migrate deploy
             fi
 
             # 5. Deploy new image

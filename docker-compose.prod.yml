@@ -1,4 +1,13 @@
 services:
+  ops-redis:
+    image: redis:7-alpine
+    container_name: quizbuzz-ops-redis
+    restart: unless-stopped
+    ports:
+      - "7015:6379"
+    networks:
+      - quizbuzz-net
+
   ops-app:
     image: ${DOCKER_IMAGE:-ghcr.io/ysmsoftware/quizbuzz-ops:latest}
     container_name: quizbuzz-ops-app
@@ -10,7 +19,7 @@ services:
       - NODE_ENV=production
       - OPS_DATABASE_URL=${OPS_DATABASE_URL}
       - MAIN_DATABASE_URL=${MAIN_DATABASE_URL}
-      - REDIS_URL=${REDIS_URL:-redis://redis-server:6379}
+      - REDIS_URL=${REDIS_URL:-redis://ops-redis:6379}
       - OPS_JWT_ACCESS_SECRET=${OPS_JWT_ACCESS_SECRET}
       - OPS_JWT_REFRESH_SECRET=${OPS_JWT_REFRESH_SECRET}
       - OPS_ALLOWED_ORIGINS=${OPS_ALLOWED_ORIGINS:-https://ops.ysmquizbuzz.com}
@@ -18,6 +27,8 @@ services:
       - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
       - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
       - OTP_EXPIRY_MINUTES=${OTP_EXPIRY_MINUTES:-5}
+    depends_on:
+      - ops-redis
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1"]
       interval: 15s

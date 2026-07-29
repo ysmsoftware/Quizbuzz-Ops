@@ -29,9 +29,11 @@ export class PlansService implements IPlansService {
       name: p.name,
       slug: p.slug,
       description: p.description || '',
-      price: Number(p.price),
       currency: p.currency,
-      billingCycle: p.billingCycle,
+      allowsMonthly: p.allowsMonthly,
+      allowsAnnual: p.allowsAnnual,
+      monthlyPrice: p.monthlyPrice != null ? Number(p.monthlyPrice) : null,
+      annualPrice: p.annualPrice != null ? Number(p.annualPrice) : null,
       isActive: p.isActive,
       maxContestsPerCycle: p.maxContestsPerCycle,
       maxParticipantsPerContest: p.maxParticipantsPerContest,
@@ -56,9 +58,11 @@ export class PlansService implements IPlansService {
       name: p.name,
       slug: p.slug,
       description: p.description || '',
-      price: Number(p.price),
       currency: p.currency,
-      billingCycle: p.billingCycle,
+      allowsMonthly: p.allowsMonthly,
+      allowsAnnual: p.allowsAnnual,
+      monthlyPrice: p.monthlyPrice != null ? Number(p.monthlyPrice) : null,
+      annualPrice: p.annualPrice != null ? Number(p.annualPrice) : null,
       isActive: p.isActive,
       maxContestsPerCycle: p.maxContestsPerCycle,
       maxParticipantsPerContest: p.maxParticipantsPerContest,
@@ -75,11 +79,42 @@ export class PlansService implements IPlansService {
     };
   }
 
+  private validateCyclePricing(input: {
+    allowsMonthly?: boolean;
+    allowsAnnual?: boolean;
+    monthlyPrice?: number | null;
+    annualPrice?: number | null;
+  }) {
+    const allowsMonthly = !!input.allowsMonthly;
+    const allowsAnnual = !!input.allowsAnnual;
+
+    if (!allowsMonthly && !allowsAnnual) {
+      throw new Error('A plan must offer at least one billing cycle (monthly or annual)');
+    }
+    if (allowsMonthly && (input.monthlyPrice == null || input.monthlyPrice < 0)) {
+      throw new Error('monthlyPrice is required when the plan allows monthly billing');
+    }
+    if (allowsAnnual && (input.annualPrice == null || input.annualPrice < 0)) {
+      throw new Error('annualPrice is required when the plan allows annual billing');
+    }
+
+    return {
+      allowsMonthly,
+      allowsAnnual,
+      // Clear the price for whichever cycle isn't offered, so a stale value
+      // from a previous edit can never be mistaken for a live price.
+      monthlyPrice: allowsMonthly ? input.monthlyPrice : null,
+      annualPrice: allowsAnnual ? input.annualPrice : null,
+    };
+  }
+
   async createPlan(input: any, actor: AuditActor) {
     const planId = `plan_${input.slug.toLowerCase().replace(/\s+/g, '_')}_${generateUlid().slice(-6)}`;
+    const cyclePricing = this.validateCyclePricing(input);
     const plan = await this.repo.createPlan({
       id: planId,
       ...input,
+      ...cyclePricing,
     });
 
     await writeAuditLogEntry(
@@ -88,7 +123,7 @@ export class PlansService implements IPlansService {
       AuditTargetType.PLAN,
       plan.id,
       plan.name,
-      { slug: plan.slug, price: plan.price }
+      { slug: plan.slug, monthlyPrice: plan.monthlyPrice, annualPrice: plan.annualPrice }
     );
 
     return plan;
@@ -98,7 +133,14 @@ export class PlansService implements IPlansService {
     const oldPlan = await this.repo.getPlanById(id);
     if (!oldPlan) throw new Error('Subscription plan not found');
 
-    const updatedPlan = await this.repo.updatePlan(id, updates);
+    const cyclePricing = this.validateCyclePricing({
+      allowsMonthly: updates.allowsMonthly ?? oldPlan.allowsMonthly,
+      allowsAnnual: updates.allowsAnnual ?? oldPlan.allowsAnnual,
+      monthlyPrice: updates.monthlyPrice ?? (oldPlan.monthlyPrice != null ? Number(oldPlan.monthlyPrice) : null),
+      annualPrice: updates.annualPrice ?? (oldPlan.annualPrice != null ? Number(oldPlan.annualPrice) : null),
+    });
+
+    const updatedPlan = await this.repo.updatePlan(id, { ...updates, ...cyclePricing });
 
     // Sync effective limits for all active subscribers on this plan
     const activeSubs = await this.subscriptionsRepo.findActiveSubscriptionsByPlanId(id);

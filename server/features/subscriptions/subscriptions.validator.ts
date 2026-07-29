@@ -2,10 +2,12 @@ import { z } from 'zod';
 
 export const assignPlanSchema = z.object({
   planId: z.string().min(1, 'Plan ID is required'),
+  billingCycle: z.enum(['MONTHLY', 'ANNUAL']).optional(),
 });
 
 export const changePlanSchema = z.object({
   planId: z.string().min(1, 'Plan ID is required'),
+  billingCycle: z.enum(['MONTHLY', 'ANNUAL']).optional(),
   reason: z.string().optional(),
 });
 

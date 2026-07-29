@@ -13,7 +13,7 @@ export function usePlans(includeInactive = true) {
   });
 
   const createPlanMutation = useMutation({
-    mutationFn: (newPlan: Omit<SubscriptionPlan, 'id' | 'createdAt' | 'updatedAt' | 'priceINR' | 'interval'>) =>
+    mutationFn: (newPlan: Omit<SubscriptionPlan, 'id' | 'createdAt' | 'updatedAt' | 'priceINR'>) =>
       createSubscriptionPlan(newPlan),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plans'] });

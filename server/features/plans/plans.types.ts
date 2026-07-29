@@ -1,13 +1,13 @@
-import { BillingCycle } from '@prisma/client';
-
 export interface SubscriptionPlanDetail {
   id: string;
   name: string;
   slug: string;
   description: string;
-  price: number;
   currency: string;
-  billingCycle: BillingCycle;
+  allowsMonthly: boolean;
+  allowsAnnual: boolean;
+  monthlyPrice: number | null;
+  annualPrice: number | null;
   isActive: boolean;
   maxContestsPerCycle: number | null;
   maxParticipantsPerContest: number | null;

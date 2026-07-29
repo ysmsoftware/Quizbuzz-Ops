@@ -5,7 +5,7 @@ export async function GET() {
   try {
     const plans = await prisma.subscriptionPlan.findMany({
       where: { isActive: true },
-      orderBy: { price: 'asc' },
+      orderBy: [{ monthlyPrice: { sort: 'asc', nulls: 'last' } }, { annualPrice: { sort: 'asc', nulls: 'last' } }],
     });
 
     const formattedPlans = plans.map((p) => {
@@ -34,9 +34,11 @@ export async function GET() {
         name: p.name,
         slug: p.slug,
         description: p.description || '',
-        price: Number(p.price),
         currency: p.currency,
-        billingCycle: p.billingCycle,
+        allowsMonthly: p.allowsMonthly,
+        allowsAnnual: p.allowsAnnual,
+        monthlyPrice: p.monthlyPrice != null ? Number(p.monthlyPrice) : null,
+        annualPrice: p.annualPrice != null ? Number(p.annualPrice) : null,
         maxContestsPerCycle: p.maxContestsPerCycle,
         maxParticipantsPerContest: p.maxParticipantsPerContest,
         maxQuestionsPerContest: p.maxQuestionsPerContest,

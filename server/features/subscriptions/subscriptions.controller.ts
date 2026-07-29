@@ -27,7 +27,7 @@ export class SubscriptionsController {
       name: admin.name,
       role: admin.role,
     };
-    const result = await this.service.assignPlan(orgId, input.planId, actor);
+    const result = await this.service.assignPlan(orgId, input.planId, actor, input.billingCycle);
     return okResponse(result, 'Subscription plan assigned successfully.');
   }
 
@@ -41,7 +41,7 @@ export class SubscriptionsController {
       name: admin.name,
       role: admin.role,
     };
-    const result = await this.service.changePlan(orgId, input.planId, actor, input.reason);
+    const result = await this.service.changePlan(orgId, input.planId, actor, input.billingCycle, input.reason);
     return okResponse(result, 'Subscription plan changed successfully.');
   }
 

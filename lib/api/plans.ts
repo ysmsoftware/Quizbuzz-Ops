@@ -3,16 +3,26 @@
 import { SubscriptionPlan } from '@/lib/types';
 import { apiRequest } from '@/lib/api/utils';
 
-export async function getPlans(includeInactive = true): Promise<SubscriptionPlan[]> {
-  const result = await apiRequest<any[]>(`/api/v1/ops/plans?includeInactive=${includeInactive}`);
-  return result.map(p => ({
+function toStartingPrice(monthlyPrice: number | null, annualPrice: number | null): number {
+  if (monthlyPrice != null) return monthlyPrice;
+  if (annualPrice != null) return annualPrice;
+  return 0;
+}
+
+function mapPlan(p: any): SubscriptionPlan {
+  const monthlyPrice = p.monthlyPrice != null ? Number(p.monthlyPrice) : null;
+  const annualPrice = p.annualPrice != null ? Number(p.annualPrice) : null;
+
+  return {
     id: p.id,
     name: p.name,
     slug: p.slug,
     description: p.description,
-    price: p.price,
     currency: p.currency,
-    billingCycle: p.billingCycle === 'ANNUAL' ? 'annual' : 'monthly',
+    allowsMonthly: !!p.allowsMonthly,
+    allowsAnnual: !!p.allowsAnnual,
+    monthlyPrice,
+    annualPrice,
     isActive: p.isActive,
     limits: {
       maxContestsPerCycle: p.maxContestsPerCycle,
@@ -29,50 +39,27 @@ export async function getPlans(includeInactive = true): Promise<SubscriptionPlan
     },
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
-    priceINR: p.price,
-    interval: p.billingCycle === 'ANNUAL' ? 'yearly' : 'monthly',
-    organizationCount: p.organizationCount || 0
-  }));
+    priceINR: toStartingPrice(monthlyPrice, annualPrice),
+    organizationCount: p.organizationCount || 0,
+  };
+}
+
+export async function getPlans(includeInactive = true): Promise<SubscriptionPlan[]> {
+  const result = await apiRequest<any[]>(`/api/v1/ops/plans?includeInactive=${includeInactive}`);
+  return result.map(mapPlan);
 }
 
 export async function getPlanById(planId: string): Promise<SubscriptionPlan | null> {
   try {
     const p = await apiRequest<any>(`/api/v1/ops/plans/${planId}`);
-    return {
-      id: p.id,
-      name: p.name,
-      slug: p.slug,
-      description: p.description,
-      price: p.price,
-      currency: p.currency,
-      billingCycle: p.billingCycle === 'ANNUAL' ? 'annual' : 'monthly',
-      isActive: p.isActive,
-      limits: {
-        maxContestsPerCycle: p.maxContestsPerCycle,
-        maxParticipantsPerContest: p.maxParticipantsPerContest,
-        maxQuestionsPerContest: p.maxQuestionsPerContest,
-        maxOrgMembers: p.maxOrgMembers,
-      },
-      features: {
-        proctoring: p.featureProctoring,
-        customCertificateBranding: p.featureCertBranding,
-        prioritySupport: p.featurePrioritySupport,
-        analyticsExport: p.featureAnalyticsExport,
-        customDomain: p.featureCustomDomain,
-      },
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-      priceINR: p.price,
-      interval: p.billingCycle === 'ANNUAL' ? 'yearly' : 'monthly',
-      organizationCount: p.organizationCount || 0
-    };
+    return mapPlan(p);
   } catch (err) {
     return null;
   }
 }
 
 export async function createSubscriptionPlan(
-  plan: Omit<SubscriptionPlan, 'id' | 'createdAt' | 'updatedAt' | 'priceINR' | 'interval'>
+  plan: Omit<SubscriptionPlan, 'id' | 'createdAt' | 'updatedAt' | 'priceINR'>
 ): Promise<SubscriptionPlan> {
   const result = await apiRequest<any>('/api/v1/ops/plans', {
     method: 'POST',
@@ -80,9 +67,11 @@ export async function createSubscriptionPlan(
       name: plan.name,
       slug: plan.slug,
       description: plan.description,
-      price: plan.price,
       currency: plan.currency,
-      billingCycle: plan.billingCycle === 'annual' ? 'ANNUAL' : 'MONTHLY',
+      allowsMonthly: plan.allowsMonthly,
+      allowsAnnual: plan.allowsAnnual,
+      monthlyPrice: plan.monthlyPrice,
+      annualPrice: plan.annualPrice,
       maxContestsPerCycle: plan.limits?.maxContestsPerCycle,
       maxParticipantsPerContest: plan.limits?.maxParticipantsPerContest,
       maxQuestionsPerContest: plan.limits?.maxQuestionsPerContest,
@@ -95,22 +84,17 @@ export async function createSubscriptionPlan(
     }),
   });
 
-  return {
-    ...plan,
-    id: result.id,
-    createdAt: result.createdAt,
-    updatedAt: result.updatedAt,
-    priceINR: result.price,
-    interval: result.billingCycle === 'ANNUAL' ? 'yearly' : 'monthly',
-  } as SubscriptionPlan;
+  return mapPlan(result);
 }
 
 export async function updateSubscriptionPlan(planId: string, updates: Partial<SubscriptionPlan>): Promise<SubscriptionPlan> {
   const payload: any = {};
   if (updates.name !== undefined) payload.name = updates.name;
   if (updates.description !== undefined) payload.description = updates.description;
-  if (updates.price !== undefined) payload.price = updates.price;
-  if (updates.billingCycle !== undefined) payload.billingCycle = updates.billingCycle === 'annual' ? 'ANNUAL' : 'MONTHLY';
+  if (updates.allowsMonthly !== undefined) payload.allowsMonthly = updates.allowsMonthly;
+  if (updates.allowsAnnual !== undefined) payload.allowsAnnual = updates.allowsAnnual;
+  if (updates.monthlyPrice !== undefined) payload.monthlyPrice = updates.monthlyPrice;
+  if (updates.annualPrice !== undefined) payload.annualPrice = updates.annualPrice;
   if (updates.limits) {
     if (updates.limits.maxContestsPerCycle !== undefined) payload.maxContestsPerCycle = updates.limits.maxContestsPerCycle;
     if (updates.limits.maxParticipantsPerContest !== undefined) payload.maxParticipantsPerContest = updates.limits.maxParticipantsPerContest;
@@ -130,33 +114,7 @@ export async function updateSubscriptionPlan(planId: string, updates: Partial<Su
     body: JSON.stringify(payload),
   });
 
-  return {
-    id: result.id,
-    name: result.name,
-    slug: result.slug,
-    description: result.description,
-    price: result.price,
-    currency: result.currency,
-    billingCycle: result.billingCycle === 'ANNUAL' ? 'annual' : 'monthly',
-    isActive: result.isActive,
-    limits: {
-      maxContestsPerCycle: result.maxContestsPerCycle,
-      maxParticipantsPerContest: result.maxParticipantsPerContest,
-      maxQuestionsPerContest: result.maxQuestionsPerContest,
-      maxOrgMembers: result.maxOrgMembers,
-    },
-    features: {
-      proctoring: result.featureProctoring,
-      customCertificateBranding: result.featureCertBranding,
-      prioritySupport: result.featurePrioritySupport,
-      analyticsExport: result.featureAnalyticsExport,
-      customDomain: result.featureCustomDomain,
-    },
-    createdAt: result.createdAt,
-    updatedAt: result.updatedAt,
-    priceINR: result.price,
-    interval: result.billingCycle === 'ANNUAL' ? 'yearly' : 'monthly',
-  };
+  return mapPlan(result);
 }
 
 export async function getPlanImpact(planId: string): Promise<{ organizationCount: number; organizations: Array<{ id: string; name?: string }> }> {

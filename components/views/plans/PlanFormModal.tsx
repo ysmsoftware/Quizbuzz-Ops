@@ -12,9 +12,11 @@ const planSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   slug: z.string().min(1, 'Slug is required').regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric and hyphens only'),
   description: z.string().min(1, 'Description is required'),
-  price: z.coerce.number({ message: 'Price must be a number' }).min(0, 'Price must be 0 or positive'),
   currency: z.string().min(1, 'Currency is required'),
-  billingCycle: z.enum(['monthly', 'annual']),
+  allowsMonthly: z.boolean(),
+  allowsAnnual: z.boolean(),
+  monthlyPrice: z.coerce.number({ message: 'Monthly price must be a number' }).min(0, 'Monthly price must be 0 or positive').nullable(),
+  annualPrice: z.coerce.number({ message: 'Annual price must be a number' }).min(0, 'Annual price must be 0 or positive').nullable(),
   isActive: z.boolean(),
   limits: z.object({
     maxContestsPerCycle: z.number().int().positive('Must be positive').nullable(),
@@ -29,6 +31,16 @@ const planSchema = z.object({
     analyticsExport: z.boolean(),
     customDomain: z.boolean(),
   }),
+}).superRefine((data, ctx) => {
+  if (!data.allowsMonthly && !data.allowsAnnual) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enable at least one billing cycle', path: ['allowsMonthly'] });
+  }
+  if (data.allowsMonthly && (data.monthlyPrice === null || data.monthlyPrice === undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Monthly price is required', path: ['monthlyPrice'] });
+  }
+  if (data.allowsAnnual && (data.annualPrice === null || data.annualPrice === undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Annual price is required', path: ['annualPrice'] });
+  }
 });
 
 export type PlanFormValues = z.infer<typeof planSchema>;
@@ -54,9 +66,11 @@ export default function PlanFormModal({
       name: '',
       slug: '',
       description: '',
-      price: 0,
       currency: 'INR',
-      billingCycle: 'monthly',
+      allowsMonthly: true,
+      allowsAnnual: false,
+      monthlyPrice: 0,
+      annualPrice: null,
       isActive: true,
       limits: {
         maxContestsPerCycle: 10,
@@ -82,9 +96,11 @@ export default function PlanFormModal({
           name: editingPlan.name,
           slug: editingPlan.slug,
           description: editingPlan.description,
-          price: editingPlan.price,
           currency: editingPlan.currency || 'INR',
-          billingCycle: editingPlan.billingCycle,
+          allowsMonthly: editingPlan.allowsMonthly,
+          allowsAnnual: editingPlan.allowsAnnual,
+          monthlyPrice: editingPlan.monthlyPrice,
+          annualPrice: editingPlan.annualPrice,
           isActive: editingPlan.isActive,
           limits: {
             maxContestsPerCycle: editingPlan.limits.maxContestsPerCycle,
@@ -105,9 +121,11 @@ export default function PlanFormModal({
           name: '',
           slug: '',
           description: '',
-          price: 0,
           currency: 'INR',
-          billingCycle: 'monthly',
+          allowsMonthly: true,
+          allowsAnnual: false,
+          monthlyPrice: 0,
+          annualPrice: null,
           isActive: true,
           limits: {
             maxContestsPerCycle: 10,
@@ -208,30 +226,62 @@ export default function PlanFormModal({
                 {errors.description && <p className="text-destructive text-[11px] mt-0.5">{errors.description.message}</p>}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block font-medium mb-1">Price (₹ INR)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    {...register('price')}
-                    className="w-full px-3 py-2 rounded-md bg-background border border-input focus:ring-1 focus:ring-primary"
-                  />
-                  {errors.price && <p className="text-destructive text-[11px] mt-0.5">{errors.price.message}</p>}
-                </div>
+              <div className="space-y-3">
+                <label className="block font-medium">Billing Cycles &amp; Pricing</label>
+                <p className="text-[11px] text-muted-foreground -mt-1">
+                  Enable one or both cycles. Annual is not derived from monthly — set its own fixed rate.
+                </p>
 
-                <div>
-                  <label className="block font-medium mb-1">Billing Cycle</label>
-                  <select
-                    {...register('billingCycle')}
-                    className="w-full px-3 py-2 rounded-md bg-background border border-input focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="monthly">Monthly</option>
-                    <option value="annual">Annual</option>
-                  </select>
-                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className={`p-3 rounded-lg border transition-colors ${watch('allowsMonthly') ? 'border-primary/40 bg-primary/5' : 'border-border/40'}`}>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        {...register('allowsMonthly')}
+                        className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
+                      />
+                      <span className="font-medium">Monthly billing</span>
+                    </label>
+                    {watch('allowsMonthly') && (
+                      <div className="mt-2">
+                        <label className="block text-[11px] text-muted-foreground mb-1">Monthly Price (₹ INR)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          {...register('monthlyPrice')}
+                          className="w-full px-3 py-2 rounded-md bg-background border border-input focus:ring-1 focus:ring-primary"
+                        />
+                        {errors.monthlyPrice && <p className="text-destructive text-[11px] mt-0.5">{errors.monthlyPrice.message}</p>}
+                      </div>
+                    )}
+                  </div>
 
-                <div className="flex items-center pt-5 space-x-2">
+                  <div className={`p-3 rounded-lg border transition-colors ${watch('allowsAnnual') ? 'border-primary/40 bg-primary/5' : 'border-border/40'}`}>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        {...register('allowsAnnual')}
+                        className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
+                      />
+                      <span className="font-medium">Annual billing</span>
+                    </label>
+                    {watch('allowsAnnual') && (
+                      <div className="mt-2">
+                        <label className="block text-[11px] text-muted-foreground mb-1">Annual Price (₹ INR)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          {...register('annualPrice')}
+                          className="w-full px-3 py-2 rounded-md bg-background border border-input focus:ring-1 focus:ring-primary"
+                        />
+                        {errors.annualPrice && <p className="text-destructive text-[11px] mt-0.5">{errors.annualPrice.message}</p>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {errors.allowsMonthly && <p className="text-destructive text-[11px]">{errors.allowsMonthly.message}</p>}
+
+                <div className="flex items-center space-x-2 pt-1">
                   <input
                     type="checkbox"
                     id="isActive"

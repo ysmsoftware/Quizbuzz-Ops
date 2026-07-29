@@ -18,6 +18,15 @@ export class EntitlementsService implements IEntitlementsService {
     }
 
     const cachePayload = {
+      // Basic plan-choice + renewal info — read-only display data for the
+      // main app's Settings "Plan & Billing" tab. Not used for entitlement
+      // enforcement (the limits below are), so staleness between syncs is
+      // harmless: it only changes when a plan is assigned/changed/renewed,
+      // which is exactly when this function runs.
+      billingCycle: sub.billingCycle,
+      periodMonths: sub.periodMonths,
+      currentPeriodStart: sub.currentPeriodStart.toISOString(),
+      currentPeriodEnd: sub.currentPeriodEnd.toISOString(),
       maxContestsPerCycle: overrideMap.has('maxContestsPerCycle')
         ? overrideMap.get('maxContestsPerCycle')
         : sub.plan.maxContestsPerCycle,

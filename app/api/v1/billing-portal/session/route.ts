@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const secret = process.env.BILLING_HANDOFF_SECRET || env.BILLING_HANDOFF_SECRET || 'billing_handoff_secret_shared_key_998877';
+    const secret = env.BILLING_HANDOFF_SECRET;
     let payload: any;
     try {
       payload = verifyJwt(token, secret);
@@ -82,7 +82,8 @@ export async function POST(req: Request) {
         adminEmail,
         planSlug: plan.slug,
         planName: plan.name,
-        price: Number(plan.price),
+        monthlyPrice: plan.monthlyPrice != null ? Number(plan.monthlyPrice) : null,
+        annualPrice: plan.annualPrice != null ? Number(plan.annualPrice) : null,
       }
     );
 
@@ -118,9 +119,11 @@ export async function POST(req: Request) {
           name: plan.name,
           slug: plan.slug,
           description: plan.description || '',
-          price: Number(plan.price),
           currency: plan.currency,
-          billingCycle: plan.billingCycle,
+          allowsMonthly: plan.allowsMonthly,
+          allowsAnnual: plan.allowsAnnual,
+          monthlyPrice: plan.monthlyPrice != null ? Number(plan.monthlyPrice) : null,
+          annualPrice: plan.annualPrice != null ? Number(plan.annualPrice) : null,
           features: featureList,
         },
       },

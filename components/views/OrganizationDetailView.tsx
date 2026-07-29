@@ -316,7 +316,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
         )}
 
         {activeTab === 'subscription' && (
-          <OrganizationSubscriptionTab organization={organization} />
+          <OrganizationSubscriptionTab organization={organization} payments={payments} />
         )}
       </div>
 

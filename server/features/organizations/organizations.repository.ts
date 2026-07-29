@@ -216,8 +216,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
   }
 
   async getOrganizationPayments(orgId: string): Promise<any[]> {
-    const rows = await queryMainDb(`
-      SELECT 
+    const contestFeeRows = await queryMainDb(`
+      SELECT
         pay.id,
         pay.amount,
         pay.status,
@@ -233,17 +233,63 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       ORDER BY pay."paidAt" DESC
     `, [orgId]);
 
-    return rows.map(r => ({
+    const contestFeePayments = contestFeeRows.map(r => ({
       id: r.id,
-      source: 'contest_fee',
+      source: 'contest_fee' as const,
       referenceId: r.referenceId || `TXN_${r.id}`,
       payeeName: r.payeeName,
       description: `Quiz Entry Fee: ${r.contestTitle}`,
       amount: r.amount / 100, // paise to INR
-      status: 'PAID',
+      status: 'PAID' as const,
       paymentMethod: r.provider,
       date: new Date(r.date).toISOString(),
     }));
+
+    // Subscription payments live in the ops DB, not the main DB — a fully
+    // separate source that this ledger previously never queried, so ops
+    // admins had no visibility into subscription receipts here at all.
+    const subscriptionPayments = await prisma.opsPayment.findMany({
+      where: {
+        organizationId: orgId,
+        purpose: 'subscription',
+        status: { in: ['PAID', 'REFUNDED'] },
+      },
+      orderBy: { paidAt: 'desc' },
+    });
+
+    const planIds = [...new Set(subscriptionPayments.map((p) => p.planId).filter((id): id is string => !!id))];
+    const plans = planIds.length
+      ? await prisma.subscriptionPlan.findMany({ where: { id: { in: planIds } } })
+      : [];
+    const planNameById = new Map(plans.map((p) => [p.id, p.name]));
+
+    const mappedSubscriptionPayments = subscriptionPayments.map((p) => {
+      const planName = (p.planId && planNameById.get(p.planId)) || 'Subscription';
+      const cycleLabel = p.billingCycle === 'ANNUAL' ? 'Annual' : p.billingCycle === 'MONTHLY' ? 'Monthly' : '';
+      return {
+        id: p.id,
+        source: 'subscription' as const,
+        referenceId: p.razorpayPaymentId || p.razorpayOrderId || `TXN_${p.id}`,
+        payeeName: 'Organization Admin',
+        description: `Subscription: ${planName}${cycleLabel ? ` (${cycleLabel})` : ''}`,
+        amount: Number(p.amount),
+        status: p.status as 'PAID' | 'REFUNDED',
+        paymentMethod: 'Razorpay',
+        date: (p.paidAt || p.createdAt).toISOString(),
+        // Full price breakdown — this is what makes the row a self-contained
+        // receipt instead of just a final total, mirroring OpsPayment itself.
+        baseAmount: p.baseAmount != null ? Number(p.baseAmount) : undefined,
+        gatewayFeeAmount: p.gatewayFeeAmount != null ? Number(p.gatewayFeeAmount) : undefined,
+        gstAmount: p.gstAmount != null ? Number(p.gstAmount) : undefined,
+        billingCycle: p.billingCycle || undefined,
+        periodMonths: p.periodMonths || undefined,
+        planName,
+      };
+    });
+
+    return [...mappedSubscriptionPayments, ...contestFeePayments].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
   }
 
   async getOrganizationNotes(orgId: string) {

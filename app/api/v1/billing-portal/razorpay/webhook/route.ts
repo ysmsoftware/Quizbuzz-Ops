@@ -1,15 +1,54 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/server/db/ops-prisma';
+import { env } from '@/server/config/env';
 import SubscriptionsService from '@/server/features/subscriptions/subscriptions.service';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
-import { AuditTargetType } from '@prisma/client';
+import { AuditTargetType, BillingCycle } from '@prisma/client';
 
 const subscriptionsService = new SubscriptionsService();
 
+/**
+ * Razorpay-only. This is the single source of truth for whether a payment
+ * actually happened — nothing the browser sends can mark an OpsPayment PAID.
+ * Trust comes exclusively from a valid x-razorpay-signature HMAC over the
+ * raw request body, verified with RAZORPAY_WEBHOOK_SECRET (never falls back
+ * to RAZORPAY_KEY_SECRET — that's a different secret Razorpay never signs
+ * webhooks with, so a fallback there would just mask an unconfigured
+ * webhook, not protect one).
+ */
 export async function POST(req: Request) {
   try {
     const rawBody = await req.text();
+
+    const webhookSecret = env.RAZORPAY_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error('RAZORPAY_WEBHOOK_SECRET is not configured — rejecting webhook request.');
+      return NextResponse.json(
+        { success: false, error: 'Webhook is not configured' },
+        { status: 503 }
+      );
+    }
+
+    const signature = req.headers.get('x-razorpay-signature');
+    if (!signature) {
+      return NextResponse.json(
+        { success: false, error: 'Missing x-razorpay-signature header' },
+        { status: 400 }
+      );
+    }
+
+    const expectedSignature = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+    const expectedBuf = Buffer.from(expectedSignature);
+    const actualBuf = Buffer.from(signature);
+    const isValid =
+      expectedBuf.length === actualBuf.length && crypto.timingSafeEqual(expectedBuf, actualBuf);
+
+    if (!isValid) {
+      console.warn('Invalid Razorpay webhook signature');
+      return NextResponse.json({ success: false, error: 'Invalid webhook signature' }, { status: 400 });
+    }
+
     let body: any;
     try {
       body = JSON.parse(rawBody);
@@ -17,146 +56,160 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
     }
 
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET || '';
-    const signature = req.headers.get('x-razorpay-signature');
+    const event = body.event;
+    const paymentEntity = body.payload?.payment?.entity;
 
-    // Verify webhook signature if secret and signature are present
-    if (webhookSecret && signature) {
-      const expectedSignature = crypto
-        .createHmac('sha256', webhookSecret)
-        .update(rawBody)
-        .digest('hex');
-
-      if (expectedSignature !== signature) {
-        console.warn('Invalid Razorpay webhook signature');
-        return NextResponse.json({ success: false, error: 'Invalid webhook signature' }, { status: 400 });
-      }
+    if (!paymentEntity) {
+      return NextResponse.json({ success: true, message: 'Event acknowledged' });
     }
 
-    const event = body.event;
-    const payload = body.payload || {};
-
-    // Support both Razorpay Webhook payloads and direct payment completion payloads
-    const paymentEntity = payload.payment?.entity || body.payment || {};
-    const razorpayOrderId = paymentEntity.order_id || body.razorpayOrderId || body.orderId;
-    const razorpayPaymentId = paymentEntity.id || body.razorpayPaymentId || body.paymentId;
-    const planSlug = body.planSlug || paymentEntity.notes?.planSlug;
-    const adminEmail = body.adminEmail || paymentEntity.notes?.adminEmail;
-    const adminName = body.adminName || paymentEntity.notes?.adminName;
+    const razorpayOrderId: string | undefined = paymentEntity.order_id;
+    const razorpayPaymentId: string | undefined = paymentEntity.id;
+    const notes = paymentEntity.notes || {};
 
     const actor = {
       id: null,
-      email: adminEmail || 'admin@org.com',
-      name: adminName || 'Org Admin',
-      role: 'ORG_ADMIN via billing-portal',
+      email: notes.adminEmail || 'admin@org.com',
+      name: notes.adminName || 'Org Admin',
+      role: 'razorpay-webhook',
     };
 
-    if (event === 'payment.captured' || body.status === 'PAID' || body.action === 'capture') {
+    if (event === 'payment.captured') {
       if (!razorpayOrderId) {
-        return NextResponse.json({ success: false, error: 'Missing razorpayOrderId' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Missing order_id in payment entity' }, { status: 400 });
       }
 
-      // 1. Find the OpsPayment record
-      const opsPayment = await prisma.opsPayment.findFirst({
-        where: { razorpayOrderId },
-      });
-
+      const opsPayment = await prisma.opsPayment.findFirst({ where: { razorpayOrderId } });
       if (!opsPayment) {
-        return NextResponse.json({ success: false, error: 'OpsPayment record not found' }, { status: 404 });
+        console.warn('Webhook payment.captured for unknown order:', razorpayOrderId);
+        return NextResponse.json({ success: true, message: 'Event acknowledged for unknown order' });
       }
 
-      // 2. Mark OpsPayment as PAID
-      const updatedPayment = await prisma.opsPayment.update({
-        where: { id: opsPayment.id },
-        data: {
-          status: 'PAID',
-          paidAt: new Date(),
-          razorpayPaymentId: razorpayPaymentId || `pay_stub_${Date.now()}`,
-          razorpaySignature: signature || body.razorpaySignature || null,
-        },
-      });
-
-      // 3. Resolve Target Plan to Assign
-      let planToAssign = null;
-      if (planSlug) {
-        planToAssign = await prisma.subscriptionPlan.findUnique({ where: { slug: planSlug } });
+      const expectedPaise = Math.round(Number(opsPayment.amount) * 100);
+      if (typeof paymentEntity.amount === 'number' && paymentEntity.amount !== expectedPaise) {
+        console.error('Razorpay webhook amount mismatch — refusing to mark payment PAID.', {
+          opsPaymentId: opsPayment.id,
+          expectedPaise,
+          razorpayPaise: paymentEntity.amount,
+        });
+        return NextResponse.json({ success: true, message: 'Event acknowledged, amount mismatch flagged' });
       }
-      if (!planToAssign) {
-        // Fallback to starter-test or first active plan
-        planToAssign = await prisma.subscriptionPlan.findFirst({
-          where: { slug: 'starter-test', isActive: true },
+
+      let updatedPayment;
+      try {
+        updatedPayment = await prisma.opsPayment.update({
+          where: { razorpayOrderId, status: { notIn: ['PAID'] } },
+          data: {
+            status: 'PAID',
+            paidAt: new Date(),
+            razorpayPaymentId: razorpayPaymentId || opsPayment.razorpayPaymentId,
+            razorpaySignature: signature,
+          },
+        });
+      } catch (e: any) {
+        if (e?.code === 'P2025') {
+          // Already PAID. If the plan was already assigned (subscriptionId
+          // set), a concurrent delivery fully handled this — true no-op. If
+          // not, a prior delivery marked PAID but failed before finishing
+          // assignPlan/backfill/audit-log (e.g. a transient entitlements-
+          // sync error) — fall through and finish that work instead of
+          // leaving it stuck forever on every future retry.
+          if (opsPayment.subscriptionId) {
+            return NextResponse.json({ success: true, message: 'Already processed' });
+          }
+          updatedPayment = opsPayment;
+        } else {
+          throw e;
+        }
+      }
+
+      if (updatedPayment.subscriptionId) {
+        return NextResponse.json({ success: true, message: 'Already processed' });
+      }
+
+      if (!updatedPayment.planId) {
+        console.error('OpsPayment has no planId — cannot auto-assign subscription.', updatedPayment.id);
+        return NextResponse.json({
+          success: true,
+          message: 'Payment marked PAID but plan could not be auto-assigned (missing planId)',
         });
       }
 
-      if (planToAssign) {
-        // Assign plan (which syncs main DB plan limits cache automatically)
-        await subscriptionsService.assignPlan(
-          opsPayment.organizationId,
-          planToAssign.id,
-          actor
-        );
-      }
+      const billingCycle = (updatedPayment.billingCycle || 'MONTHLY') as BillingCycle;
+      const sub = await subscriptionsService.assignPlan(
+        updatedPayment.organizationId,
+        updatedPayment.planId,
+        actor,
+        billingCycle
+      );
 
-      // 4. Log Audit Entry for Payment Succeeded
+      await prisma.opsPayment.update({
+        where: { id: updatedPayment.id },
+        data: { subscriptionId: sub.id },
+      });
+
       await writeAuditLogEntry(
         actor,
         'billing_portal.payment_succeeded',
         AuditTargetType.PAYMENT,
-        opsPayment.id,
-        `Payment Succeeded - ₹${Number(opsPayment.amount)}`,
+        updatedPayment.id,
+        `Payment Succeeded - ₹${Number(updatedPayment.amount)}`,
         {
-          organizationId: opsPayment.organizationId,
+          organizationId: updatedPayment.organizationId,
           razorpayOrderId,
           razorpayPaymentId: updatedPayment.razorpayPaymentId,
-          amount: Number(opsPayment.amount),
-          currency: opsPayment.currency,
-          planSlug: planToAssign?.slug || null,
-          planName: planToAssign?.name || null,
+          planId: updatedPayment.planId,
+          billingCycle,
+          periodMonths: updatedPayment.periodMonths,
+          baseAmount: updatedPayment.baseAmount ? Number(updatedPayment.baseAmount) : null,
+          gatewayFeeAmount: updatedPayment.gatewayFeeAmount ? Number(updatedPayment.gatewayFeeAmount) : null,
+          gstAmount: updatedPayment.gstAmount ? Number(updatedPayment.gstAmount) : null,
+          amount: Number(updatedPayment.amount),
+          currency: updatedPayment.currency,
         }
       );
 
       return NextResponse.json({
         success: true,
         message: 'Payment processed and subscription updated successfully',
-        data: { paymentId: opsPayment.id, status: 'PAID' },
+        data: { paymentId: updatedPayment.id, status: 'PAID' },
       });
     }
 
-    if (event === 'payment.failed' || body.status === 'FAILED' || body.action === 'fail') {
+    if (event === 'payment.failed') {
       if (!razorpayOrderId) {
-        return NextResponse.json({ success: false, error: 'Missing razorpayOrderId' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Missing order_id in payment entity' }, { status: 400 });
       }
 
-      const opsPayment = await prisma.opsPayment.findFirst({
-        where: { razorpayOrderId },
-      });
-
-      if (opsPayment) {
-        await prisma.opsPayment.update({
-          where: { id: opsPayment.id },
+      let updatedPayment;
+      try {
+        updatedPayment = await prisma.opsPayment.update({
+          where: { razorpayOrderId, status: { notIn: ['PAID', 'FAILED'] } },
           data: { status: 'FAILED' },
         });
-
-        await writeAuditLogEntry(
-          actor,
-          'billing_portal.payment_failed',
-          AuditTargetType.PAYMENT,
-          opsPayment.id,
-          `Payment Failed - ₹${Number(opsPayment.amount)}`,
-          {
-            organizationId: opsPayment.organizationId,
-            razorpayOrderId,
-            amount: Number(opsPayment.amount),
-            currency: opsPayment.currency,
-            error: paymentEntity.error_description || body.error || 'Payment failed or cancelled',
-          }
-        );
+      } catch (e: any) {
+        if (e?.code === 'P2025') {
+          return NextResponse.json({ success: true, message: 'Already processed' });
+        }
+        throw e;
       }
 
-      return NextResponse.json({
-        success: true,
-        message: 'Payment marked as failed',
-      });
+      await writeAuditLogEntry(
+        actor,
+        'billing_portal.payment_failed',
+        AuditTargetType.PAYMENT,
+        updatedPayment.id,
+        `Payment Failed - ₹${Number(updatedPayment.amount)}`,
+        {
+          organizationId: updatedPayment.organizationId,
+          razorpayOrderId,
+          amount: Number(updatedPayment.amount),
+          currency: updatedPayment.currency,
+          error: paymentEntity.error_description || 'Payment failed',
+        }
+      );
+
+      return NextResponse.json({ success: true, message: 'Payment marked as failed' });
     }
 
     return NextResponse.json({ success: true, message: 'Event acknowledged' });

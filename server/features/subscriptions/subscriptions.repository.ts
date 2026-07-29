@@ -5,6 +5,7 @@ import {
   SubscriptionOverride,
   SubscriptionChangeLog,
   SubscriptionStatus,
+  BillingCycle,
 } from '@prisma/client';
 
 export interface ISubscriptionsRepository {
@@ -16,10 +17,17 @@ export interface ISubscriptionsRepository {
     organizationId: string;
     planId: string;
     status: SubscriptionStatus;
+    billingCycle: BillingCycle;
+    periodMonths: number;
     currentPeriodStart: Date;
     currentPeriodEnd: Date;
   }): Promise<OrganizationSubscription>;
-  updateSubscriptionPlan(organizationId: string, planId: string): Promise<OrganizationSubscription>;
+  updateSubscriptionPlan(
+    organizationId: string,
+    planId: string,
+    billingCycle: BillingCycle,
+    periodMonths: number
+  ): Promise<OrganizationSubscription>;
   createChangeLog(params: {
     id: string;
     subscriptionId: string;
@@ -75,6 +83,8 @@ export class SubscriptionsRepository implements ISubscriptionsRepository {
     organizationId: string;
     planId: string;
     status: SubscriptionStatus;
+    billingCycle: BillingCycle;
+    periodMonths: number;
     currentPeriodStart: Date;
     currentPeriodEnd: Date;
   }): Promise<OrganizationSubscription> {
@@ -83,6 +93,8 @@ export class SubscriptionsRepository implements ISubscriptionsRepository {
       update: {
         planId: params.planId,
         status: params.status,
+        billingCycle: params.billingCycle,
+        periodMonths: params.periodMonths,
         currentPeriodStart: params.currentPeriodStart,
         currentPeriodEnd: params.currentPeriodEnd,
       },
@@ -91,17 +103,26 @@ export class SubscriptionsRepository implements ISubscriptionsRepository {
         organizationId: params.organizationId,
         planId: params.planId,
         status: params.status,
+        billingCycle: params.billingCycle,
+        periodMonths: params.periodMonths,
         currentPeriodStart: params.currentPeriodStart,
         currentPeriodEnd: params.currentPeriodEnd,
       },
     });
   }
 
-  async updateSubscriptionPlan(organizationId: string, planId: string): Promise<OrganizationSubscription> {
+  async updateSubscriptionPlan(
+    organizationId: string,
+    planId: string,
+    billingCycle: BillingCycle,
+    periodMonths: number
+  ): Promise<OrganizationSubscription> {
     return prisma.organizationSubscription.update({
       where: { organizationId },
       data: {
         planId,
+        billingCycle,
+        periodMonths,
         updatedAt: new Date(),
       },
     });

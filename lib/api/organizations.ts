@@ -222,6 +222,14 @@ export interface OrgPayment {
   status: 'PAID' | 'PENDING' | 'FAILED' | 'REFUNDED';
   paymentMethod: string;
   date: string;
+  // Present only for source: 'subscription' — full price breakdown for
+  // rendering the row as a self-contained receipt.
+  baseAmount?: number;
+  gatewayFeeAmount?: number;
+  gstAmount?: number;
+  billingCycle?: 'MONTHLY' | 'ANNUAL';
+  periodMonths?: number;
+  planName?: string;
 }
 
 export async function getOrganizationPayments(orgId: string): Promise<OrgPayment[]> {
@@ -261,6 +269,8 @@ export async function getOrganizationSubscription(orgId: string): Promise<Organi
       organizationId: res.subscription.organizationId,
       planId: res.plan.id || res.plan.slug,
       status: res.subscription.status.toLowerCase(),
+      billingCycle: res.subscription.billingCycle,
+      periodMonths: res.subscription.periodMonths,
       currentPeriodStart: res.subscription.currentPeriodStart,
       currentPeriodEnd: res.subscription.currentPeriodEnd,
       overrides: (res.overrides || []).map((o: any) => ({

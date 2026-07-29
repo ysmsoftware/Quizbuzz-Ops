@@ -39,9 +39,11 @@ None.
       "name": "Starter Plan",
       "slug": "starter",
       "description": "Essential tier for small contest organizers.",
-      "price": 0,
       "currency": "INR",
-      "billingCycle": "MONTHLY",
+      "allowsMonthly": true,
+      "allowsAnnual": false,
+      "monthlyPrice": 0,
+      "annualPrice": null,
       "maxContestsPerCycle": 2,
       "maxParticipantsPerContest": 100,
       "maxQuestionsPerContest": 30,
@@ -58,9 +60,11 @@ None.
       "name": "Pro Business",
       "slug": "pro",
       "description": "Advanced tools for growing organizations.",
-      "price": 4999,
       "currency": "INR",
-      "billingCycle": "MONTHLY",
+      "allowsMonthly": true,
+      "allowsAnnual": true,
+      "monthlyPrice": 4999,
+      "annualPrice": 49999,
       "maxContestsPerCycle": 15,
       "maxParticipantsPerContest": 2500,
       "maxQuestionsPerContest": 150,
@@ -103,9 +107,11 @@ None.
     "id": "pln_pro",
     "name": "Pro Business",
     "slug": "pro",
-    "price": 4999,
     "currency": "INR",
-    "billingCycle": "MONTHLY",
+    "allowsMonthly": true,
+    "allowsAnnual": true,
+    "monthlyPrice": 4999,
+    "annualPrice": 49999,
     "maxContestsPerCycle": 15,
     "maxParticipantsPerContest": 2500,
     "maxQuestionsPerContest": 150,
@@ -140,9 +146,11 @@ None.
   "name": "Enterprise Plus",
   "slug": "enterprise-plus",
   "description": "Unlimited capacity for top tier universities and brands.",
-  "price": 19999,
   "currency": "INR",
-  "billingCycle": "MONTHLY",
+  "allowsMonthly": false,
+  "allowsAnnual": true,
+  "monthlyPrice": null,
+  "annualPrice": 199999,
   "maxContestsPerCycle": null,
   "maxParticipantsPerContest": null,
   "maxQuestionsPerContest": null,
@@ -165,7 +173,7 @@ None.
     "id": "pln_ent_plus",
     "name": "Enterprise Plus",
     "slug": "enterprise-plus",
-    "price": 19999,
+    "annualPrice": 199999,
     "isActive": true
   },
   "message": "Subscription plan created."
@@ -174,7 +182,7 @@ None.
 
 ##### Failure States
 - **`403 Forbidden`**: Role is not `SUPER_ADMIN` or `BILLING_ADMIN`.
-- **`400 Bad Request`**: Validation error in provided plan fields.
+- **`400 Bad Request`**: Validation error in provided plan fields — including a plan with neither `allowsMonthly` nor `allowsAnnual` set, or an enabled cycle missing its price (`monthlyPrice` required when `allowsMonthly`, `annualPrice` required when `allowsAnnual`).
 
 ---
 
@@ -189,7 +197,7 @@ None.
 #### Request Body
 ```json
 {
-  "price": 5499,
+  "monthlyPrice": 5499,
   "maxParticipantsPerContest": 3000
 }
 ```
@@ -201,7 +209,7 @@ None.
   "data": {
     "id": "pln_pro",
     "name": "Pro Business",
-    "price": 5499,
+    "monthlyPrice": 5499,
     "maxParticipantsPerContest": 3000
   },
   "message": "Subscription plan updated successfully."

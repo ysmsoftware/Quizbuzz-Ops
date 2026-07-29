@@ -9,9 +9,11 @@ const INITIAL_PLANS: SubscriptionPlan[] = [
     name: 'Starter',
     slug: 'starter',
     description: 'Perfect for testing and personal trivia games.',
-    price: 0,
     currency: 'INR',
-    billingCycle: 'monthly',
+    allowsMonthly: true,
+    allowsAnnual: false,
+    monthlyPrice: 0,
+    annualPrice: null,
     isActive: true,
     limits: {
       maxContestsPerCycle: 3,
@@ -28,23 +30,18 @@ const INITIAL_PLANS: SubscriptionPlan[] = [
     },
     createdAt: '2025-11-15T00:00:00Z',
     updatedAt: '2025-11-15T00:00:00Z',
-    
-    // Legacy fields
     priceINR: 0,
-    interval: 'monthly',
-    featuresLegacy: ['Up to 3 Active Quizzes', '100 Participants per Quiz', 'Standard Templates'],
-    maxQuizzes: 3,
-    maxParticipantsPerQuiz: 100,
-    customBranding: false,
   },
   {
     id: 'plan_starter',
     name: 'Growth',
     slug: 'growth',
     description: 'Designed for small tutoring centers and rising brands.',
-    price: 2999,
     currency: 'INR',
-    billingCycle: 'monthly',
+    allowsMonthly: true,
+    allowsAnnual: false,
+    monthlyPrice: 2999,
+    annualPrice: null,
     isActive: true,
     limits: {
       maxContestsPerCycle: 15,
@@ -61,23 +58,18 @@ const INITIAL_PLANS: SubscriptionPlan[] = [
     },
     createdAt: '2025-11-15T00:00:00Z',
     updatedAt: '2025-11-15T00:00:00Z',
-    
-    // Legacy fields
     priceINR: 2999,
-    interval: 'monthly',
-    featuresLegacy: ['Up to 15 Active Quizzes', '500 Participants per Quiz', 'Custom Colors', 'Basic Analytics'],
-    maxQuizzes: 15,
-    maxParticipantsPerQuiz: 500,
-    customBranding: true,
   },
   {
     id: 'plan_pro',
     name: 'Scale',
     slug: 'scale',
     description: 'For high-volume professional testing centers.',
-    price: 9999,
     currency: 'INR',
-    billingCycle: 'monthly',
+    allowsMonthly: true,
+    allowsAnnual: false,
+    monthlyPrice: 9999,
+    annualPrice: null,
     isActive: true,
     limits: {
       maxContestsPerCycle: 50,
@@ -94,23 +86,18 @@ const INITIAL_PLANS: SubscriptionPlan[] = [
     },
     createdAt: '2025-11-15T00:00:00Z',
     updatedAt: '2025-11-15T00:00:00Z',
-    
-    // Legacy fields
     priceINR: 9999,
-    interval: 'monthly',
-    featuresLegacy: ['Unlimited Active Quizzes', '2,500 Participants per Quiz', 'Full Brand Theme', 'Advanced Analytics & Exports', 'Dedicated Support'],
-    maxQuizzes: 9999,
-    maxParticipantsPerQuiz: 2500,
-    customBranding: true,
   },
   {
     id: 'plan_enterprise',
     name: 'Enterprise',
     slug: 'enterprise',
     description: 'Unlimited scale and features with dedicated hosting support.',
-    price: 49999,
     currency: 'INR',
-    billingCycle: 'monthly',
+    allowsMonthly: true,
+    allowsAnnual: false,
+    monthlyPrice: 49999,
+    annualPrice: null,
     isActive: true,
     limits: {
       maxContestsPerCycle: null,
@@ -127,14 +114,7 @@ const INITIAL_PLANS: SubscriptionPlan[] = [
     },
     createdAt: '2025-11-15T00:00:00Z',
     updatedAt: '2025-11-15T00:00:00Z',
-    
-    // Legacy fields
     priceINR: 49999,
-    interval: 'monthly',
-    featuresLegacy: ['Unlimited Quizzes', '10,000+ Participants per Quiz', 'Custom Domains', 'SLA Guarantee', 'Dedicated Account Manager'],
-    maxQuizzes: 99999,
-    maxParticipantsPerQuiz: 15000,
-    customBranding: true,
   }
 ];
 

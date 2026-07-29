@@ -16,7 +16,9 @@ interface PlanCardProps {
 }
 
 export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: PlanCardProps) {
-  const isFree = plan.price === 0;
+  const isFree =
+    (plan.allowsMonthly ? plan.monthlyPrice === 0 : true) &&
+    (plan.allowsAnnual ? plan.annualPrice === 0 : true);
   const activeCount = plan.organizationCount ?? orgCount;
 
   return (
@@ -76,15 +78,29 @@ export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: P
         </p>
 
         {/* Pricing */}
-        <div className="mt-4 pb-4 border-b border-border/40 flex items-baseline justify-between">
+        <div className="mt-4 pb-4 border-b border-border/40 flex items-start justify-between">
           <div>
-            <span className="text-2xl font-extrabold tracking-tight text-foreground">
-              {isFree ? 'Free' : `₹${plan.price.toLocaleString('en-IN')}`}
-            </span>
-            {!isFree && (
-              <span className="text-xs text-muted-foreground font-medium ml-1">
-                / {plan.billingCycle === 'annual' ? 'year' : 'month'}
-              </span>
+            {isFree ? (
+              <span className="text-2xl font-extrabold tracking-tight text-foreground">Free</span>
+            ) : (
+              <div className="space-y-0.5">
+                {plan.allowsMonthly && plan.monthlyPrice !== null && (
+                  <div>
+                    <span className="text-2xl font-extrabold tracking-tight text-foreground">
+                      ₹{plan.monthlyPrice.toLocaleString('en-IN')}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-medium ml-1">/ month</span>
+                  </div>
+                )}
+                {plan.allowsAnnual && plan.annualPrice !== null && (
+                  <div>
+                    <span className={plan.allowsMonthly ? 'text-sm font-bold text-foreground' : 'text-2xl font-extrabold tracking-tight text-foreground'}>
+                      ₹{plan.annualPrice.toLocaleString('en-IN')}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-medium ml-1">/ year</span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

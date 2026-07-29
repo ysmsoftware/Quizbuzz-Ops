@@ -112,9 +112,14 @@ export interface SubscriptionPlan {
   name: string;
   slug: string;
   description: string;
-  price: number;
   currency: string;
-  billingCycle: 'monthly' | 'annual';
+  // Which cycles this plan can be purchased under, and each cycle's own
+  // explicit price. Annual is never derived from monthly — some plans are
+  // annual-only with a fixed rate unrelated to any monthly figure.
+  allowsMonthly: boolean;
+  allowsAnnual: boolean;
+  monthlyPrice: number | null;
+  annualPrice: number | null;
   isActive: boolean;
   limits: {
     maxContestsPerCycle: number | null; // null represents "unlimited"
@@ -132,13 +137,9 @@ export interface SubscriptionPlan {
   createdAt: string;
   updatedAt: string;
 
-  // Backwards compatibility properties
+  // Display-only convenience price for simple "starting at ₹X" labels
+  // (e.g. plan-picker dropdowns) — the lower of whichever cycles are enabled.
   priceINR: number;
-  interval: 'monthly' | 'yearly';
-  featuresLegacy?: string[]; // to avoid collision with new features object
-  maxQuizzes?: number;
-  maxParticipantsPerQuiz?: number;
-  customBranding?: boolean;
   organizationCount?: number;
 }
 
@@ -157,6 +158,8 @@ export interface OrganizationSubscription {
   organizationId: string;
   planId: string;
   status: 'active' | 'past_due' | 'cancelled';
+  billingCycle?: 'MONTHLY' | 'ANNUAL';
+  periodMonths?: number;
   currentPeriodStart: string;
   currentPeriodEnd: string;
   overrides: SubscriptionOverride[];

@@ -1,13 +1,14 @@
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
-import { AuditTargetType } from '@prisma/client';
+import { AuditTargetType, BillingCycle } from '@prisma/client';
 import { generateUlid } from '../../utils/ulid';
 import { ISubscriptionsRepository, SubscriptionsRepository } from './subscriptions.repository';
 import { IEntitlementsService, EntitlementsService } from '../entitlements/entitlements.service';
+import { periodMonthsForCycle } from '../../../lib/pricing/subscriptionPricing';
 
 export interface ISubscriptionsService {
   getSubscription(orgId: string): Promise<any | null>;
-  assignPlan(orgId: string, planId: string, actor: AuditActor, periodStart?: Date, periodEnd?: Date): Promise<any>;
-  changePlan(orgId: string, toPlanId: string, actor: AuditActor, reason?: string): Promise<any>;
+  assignPlan(orgId: string, planId: string, actor: AuditActor, billingCycle?: BillingCycle, periodStart?: Date): Promise<any>;
+  changePlan(orgId: string, toPlanId: string, actor: AuditActor, billingCycle?: BillingCycle, reason?: string): Promise<any>;
   addOverride(orgId: string, field: string, value: any, reason: string, actor: AuditActor, expiresAt?: Date): Promise<any>;
   removeOverride(orgId: string, overrideId: string, reason: string, actor: AuditActor): Promise<any>;
 }
@@ -67,6 +68,8 @@ export class SubscriptionsService implements ISubscriptionsService {
         id: sub.id,
         organizationId: sub.organizationId,
         status: sub.status,
+        billingCycle: sub.billingCycle,
+        periodMonths: sub.periodMonths,
         currentPeriodStart: sub.currentPeriodStart.toISOString(),
         currentPeriodEnd: sub.currentPeriodEnd.toISOString(),
       },
@@ -94,20 +97,48 @@ export class SubscriptionsService implements ISubscriptionsService {
     };
   }
 
-  async assignPlan(orgId: string, planId: string, actor: AuditActor, periodStart?: Date, periodEnd?: Date) {
+  /**
+   * Resolves which billing cycle to use: the caller's explicit choice if the
+   * plan actually offers it, otherwise whichever single cycle the plan does
+   * offer. A plan offering both cycles requires an explicit choice.
+   */
+  private resolveBillingCycle(
+    plan: { allowsMonthly: boolean; allowsAnnual: boolean; slug: string },
+    requested?: BillingCycle
+  ): BillingCycle {
+    if (requested) {
+      if (requested === 'MONTHLY' && !plan.allowsMonthly) {
+        throw new Error(`Plan "${plan.slug}" does not offer monthly billing`);
+      }
+      if (requested === 'ANNUAL' && !plan.allowsAnnual) {
+        throw new Error(`Plan "${plan.slug}" does not offer annual billing`);
+      }
+      return requested;
+    }
+    if (plan.allowsMonthly) return 'MONTHLY';
+    if (plan.allowsAnnual) return 'ANNUAL';
+    throw new Error(`Plan "${plan.slug}" does not offer any billing cycle`);
+  }
+
+  async assignPlan(orgId: string, planId: string, actor: AuditActor, billingCycle?: BillingCycle, periodStart?: Date) {
     const plan = await this.repo.findPlanById(planId);
     if (!plan) throw new Error('Subscription plan not found');
     if (!plan.isActive) throw new Error('Cannot assign an inactive plan');
 
-    const now = new Date();
-    const start = periodStart || now;
-    const end = periodEnd || new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const resolvedCycle = this.resolveBillingCycle(plan, billingCycle);
+    const periodMonths = periodMonthsForCycle(resolvedCycle);
+
+    const start = periodStart || new Date();
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + periodMonths);
 
     const sub = await this.repo.upsertSubscription({
       id: generateUlid(),
       organizationId: orgId,
       planId,
       status: 'ACTIVE',
+      billingCycle: resolvedCycle,
+      periodMonths,
       currentPeriodStart: start,
       currentPeriodEnd: end,
     });
@@ -120,16 +151,16 @@ export class SubscriptionsService implements ISubscriptionsService {
       AuditTargetType.SUBSCRIPTION,
       sub.id,
       plan.name,
-      { organizationId: orgId, planId, planSlug: plan.slug }
+      { organizationId: orgId, planId, planSlug: plan.slug, billingCycle: resolvedCycle, periodMonths }
     );
 
     return sub;
   }
 
-  async changePlan(orgId: string, toPlanId: string, actor: AuditActor, reason?: string) {
+  async changePlan(orgId: string, toPlanId: string, actor: AuditActor, billingCycle?: BillingCycle, reason?: string) {
     const currentSub = await this.repo.findSubscriptionByOrgId(orgId);
     if (!currentSub) {
-      return this.assignPlan(orgId, toPlanId, actor);
+      return this.assignPlan(orgId, toPlanId, actor, billingCycle);
     }
 
     const fromPlanId = currentSub.planId;
@@ -137,8 +168,11 @@ export class SubscriptionsService implements ISubscriptionsService {
     if (!toPlan) throw new Error('Target plan not found');
     if (!toPlan.isActive) throw new Error('Cannot switch to an inactive plan');
 
+    const resolvedCycle = this.resolveBillingCycle(toPlan, billingCycle);
+    const periodMonths = periodMonthsForCycle(resolvedCycle);
+
     // Update subscription in ops DB
-    const updatedSub = await this.repo.updateSubscriptionPlan(orgId, toPlanId);
+    const updatedSub = await this.repo.updateSubscriptionPlan(orgId, toPlanId, resolvedCycle, periodMonths);
 
     // Record change log
     await this.repo.createChangeLog({

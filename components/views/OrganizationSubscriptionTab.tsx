@@ -5,6 +5,7 @@ import { useSubscription } from '@/lib/hooks/useSubscription';
 import { usePlans } from '@/lib/hooks/usePlans';
 import { useToast } from '@/components/ui/Toast';
 import { Organization, SubscriptionOverride } from '@/lib/types';
+import { OrgPayment } from '@/lib/api/organizations';
 import CurrentPlanCard from './organization-subscription/CurrentPlanCard';
 import QuotaUsageGrid from './organization-subscription/QuotaUsageGrid';
 import LimitOverridesTable from './organization-subscription/LimitOverridesTable';
@@ -17,12 +18,15 @@ import { Layers, AlertTriangle, Plus } from 'lucide-react';
 interface OrganizationSubscriptionTabProps {
   organization: Organization;
   onPlanChanged?: () => void;
+  payments?: OrgPayment[];
 }
 
 export default function OrganizationSubscriptionTab({
   organization,
   onPlanChanged,
+  payments,
 }: OrganizationSubscriptionTabProps) {
+  const subscriptionPayments = (payments || []).filter((p) => p.source === 'subscription');
   const { plans } = usePlans();
   const { toast } = useToast();
   const {
@@ -151,6 +155,7 @@ export default function OrganizationSubscriptionTab({
           subscription={subscription}
           currentPlan={currentPlan}
           onChangePlanClick={() => setIsChangePlanOpen(true)}
+          payments={subscriptionPayments}
         />
 
         <QuotaUsageGrid

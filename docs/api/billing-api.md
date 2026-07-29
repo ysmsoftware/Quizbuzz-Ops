@@ -123,9 +123,11 @@ The Billing API domain manages platform-wide payment transaction auditing, billi
       "id": "pln_pro",
       "name": "Pro Business",
       "slug": "pro",
-      "price": 4999,
       "currency": "INR",
-      "billingCycle": "MONTHLY",
+      "allowsMonthly": true,
+      "allowsAnnual": true,
+      "monthlyPrice": 4999,
+      "annualPrice": 49999,
       "features": [
         "15 contests per month",
         "Up to 2500 participants per contest",
@@ -145,31 +147,6 @@ The Billing API domain manages platform-wide payment transaction auditing, billi
 
 ---
 
-### 4. Razorpay Webhook Handler
-`POST /api/v1/billing-portal/razorpay/webhook`
+### 4. Razorpay Webhook Handler & Self-Serve Checkout
 
-- **Purpose**: Process asynchronous payment notification webhooks from Razorpay.
-- **Description**:
-  Verifies Razorpay webhook signature header (`x-razorpay-signature`). Processes events including `order.paid`, `payment.captured`, `payment.failed`, and `subscription.charged`. Updates subscription states and records payments.
-
-#### Request Headers
-- `x-razorpay-signature`: HMAC-SHA256 signature string.
-
-#### Request Body (Razorpay Webhook Payload)
-```json
-{
-  "entity": "event",
-  "account_id": "acc_100201",
-  "event": "order.paid",
-  "contains": ["payment", "order"],
-  "payload": { ... }
-}
-```
-
-#### Responses
-```json
-{
-  "status": "ok",
-  "processed": true
-}
-```
+`POST /api/v1/billing-portal/razorpay/webhook` (and the rest of the self-serve checkout flow — order creation, payment verification, status polling) is documented in full, including its trust model and signature verification requirements, in [`billing-portal-api.md`](./billing-portal-api.md).

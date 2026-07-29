@@ -36,12 +36,12 @@ None.
   "data": {
     "organizationId": "org_7712",
     "status": "ACTIVE",
+    "billingCycle": "MONTHLY",
+    "periodMonths": 1,
     "plan": {
       "id": "pln_pro",
       "name": "Pro Business",
-      "slug": "pro",
-      "price": 4999,
-      "billingCycle": "MONTHLY"
+      "slug": "pro"
     },
     "currentPeriodStart": "2026-07-01T00:00:00.000Z",
     "currentPeriodEnd": "2026-08-01T00:00:00.000Z",
@@ -86,9 +86,11 @@ None.
 ```json
 {
   "planId": "pln_ent_plus",
+  "billingCycle": "ANNUAL",
   "reason": "Manual upgrade requested by organization owner via sales deal."
 }
 ```
+`billingCycle` (`MONTHLY` | `ANNUAL`) is optional — if omitted, it defaults to whichever single cycle the target plan offers, or `MONTHLY` if the plan offers both. Pass it explicitly to assign the annual cycle on a plan that offers both.
 
 #### Responses
 
@@ -175,30 +177,6 @@ None.
 
 ---
 
-### 5. Create Subscription Razorpay Order (Billing Portal)
-`POST /api/v1/billing-portal/subscription/order`
+### 5. Self-Serve Checkout (Billing Portal)
 
-- **Purpose**: Initialize a Razorpay payment order for self-serve subscription checkout.
-- **Description**:
-  Creates a payment order in Razorpay API with correct price, currency (`INR`), and receipt metadata. Returns order ID and Razorpay key for frontend SDK checkout.
-
-#### Request Body
-```json
-{
-  "organizationId": "org_7712",
-  "planSlug": "pro"
-}
-```
-
-#### Responses
-```json
-{
-  "success": true,
-  "data": {
-    "orderId": "order_Rzp9921048",
-    "amount": 499900,
-    "currency": "INR",
-    "razorpayKeyId": "rzp_live_xK9110294812"
-  }
-}
-```
+The self-serve subscription checkout flow (`/billing/checkout`, org-admin-facing, distinct from the `SUPER_ADMIN`/`BILLING_ADMIN`-only endpoints above) — order creation, payment verification, status polling, and the Razorpay webhook — is documented separately in [`billing-portal-api.md`](./billing-portal-api.md).

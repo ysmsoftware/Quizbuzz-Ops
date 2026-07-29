@@ -52,10 +52,16 @@ export class BillingService implements IBillingService {
     const topOrgs = await this.repo.getTopOrganizationsByRevenue(5);
     const activeSubscriptions = await this.repo.getActiveSubscriptionsWithPlans();
 
+    // Normalize each subscription's contribution to a monthly figure based on
+    // the cycle it was actually purchased under — an annual subscription
+    // contributes 1/12th of its annual price, not the full amount every month.
     let mrr = 0;
     for (const sub of activeSubscriptions) {
-      if (sub.plan && sub.plan.price) {
-        mrr += Number(sub.plan.price);
+      if (!sub.plan) continue;
+      if (sub.billingCycle === 'ANNUAL' && sub.plan.annualPrice != null) {
+        mrr += Number(sub.plan.annualPrice) / 12;
+      } else if (sub.plan.monthlyPrice != null) {
+        mrr += Number(sub.plan.monthlyPrice);
       }
     }
 

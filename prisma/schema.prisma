@@ -38,6 +38,7 @@ enum AuditTargetType {
 }
 
 enum OpsPaymentStatus {
+  CREATED
   PENDING
   PAID
   FAILED
@@ -138,9 +139,17 @@ model SubscriptionPlan {
   name          String
   slug          String       @unique
   description   String?
-  price         Decimal      @db.Decimal(10, 2)
   currency      String       @default("INR")
-  billingCycle  BillingCycle @default(MONTHLY)
+
+  // Which billing cycles this plan can be purchased under, and the price for
+  // each. Independent per plan — a tier can be monthly-only, annual-only with
+  // its own fixed rate, or both. Annual is never auto-derived from monthly;
+  // an admin sets each enabled cycle's price explicitly.
+  allowsMonthly Boolean      @default(true)
+  allowsAnnual  Boolean      @default(false)
+  monthlyPrice  Decimal?     @db.Decimal(10, 2)
+  annualPrice   Decimal?     @db.Decimal(10, 2)
+
   isActive      Boolean      @default(true)
 
   maxContestsPerCycle       Int?
@@ -168,6 +177,11 @@ model OrganizationSubscription {
   organizationId     String             @unique
   planId             String
   status             SubscriptionStatus @default(ACTIVE)
+  // Cycle actually purchased for the current period — independent of
+  // whatever SubscriptionPlan's own allowsMonthly/allowsAnnual say today,
+  // since that can change after this subscription was created.
+  billingCycle       BillingCycle       @default(MONTHLY)
+  periodMonths       Int                @default(1)
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   cancelledAt        DateTime?
@@ -290,11 +304,21 @@ model OpsPayment {
   id                String           @id
   organizationId    String
   purpose           String
+  planId            String?
   subscriptionId    String?
   bookingId         String?
+
+  // Cycle + duration this payment is for, and the full price breakdown that
+  // produced `amount` — a self-contained receipt, not just a final total.
+  billingCycle      BillingCycle?
+  periodMonths      Int?
+  baseAmount        Decimal?         @db.Decimal(10, 2)
+  gatewayFeeAmount  Decimal?         @db.Decimal(10, 2)
+  gstAmount         Decimal?         @db.Decimal(10, 2)
+
   amount            Decimal          @db.Decimal(10, 2)
   currency          String           @default("INR")
-  status            OpsPaymentStatus @default(PENDING)
+  status            OpsPaymentStatus @default(CREATED)
   razorpayOrderId   String?          @unique
   razorpayPaymentId String?          @unique
   razorpaySignature String?
@@ -307,5 +331,6 @@ model OpsPayment {
 
   @@index([organizationId])
   @@index([status, createdAt])
+  @@index([planId])
   @@map("ops_payments")
 }

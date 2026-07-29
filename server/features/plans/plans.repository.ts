@@ -18,7 +18,7 @@ export class PlansRepository implements IPlansRepository {
           where: { status: 'ACTIVE' },
         },
       },
-      orderBy: { price: 'asc' },
+      orderBy: [{ monthlyPrice: { sort: 'asc', nulls: 'last' } }, { annualPrice: { sort: 'asc', nulls: 'last' } }],
     });
   }
 

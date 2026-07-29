@@ -1,22 +1,38 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { OrganizationSubscription, SubscriptionPlan } from '@/lib/types';
-import { Layers, Calendar, ArrowRight, ShieldCheck, CreditCard } from 'lucide-react';
+import { OrgPayment } from '@/lib/api/organizations';
+import { Layers, Calendar, ArrowRight, ShieldCheck, CreditCard, Receipt, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface CurrentPlanCardProps {
   subscription: OrganizationSubscription;
   currentPlan: SubscriptionPlan | undefined;
   onChangePlanClick: () => void;
+  /** Subscription-source payments for this org, newest first is not required — sorted here. */
+  payments?: OrgPayment[];
 }
 
 export default function CurrentPlanCard({
   subscription,
   currentPlan,
   onChangePlanClick,
+  payments = [],
 }: CurrentPlanCardProps) {
-  const isFree = currentPlan ? currentPlan.price === 0 : true;
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const cycle = subscription.billingCycle || 'MONTHLY';
+  const displayPrice = currentPlan
+    ? cycle === 'ANNUAL'
+      ? currentPlan.annualPrice
+      : currentPlan.monthlyPrice
+    : null;
+  const isFree = displayPrice === 0 || displayPrice === null;
+
+  const paidPayments = payments
+    .filter((p) => p.status === 'PAID')
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const lastPayment = paidPayments[0];
 
   return (
     <div className="p-6 bg-card border border-border/50 rounded-xl flex flex-col justify-between space-y-6 shadow-xs">
@@ -41,11 +57,11 @@ export default function CurrentPlanCard({
         {/* Price & Billing Cycle */}
         <div className="mt-4 flex items-baseline space-x-2">
           <span className="text-2xl font-black text-foreground">
-            {isFree ? 'Free' : `₹${currentPlan?.price.toLocaleString('en-IN')}`}
+            {displayPrice === null ? '—' : isFree ? 'Free' : `₹${displayPrice.toLocaleString('en-IN')}`}
           </span>
-          {!isFree && (
+          {!isFree && displayPrice !== null && (
             <span className="text-xs text-muted-foreground font-medium">
-              / {currentPlan?.billingCycle === 'annual' ? 'year' : 'month'}
+              / {cycle === 'ANNUAL' ? 'year' : 'month'}
             </span>
           )}
         </div>
@@ -65,6 +81,66 @@ export default function CurrentPlanCard({
             </div>
           )}
         </div>
+
+        {/* Payment Receipt — our own record of the last successful charge,
+            independent of the receipt Razorpay emails the payer directly. */}
+        {lastPayment && (
+          <div className="mt-4 pt-4 border-t border-border/40">
+            <button
+              type="button"
+              onClick={() => setIsReceiptOpen((v) => !v)}
+              className="w-full flex items-center justify-between text-xs font-semibold text-foreground hover:text-primary transition-colors"
+            >
+              <span className="flex items-center space-x-1.5">
+                <Receipt className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Last Payment Receipt</span>
+              </span>
+              {isReceiptOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+
+            {isReceiptOpen && (
+              <div className="mt-3 p-3 bg-secondary/20 border border-border/40 rounded-lg space-y-1.5 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Base Amount</span>
+                  <span className="font-mono text-foreground">
+                    {lastPayment.baseAmount != null ? `₹${lastPayment.baseAmount.toLocaleString('en-IN')}` : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Gateway Fee (2%)</span>
+                  <span className="font-mono text-foreground">
+                    {lastPayment.gatewayFeeAmount != null ? `₹${lastPayment.gatewayFeeAmount.toLocaleString('en-IN')}` : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">GST (18% on fee)</span>
+                  <span className="font-mono text-foreground">
+                    {lastPayment.gstAmount != null ? `₹${lastPayment.gstAmount.toLocaleString('en-IN')}` : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between pt-1.5 border-t border-border/40">
+                  <span className="font-semibold text-foreground">Total Paid</span>
+                  <span className="font-mono font-bold text-foreground">₹{lastPayment.amount.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between pt-1.5 border-t border-border/40 text-muted-foreground">
+                  <span>Paid On</span>
+                  <span className="font-mono">{format(new Date(lastPayment.date), 'MMM d, yyyy, hh:mm a')}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Reference ID</span>
+                  <span className="font-mono truncate max-w-[140px]" title={lastPayment.referenceId}>
+                    {lastPayment.referenceId}
+                  </span>
+                </div>
+                {paidPayments.length > 1 && (
+                  <p className="pt-1 text-[10px] text-muted-foreground italic">
+                    +{paidPayments.length - 1} earlier payment{paidPayments.length - 1 === 1 ? '' : 's'} — see the Payments tab for the full ledger.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <button

@@ -90,6 +90,14 @@ export interface OrgPaymentDetail {
   status: 'PAID' | 'PENDING' | 'FAILED' | 'REFUNDED';
   paymentMethod: string;
   date: string;
+  // Present only for source: 'subscription' — the full price breakdown that
+  // produced `amount`, so the row can be rendered as a self-contained receipt.
+  baseAmount?: number;
+  gatewayFeeAmount?: number;
+  gstAmount?: number;
+  billingCycle?: 'MONTHLY' | 'ANNUAL';
+  periodMonths?: number;
+  planName?: string;
 }
 
 export interface SupportNoteDetail {

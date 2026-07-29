@@ -15,7 +15,7 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
-  BILLING_HANDOFF_SECRET: z.string().default('billing_handoff_secret_shared_key_998877'),
+  BILLING_HANDOFF_SECRET: z.string().min(1, 'BILLING_HANDOFF_SECRET must be set — it signs the checkout handoff token'),
   MAIN_APP_FRONTEND_URL: z.string().default('http://localhost:3000'),
   OTP_EXPIRY_MINUTES: z.coerce.number().default(5),
   SMTP_HOST: z.string().optional(),
@@ -51,9 +51,15 @@ const envSchema = z.object({
 const parseEnv = () => {
   const result = envSchema.safeParse(process.env);
   if (!result.success) {
-    // If building, do not crash on missing envs
+    // If building, do not crash on missing envs. BILLING_HANDOFF_SECRET has no
+    // default (see below) so the static analysis pass at build time needs a
+    // throwaway value here — this placeholder is never read at runtime since a
+    // real request only ever executes after process.env is validated for real.
     if (process.env.NEXT_PHASE === 'phase-production-build' || process.env.NODE_ENV === 'test') {
-      return envSchema.parse({});
+      return envSchema.parse({
+        ...process.env,
+        BILLING_HANDOFF_SECRET: process.env.BILLING_HANDOFF_SECRET || 'build_time_placeholder_unused_at_runtime',
+      });
     }
     console.error('❌ Invalid environment variables:', result.error.format());
     throw new Error('Invalid environment variables configured');

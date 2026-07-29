@@ -1,13 +1,14 @@
 import { z } from 'zod';
-import { BillingCycle } from '@prisma/client';
 
 export const planCreateSchema = z.object({
   name: z.string().min(1, 'Plan name is required'),
   slug: z.string().min(1, 'Plan slug is required'),
   description: z.string().default(''),
-  price: z.coerce.number().min(0, 'Price must be non-negative'),
   currency: z.string().default('INR'),
-  billingCycle: z.nativeEnum(BillingCycle).default(BillingCycle.MONTHLY),
+  allowsMonthly: z.boolean().default(true),
+  allowsAnnual: z.boolean().default(false),
+  monthlyPrice: z.coerce.number().min(0, 'monthlyPrice must be non-negative').nullable().optional(),
+  annualPrice: z.coerce.number().min(0, 'annualPrice must be non-negative').nullable().optional(),
   maxContestsPerCycle: z.coerce.number().nullable().optional(),
   maxParticipantsPerContest: z.coerce.number().nullable().optional(),
   maxQuestionsPerContest: z.coerce.number().nullable().optional(),

@@ -45,6 +45,14 @@ enum OpsPaymentStatus {
   REFUNDED
 }
 
+enum BookingStatus {
+  QUOTED
+  PAID
+  PROVISIONED
+  COMPLETED
+  CANCELLED
+}
+
 // MODELS
 
 model PlatformAdmin {
@@ -64,6 +72,8 @@ model PlatformAdmin {
   refreshTokens PlatformAdminRefreshToken[]
   auditEntries  PlatformAuditLog[]
   orgNotes      OrganizationNote[]
+  pricingConfigUpdates PricingConfig[]
+  contestBookings      ContestBooking[]
 
   @@index([email])
   @@map("platform_admins")
@@ -307,6 +317,7 @@ model OpsPayment {
   planId            String?
   subscriptionId    String?
   bookingId         String?
+  booking           ContestBooking?
 
   // Cycle + duration this payment is for, and the full price breakdown that
   // produced `amount` — a self-contained receipt, not just a final total.
@@ -333,4 +344,75 @@ model OpsPayment {
   @@index([status, createdAt])
   @@index([planId])
   @@map("ops_payments")
+}
+
+model PricingConfig {
+  id                                   String   @id @default("pricing_default")
+  currency                             String   @default("INR")
+  baseBookingFee                       Decimal  @db.Decimal(10, 2)
+  perParticipantCost                   Decimal  @db.Decimal(10, 2)
+  perQuestionCost                      Decimal  @db.Decimal(10, 2)
+  perInstanceHourCost                  Decimal  @db.Decimal(10, 2)
+  participantsPerInstance              Int
+  elastiCachePerDayCost                Decimal  @db.Decimal(10, 2)
+  addOnProctoringEnabled               Boolean  @default(true)
+  addOnProctoringFlatCost              Decimal  @db.Decimal(10, 2)
+  addOnCertificatesEnabled             Boolean  @default(true)
+  addOnCertificatesPerParticipantCost  Decimal  @db.Decimal(10, 2)
+  addOnPrioritySupportEnabled          Boolean  @default(true)
+  addOnPrioritySupportFlatCost         Decimal  @db.Decimal(10, 2)
+  marginMultiplier                     Decimal  @db.Decimal(5, 3)
+  updatedById                          String?
+  updatedByName                        String
+  createdAt                            DateTime @default(now())
+  updatedAt                            DateTime @updatedAt
+
+  updatedBy PlatformAdmin? @relation(fields: [updatedById], references: [id])
+
+  @@map("pricing_configs")
+}
+
+model ContestBooking {
+  id                    String        @id
+  status                BookingStatus @default(QUOTED)
+
+  organizationId        String?
+  organizationName      String?
+  organizationEmail     String?
+
+  contestName           String
+  durationMinutes       Int
+  questionCount         Int
+  participantCount      Int
+
+  addOnProctoring       Boolean
+  addOnCertificates     Boolean
+  addOnPrioritySupport  Boolean
+
+  pricingBreakdown      Json
+
+  desiredStartTime      DateTime?
+  quotedAt              DateTime      @default(now())
+  paidAt                DateTime?
+  provisionedAt         DateTime?
+  cancelledAt           DateTime?
+  cancellationReason    String?
+
+  paymentMethod         String?
+  paymentReference      String?
+  opsPaymentId          String?       @unique
+
+  createdById           String
+  createdByName         String
+
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  createdBy PlatformAdmin @relation(fields: [createdById], references: [id])
+  opsPayment OpsPayment?  @relation(fields: [opsPaymentId], references: [id])
+
+  @@index([status])
+  @@index([organizationId])
+  @@index([quotedAt])
+  @@map("contest_bookings")
 }

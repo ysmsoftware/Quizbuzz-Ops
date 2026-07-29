@@ -30,9 +30,27 @@ import { useOrganizations } from '@/lib/hooks/useOrganizations';
 import { usePricingConfig, useBookings } from '@/lib/hooks/useBookings';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { calculateBookingEstimate } from '@/lib/api/bookings';
-import { INITIAL_PRICING_CONFIG } from '@/lib/data/db';
 import { PricingConfig } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
+
+const DEFAULT_PRICING_CONFIG: PricingConfig = {
+  id: 'pricing_default',
+  currency: 'INR',
+  baseBookingFee: 5000,
+  perParticipantCost: 2.5,
+  perQuestionCost: 10,
+  perInstanceHourCost: 45,
+  participantsPerInstance: 1000,
+  elastiCachePerDayCost: 150,
+  addOns: {
+    proctoring: { enabled: true, flatCost: 3500 },
+    certificates: { enabled: true, perParticipantCost: 1.5 },
+    prioritySupport: { enabled: true, flatCost: 2000 },
+  },
+  marginMultiplier: 1.35,
+  updatedAt: '',
+  updatedByAdminName: 'System Default',
+};
 
 // Form validation schema for booking calculator
 const calculatorSchema = z.object({
@@ -110,7 +128,7 @@ export default function ContestCalculator() {
   const { pricingConfig, updatePricingConfig, isUpdating } = usePricingConfig();
   const { createBooking, isCreating } = useBookings();
 
-  const currentConfig = pricingConfig || INITIAL_PRICING_CONFIG;
+  const currentConfig = pricingConfig || DEFAULT_PRICING_CONFIG;
 
   const [activeTab, setActiveTab] = useState<'calculator' | 'settings'>('calculator');
   const [copied, setCopied] = useState(false);

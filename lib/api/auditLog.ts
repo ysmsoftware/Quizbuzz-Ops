@@ -52,7 +52,7 @@ export async function getAuditLogs(): Promise<AuditLogEntry[]> {
  */
 export function writeAuditLogEntry(
   action: string,
-  targetType: 'organization' | 'plan' | 'payment' | 'pricing_config' | 'booking' | 'feature_flag',
+  targetType: 'organization' | 'plan' | 'payment' | 'feature_flag',
   targetId: string,
   targetLabel: string,
   metadata: any

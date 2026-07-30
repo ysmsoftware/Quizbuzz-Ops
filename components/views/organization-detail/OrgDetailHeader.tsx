@@ -6,7 +6,6 @@ import {
   ShieldCheck, 
   ShieldAlert, 
   ExternalLink, 
-  UserCheck, 
   Edit3, 
   Lock, 
   RefreshCw, 
@@ -18,7 +17,6 @@ import { Organization } from '@/lib/types';
 interface OrgDetailHeaderProps {
   organization: Organization;
   onBackClick: () => void;
-  onOpenImpersonate: () => void;
   onOpenEdit: () => void;
   onOpenSuspend: () => void;
   onReactivate: () => void;
@@ -29,7 +27,6 @@ interface OrgDetailHeaderProps {
 export default function OrgDetailHeader({
   organization,
   onBackClick,
-  onOpenImpersonate,
   onOpenEdit,
   onOpenSuspend,
   onReactivate,
@@ -86,14 +83,6 @@ export default function OrgDetailHeader({
 
         {/* Operational Admin Actions Bar */}
         <div className="flex flex-wrap items-center gap-2 font-sans w-full lg:w-auto">
-          {/* Impersonation button */}
-          <button
-            onClick={onOpenImpersonate}
-            className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 transition-colors shadow-sm cursor-pointer"
-          >
-            <UserCheck className="h-4 w-4" />
-            <span>Impersonate Staff</span>
-          </button>
 
           {/* Edit basic profile */}
           <button

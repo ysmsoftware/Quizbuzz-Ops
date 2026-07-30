@@ -11,6 +11,7 @@ export function useCurrentAdmin() {
     queryKey: ['auth', 'session'],
     queryFn: getCurrentSession,
     initialData: () => getCurrentSessionSync() || undefined,
+    enabled: typeof window !== 'undefined',
   });
 
   const loginMutation = useMutation({

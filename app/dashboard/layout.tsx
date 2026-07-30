@@ -51,7 +51,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'calculator', label: 'Contest Calculator', phase: 'phase 4', href: '/dashboard/calculator', icon: Calculator },
   { id: 'bookings', label: 'Bookings', phase: 'phase 4', href: '/dashboard/bookings', icon: CalendarClock },
   { id: 'infra', label: 'Infra & Cost', phase: 'phase 5', href: '/dashboard/infra', icon: Cpu, hidden: true },
-  { id: 'flags', label: 'Feature Flags', phase: 'phase 6', href: '/dashboard/flags', icon: Sliders },
+  { id: 'flags', label: 'Feature Flags', phase: 'phase 6', href: '/dashboard/flags', icon: Sliders, hidden: true },
 ];
 
 // Items actually rendered in the sidebar — `hidden` items stay defined above
@@ -283,11 +283,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <Icon className="h-4.5 w-4.5 shrink-0" />
                         <div className="flex-1 text-left">
                           <span>{item.label}</span>
-                          {item.phase !== 'Phase 1' && (
-                            <span className="text-[8px] bg-accent/20 text-accent-foreground ml-2 px-1 py-0.5 rounded leading-none font-bold">
-                              {item.phase}
-                            </span>
-                          )}
                         </div>
                       </button>
                     );
@@ -380,7 +375,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold font-sans transition-all group relative cursor-pointer ${
                     isActive ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                   }`}
-                  title={isSidebarCollapsed ? `${item.label} (${item.phase})` : undefined}
+                  title={isSidebarCollapsed ? item.label : undefined}
                 >
                   {/* Sliding Background Pill */}
                   {isActive && (
@@ -403,13 +398,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         className="flex-1 text-left truncate flex items-center justify-between"
                       >
                         <span className="truncate">{item.label}</span>
-                        {item.phase !== 'Phase 1' && (
-                          <span className={`text-[8px] px-1 py-0.5 rounded leading-none font-bold shrink-0 ml-1 transition-all ${
-                            isActive ? 'bg-background/20 text-primary-foreground' : 'bg-accent/15 text-accent-foreground'
-                          }`}>
-                            {item.phase}
-                          </span>
-                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>

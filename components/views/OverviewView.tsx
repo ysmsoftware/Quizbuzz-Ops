@@ -79,9 +79,7 @@ export default function OverviewPlaceholder() {
   if (isLoading) {
     return (
       <div className="space-y-6 font-sans animate-pulse">
-        {/* Banner Skeleton */}
-        <div className="h-24 bg-secondary/30 rounded-xl border border-border/30" />
-        
+
         {/* KPI Grid Skeletons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map(i => (
@@ -200,31 +198,7 @@ export default function OverviewPlaceholder() {
   return (
     <div id="overview-dashboard-view" className="space-y-6 font-sans">
       
-      {/* Welcome Banner */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 rounded-xl p-6 shadow-sm">
-        <div className="space-y-1">
-          <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            Namaste, {admin?.name || 'Operator'}! <Sparkles className="h-4.5 w-4.5 text-accent animate-pulse" />
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {isImpersonating ? (
-              <span>You are currently in Impersonation Mode for <strong className="text-amber-500 font-bold">{impersonatedOrgName}</strong>. All statistics are filtered.</span>
-            ) : (
-              <span>Current system status is stable. You are operating as a <span className="font-bold text-primary font-mono">{admin?.role}</span>.</span>
-            )}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            id="overview-reset-data-btn"
-            onClick={handleResetData}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border border-border/50 bg-card hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-sm"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span>Reset Demo Data</span>
-          </button>
-        </div>
-      </div>
+
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -63,10 +63,21 @@ export async function getCurrentSession(): Promise<AdminSession | null> {
     }
     return result.admin;
   } catch (err) {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(SESSION_KEY);
+    // If access token expired, attempt session refresh via refresh token cookie
+    try {
+      const refreshResult = await apiRequest<{ admin: AdminSession }>('/api/v1/ops/auth/refresh', {
+        method: 'POST',
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(refreshResult.admin));
+      }
+      return refreshResult.admin;
+    } catch (refreshErr) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(SESSION_KEY);
+      }
+      return null;
     }
-    return null;
   }
 }
 

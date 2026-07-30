@@ -3,23 +3,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getCurrentSession, login, logout, getCurrentSessionSync, verifyOtpCode } from '@/lib/api/auth';
 import { AdminRole, AdminSession } from '@/lib/types';
-import { useEffect, useState } from 'react';
 
 export function useCurrentAdmin() {
   const queryClient = useQueryClient();
-  const [localSession, setLocalSession] = useState<AdminSession | null | undefined>(undefined);
-
-  // Read the localStorage-backed session only after mount — reading it during
-  // the initial render would differ between SSR (no window) and the client's
-  // first render, causing a hydration mismatch.
-  useEffect(() => {
-    setLocalSession(getCurrentSessionSync());
-  }, []);
 
   const { data: session, isLoading, refetch } = useQuery({
     queryKey: ['auth', 'session'],
     queryFn: getCurrentSession,
-    initialData: localSession || undefined,
+    initialData: () => getCurrentSessionSync() || undefined,
   });
 
   const loginMutation = useMutation({
@@ -31,7 +22,6 @@ export function useCurrentAdmin() {
     mutationFn: ({ email, otp }: { email: string; otp: string }) =>
       verifyOtpCode(email, otp),
     onSuccess: (data) => {
-      setLocalSession(data);
       queryClient.setQueryData(['auth', 'session'], data);
       queryClient.invalidateQueries();
     },
@@ -40,7 +30,6 @@ export function useCurrentAdmin() {
   const logoutMutation = useMutation({
     mutationFn: logout,
     onSuccess: () => {
-      setLocalSession(null);
       queryClient.setQueryData(['auth', 'session'], null);
       queryClient.clear();
     },

@@ -192,8 +192,6 @@ export default function OverviewPlaceholder() {
     }
   };
 
-  const isImpersonating = typeof window !== 'undefined' && !!localStorage.getItem('quizbuzz_impersonated_org_id');
-  const impersonatedOrgName = typeof window !== 'undefined' ? localStorage.getItem('quizbuzz_impersonated_org_name') : null;
 
   return (
     <div id="overview-dashboard-view" className="space-y-6 font-sans">

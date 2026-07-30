@@ -182,36 +182,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       )}
 
-      {/* Impersonation Banner */}
-      {impersonatedOrgId && (
-        <div
-          id="impersonation-banner"
-          className="bg-gradient-to-r from-amber-600 via-red-600 to-amber-600 text-white text-xs font-bold py-2.5 px-4 flex items-center justify-between shadow-md select-none text-center shrink-0 sticky top-0 z-50"
-        >
-          <div className="flex items-center gap-2 mx-auto sm:mx-0">
-            <span className="relative flex h-2 w-2 mr-1">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-            </span>
-            <span>You are viewing as <strong className="underline decoration-wavy font-extrabold">{impersonatedOrgName}</strong> • All metrics are filtered to this tenant</span>
-          </div>
-          <button
-            id="exit-impersonation-banner-btn"
-            onClick={() => {
-              import('@/lib/api/auditLog').then(({ writeAuditLogEntry }) => {
-                writeAuditLogEntry('org.impersonation_ended', 'organization', impersonatedOrgId, impersonatedOrgName || 'Unknown Org', {});
-              });
-              const endingEvent = new CustomEvent('quizbuzz_impersonate', {
-                detail: { orgId: null, orgName: null }
-              });
-              window.dispatchEvent(endingEvent);
-            }}
-            className="ml-4 px-3 py-1 bg-white hover:bg-white/95 text-amber-700 hover:text-amber-800 rounded-md font-bold text-[10px] uppercase transition-all shadow-sm cursor-pointer shrink-0"
-          >
-            Exit Impersonation
-          </button>
-        </div>
-      )}
 
       <div className="flex-1 flex min-h-0">
 
@@ -482,16 +452,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {/* Quick search and control deck */}
           <div className="flex items-center gap-2 sm:gap-3.5">
 
-            {/* Impersonation Indicator Block */}
-            {impersonatedOrgId ? (
-              <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-amber-500 bg-amber-500/10 rounded-md border border-amber-500/20 font-mono">
-                Impersonating: {impersonatedOrgName}
-              </span>
-            ) : (
-              <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-muted-foreground/80 bg-secondary/30 rounded-md border border-border/40 font-mono">
-                Impersonation: none
-              </span>
-            )}
 
             {/* Global Cmd+K Search trigger */}
             <button

@@ -22,7 +22,6 @@ import OrganizationSubscriptionTab from './OrganizationSubscriptionTab';
 import OrgEditModal from './organization-detail/modals/OrgEditModal';
 import OrgSuspendModal from './organization-detail/modals/OrgSuspendModal';
 import OrgDeleteModal from './organization-detail/modals/OrgDeleteModal';
-import OrgImpersonateModal from './organization-detail/modals/OrgImpersonateModal';
 
 interface DetailViewProps {
   orgId: string;
@@ -69,7 +68,6 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
   const [isSuspendOpen, setIsSuspendOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [isImpersonateConfirmOpen, setIsImpersonateConfirmOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
   const [confirmNameDelete, setConfirmNameDelete] = useState('');
 
@@ -130,32 +128,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
     }
   };
 
-  const handleConfirmImpersonation = () => {
-    if (!organization) return;
-    
-    writeAuditLogEntry(
-      'org.impersonated',
-      'organization',
-      organization.id,
-      organization.name,
-      {
-        ipAddress: '192.168.1.5',
-        actorAdminId: admin?.id,
-        actorAdminName: admin?.name,
-        actorAdminRole: admin?.role,
-      }
-    );
 
-    const impersonationEvent = new CustomEvent('quizbuzz_impersonate', {
-      detail: {
-        orgId: organization.id,
-        orgName: organization.name
-      }
-    });
-    window.dispatchEvent(impersonationEvent);
-    
-    setIsImpersonateConfirmOpen(false);
-  };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,7 +200,6 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
       <OrgDetailHeader
         organization={organization}
         onBackClick={handleBackClick}
-        onOpenImpersonate={() => setIsImpersonateConfirmOpen(true)}
         onOpenEdit={() => setIsEditOpen(true)}
         onOpenSuspend={() => setIsSuspendOpen(true)}
         onReactivate={handleReactivateClick}
@@ -354,14 +326,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
         onSubmit={handleDeleteSubmit}
       />
 
-      <OrgImpersonateModal
-        isOpen={isImpersonateConfirmOpen}
-        onClose={() => setIsImpersonateConfirmOpen(false)}
-        orgName={organization.name}
-        orgSlug={organization.slug}
-        adminEmail={admin?.email}
-        onConfirm={handleConfirmImpersonation}
-      />
+
 
     </div>
   );

@@ -126,14 +126,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
-  // Auth guard: wait for session query to settle before deciding user is logged out
+  const [isMounted, setIsMounted] = useState(false);
+
   useEffect(() => {
-    if (!isLoading && !admin) {
+    setIsMounted(true);
+  }, []);
+
+  // Auth guard: wait for session query to settle after mount before deciding user is logged out
+  useEffect(() => {
+    if (isMounted && !isLoading && !admin) {
       router.push('/login');
     }
-  }, [admin, isLoading, router]);
+  }, [admin, isLoading, isMounted, router]);
 
-  if (isLoading) return null;
+  if (!isMounted || isLoading) return null;
   if (!admin) return null;
 
   const handleSelectOrgFromSearch = (orgId: string) => {

@@ -14,15 +14,22 @@ export class PlatformAuthController {
     return okResponse(result, 'Verification code has been dispatched.');
   }
 
+  private isHttpsRequest(req: Request): boolean {
+    const proto = req.headers.get('x-forwarded-proto');
+    if (proto) return proto.split(',')[0].trim() === 'https';
+    return req.url.startsWith('https://');
+  }
+
   async verifyOtp(req: Request, userAgent: string | null, ipAddress: string | null) {
     const input = await parseRequest(req, verifyOtpSchema);
     const result = await this.service.verifyOtp(input.email, input.otp, userAgent, ipAddress);
 
     const cookieStore = await cookies();
+    const isSecure = this.isHttpsRequest(req);
 
     cookieStore.set('ops_access_token', result.accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecure,
       sameSite: 'lax',
       maxAge: 30 * 60, // 30 mins
       path: '/',
@@ -30,7 +37,7 @@ export class PlatformAuthController {
 
     cookieStore.set('ops_refresh_token', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecure,
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60, // 7 days
       path: '/',
@@ -39,7 +46,7 @@ export class PlatformAuthController {
     return okResponse({ admin: result.admin }, 'Verification successful. Session established.');
   }
 
-  async refresh(userAgent: string | null, ipAddress: string | null) {
+  async refresh(userAgent: string | null, ipAddress: string | null, req?: Request) {
     const cookieStore = await cookies();
     const refreshToken = cookieStore.get('ops_refresh_token')?.value;
 
@@ -48,10 +55,11 @@ export class PlatformAuthController {
     }
 
     const result = await this.service.refresh(refreshToken, userAgent, ipAddress);
+    const isSecure = req ? this.isHttpsRequest(req) : process.env.NODE_ENV === 'production';
 
     cookieStore.set('ops_access_token', result.accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecure,
       sameSite: 'lax',
       maxAge: 30 * 60,
       path: '/',

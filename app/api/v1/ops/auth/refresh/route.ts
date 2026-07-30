@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   try {
     const userAgent = req.headers.get('user-agent');
     const ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip');
-    return await platformAuthController.refresh(userAgent, ipAddress);
+    return await platformAuthController.refresh(userAgent, ipAddress, req);
   } catch (err) {
     return handleRouteError(err);
   }

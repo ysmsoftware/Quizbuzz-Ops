@@ -5,9 +5,12 @@ export const auditLogListQuerySchema = z.object({
   page: z.coerce.number().default(1),
   limit: z.coerce.number().default(20),
   action: z.string().optional(),
+  actionPrefix: z.string().optional(),
   targetType: z.nativeEnum(AuditTargetType).optional(),
   targetId: z.string().optional(),
   actorId: z.string().optional(),
+  actorName: z.string().optional(),
+  targetLabel: z.string().optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
 });

@@ -4,6 +4,7 @@ import { IPlatformAuthService, PlatformAuthService } from './platform-auth.servi
 import { okResponse } from '../../http/envelope';
 import { cookies } from 'next/headers';
 import { getSessionAdmin } from '../../http/auth-guard';
+import { AuthenticationError } from '../../http/errors';
 
 export class PlatformAuthController {
   constructor(private service: IPlatformAuthService = new PlatformAuthService()) {}
@@ -51,7 +52,13 @@ export class PlatformAuthController {
     const refreshToken = cookieStore.get('ops_refresh_token')?.value;
 
     if (!refreshToken) {
-      throw new Error('Refresh token is missing from session cookies.');
+      // Must be a 401 (AuthenticationError), not a bare Error — handleRouteError()
+      // maps anything that isn't an AppError to a 500. The client's
+      // getCurrentSession() (lib/api/auth.ts) only treats a *definitive 401*
+      // from this endpoint as "really logged out"; a 500 here would instead be
+      // rethrown as a transient failure and retried, leaving the admin stuck
+      // rather than cleanly signed out when the refresh cookie is genuinely gone.
+      throw new AuthenticationError('Refresh token is missing from session cookies.');
     }
 
     const result = await this.service.refresh(refreshToken, userAgent, ipAddress);
@@ -88,15 +95,26 @@ export class PlatformAuthController {
     const nameParts = admin.name.split(' ');
     const firstName = nameParts[0] || '';
     const lastName = nameParts.slice(1).join(' ') || '';
-    
+
+    // MUST be wrapped in `{ admin: ... }` — lib/api/auth.ts#getCurrentSession()
+    // reads `result.admin` off this response, matching the exact same shape
+    // verifyOtp() and refresh() below already return. This endpoint used to
+    // return the admin fields flat (no `admin` wrapper), which meant
+    // `result.admin` was always `undefined` on the client even on a 200 —
+    // silently breaking every session-validation call (the one that runs on
+    // every hard refresh) while /verify-otp's directly-cached login data
+    // masked it immediately after login. This was the actual cause of
+    // "still logged in per the server, but bounced to /login on refresh."
     return okResponse({
-      id: admin.id,
-      email: admin.email,
-      name: admin.name,
-      firstName,
-      lastName,
-      role: admin.role,
-      avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&fit=crop&q=80` // default fallback avatar
+      admin: {
+        id: admin.id,
+        email: admin.email,
+        name: admin.name,
+        firstName,
+        lastName,
+        role: admin.role,
+        avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&fit=crop&q=80` // default fallback avatar
+      },
     }, 'Operator profile retrieved.');
   }
 }

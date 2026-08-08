@@ -14,6 +14,9 @@ export const changePlanSchema = z.object({
 export const addOverrideSchema = z.object({
   field: z.string().min(1, 'Limit field name is required'),
   value: z.any(),
+  // ADDITIVE (default): stacks on top of the current effective limit — the
+  // "existing plan + 1" behavior. ABSOLUTE: replaces it outright.
+  mode: z.enum(['ADDITIVE', 'ABSOLUTE']).default('ADDITIVE'),
   reason: z.string().min(1, 'Reason is required for limit override'),
   expiresAt: z.string().optional(),
 });

@@ -51,7 +51,12 @@ export function verifyJwt(token: string, secret: string): any {
     .digest();
   const computedSignatureB64 = base64url(computedSignature);
 
-  if (computedSignatureB64 !== signatureB64) {
+  const expectedBuf = Buffer.from(computedSignatureB64);
+  const actualBuf = Buffer.from(signatureB64);
+  const isValid =
+    expectedBuf.length === actualBuf.length && crypto.timingSafeEqual(expectedBuf, actualBuf);
+
+  if (!isValid) {
     throw new Error('Invalid JWT signature');
   }
 

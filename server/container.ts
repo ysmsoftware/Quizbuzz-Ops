@@ -41,6 +41,8 @@ import { BookingsRepository } from './features/bookings/bookings.repository';
 import { BookingsService } from './features/bookings/bookings.service';
 import { BookingsController } from './features/bookings/bookings.controller';
 
+import { OrgOwnerNotifier } from './notifications/org-owner-notifier';
+
 // ─── Repositories ──────────────────────────────────────────
 export const auditLogRepository = new AuditLogRepository();
 export const billingRepository = new BillingRepository();
@@ -63,6 +65,7 @@ export const messagingService = new MessagingService(messagingRepository);
 export const organizationsService = new OrganizationsService(organizationsRepository);
 export const overviewService = new OverviewService(overviewRepository);
 export const payoutsService = new PayoutsService(payoutsRepository);
+export const orgOwnerNotifier = new OrgOwnerNotifier(organizationsRepository, messagingService);
 export const subscriptionsService = new SubscriptionsService(subscriptionsRepository, entitlementsService);
 export const plansService = new PlansService(plansRepository, entitlementsService, subscriptionsRepository);
 export const platformAuthService = new PlatformAuthService(platformAuthRepository);

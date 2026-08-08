@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/server/db/ops-prisma';
 import { env } from '@/server/config/env';
+import { okResponse, errorResponse } from '@/server/http/envelope';
 
 /**
  * Called by the browser once Razorpay's checkout.js `handler` fires.
@@ -17,18 +17,17 @@ export async function POST(req: Request) {
     const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = body;
 
     if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
-      return NextResponse.json(
-        { success: false, error: 'razorpayOrderId, razorpayPaymentId and razorpaySignature are required' },
-        { status: 400 }
+      return errorResponse(
+        'razorpayOrderId, razorpayPaymentId and razorpaySignature are required',
+        'VALIDATION_ERROR',
+        null,
+        400
       );
     }
 
     const keySecret = env.RAZORPAY_KEY_SECRET || '';
     if (!keySecret) {
-      return NextResponse.json(
-        { success: false, error: 'Payment gateway is not configured' },
-        { status: 503 }
-      );
+      return errorResponse('Payment gateway is not configured', 'GATEWAY_NOT_CONFIGURED', null, 503);
     }
 
     const expectedSignature = crypto
@@ -42,10 +41,7 @@ export async function POST(req: Request) {
       expectedBuf.length === actualBuf.length && crypto.timingSafeEqual(expectedBuf, actualBuf);
 
     if (!isValid) {
-      return NextResponse.json(
-        { success: false, error: 'Payment signature verification failed' },
-        { status: 400 }
-      );
+      return errorResponse('Payment signature verification failed', 'INVALID_SIGNATURE', null, 400);
     }
 
     // Guarded: only ever moves CREATED -> PENDING. If the webhook already
@@ -61,12 +57,9 @@ export async function POST(req: Request) {
       if (e?.code !== 'P2025') throw e;
     }
 
-    return NextResponse.json({ success: true, data: { verified: true } });
+    return okResponse({ verified: true }, 'Payment signature verified.');
   } catch (error: any) {
     console.error('Error verifying billing portal payment signature:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error verifying payment' },
-      { status: 500 }
-    );
+    return errorResponse('Internal server error verifying payment', 'INTERNAL_SERVER_ERROR', null, 500);
   }
 }

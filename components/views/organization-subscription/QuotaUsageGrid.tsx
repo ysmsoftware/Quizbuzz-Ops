@@ -1,33 +1,17 @@
 'use client';
 
 import React from 'react';
-import { OrganizationSubscription, SubscriptionPlan, UsageSnapshot } from '@/lib/types';
-import { Trophy, Users, HelpCircle, Layers, ShieldAlert, Check } from 'lucide-react';
+import { OrganizationSubscription, UsageSnapshot } from '@/lib/types';
+import { Trophy, Users, HelpCircle, Layers, ShieldAlert } from 'lucide-react';
 
 interface QuotaUsageGridProps {
+  /** Only `effectiveLimits` is read — already computed server-side (see effective-limits.ts), never re-derived here. */
   subscription: OrganizationSubscription;
-  currentPlan: SubscriptionPlan | undefined;
   usage: UsageSnapshot | null;
 }
 
-export default function QuotaUsageGrid({ subscription, currentPlan, usage }: QuotaUsageGridProps) {
-  const getEffectiveLimit = (fieldName: keyof SubscriptionPlan['limits']) => {
-    const activeOverride = subscription.overrides.find((o) => o.field === fieldName);
-    const planVal = currentPlan ? currentPlan.limits[fieldName] : null;
-    if (activeOverride) {
-      return {
-        value: activeOverride.value,
-        isOverridden: true,
-        originalValue: planVal,
-        overrideReason: activeOverride.reason,
-      };
-    }
-    return {
-      value: planVal,
-      isOverridden: false,
-      originalValue: planVal,
-    };
-  };
+export default function QuotaUsageGrid({ subscription, usage }: QuotaUsageGridProps) {
+  const { effectiveLimits } = subscription;
 
   const quotas = [
     {
@@ -36,23 +20,26 @@ export default function QuotaUsageGrid({ subscription, currentPlan, usage }: Quo
       icon: Trophy,
       color: 'text-amber-500',
       used: usage?.contestsUsedThisCycle ?? 0,
-      limitInfo: getEffectiveLimit('maxContestsPerCycle'),
+      limitInfo: effectiveLimits.maxContestsPerCycle,
     },
     {
       key: 'maxParticipantsPerContest' as const,
       label: 'Max Participants per Quiz',
       icon: Users,
       color: 'text-blue-500',
-      used: usage?.participantsUsedThisCycle ?? 0,
-      limitInfo: getEffectiveLimit('maxParticipantsPerContest'),
+      // This is a per-contest ceiling, not an org-wide total — showing the
+      // org's single fullest contest is what actually indicates how close
+      // they are to hitting it.
+      used: usage?.maxParticipantsInAContest ?? 0,
+      limitInfo: effectiveLimits.maxParticipantsPerContest,
     },
     {
       key: 'maxQuestionsPerContest' as const,
       label: 'Max Questions per Quiz',
       icon: HelpCircle,
       color: 'text-indigo-500',
-      used: 0, // static metric
-      limitInfo: getEffectiveLimit('maxQuestionsPerContest'),
+      used: usage?.maxQuestionsInAContest ?? 0,
+      limitInfo: effectiveLimits.maxQuestionsPerContest,
     },
     {
       key: 'maxOrgMembers' as const,
@@ -60,7 +47,7 @@ export default function QuotaUsageGrid({ subscription, currentPlan, usage }: Quo
       icon: Layers,
       color: 'text-purple-500',
       used: usage?.memberCountUsed ?? 1,
-      limitInfo: getEffectiveLimit('maxOrgMembers'),
+      limitInfo: effectiveLimits.maxOrgMembers,
     },
   ];
 
@@ -76,7 +63,7 @@ export default function QuotaUsageGrid({ subscription, currentPlan, usage }: Quo
           <div
             key={quota.key}
             className={`p-5 bg-card border rounded-xl space-y-4 shadow-xs relative overflow-hidden transition-all ${
-              quota.limitInfo.isOverridden ? 'border-amber-500/40 bg-amber-500/5' : 'border-border/50'
+              quota.limitInfo.overridden ? 'border-amber-500/40 bg-amber-500/5' : 'border-border/50'
             }`}
           >
             <div className="flex items-start justify-between">
@@ -87,8 +74,8 @@ export default function QuotaUsageGrid({ subscription, currentPlan, usage }: Quo
                 <div>
                   <h4 className="font-semibold text-xs text-foreground">{quota.label}</h4>
                   <p className="text-[11px] text-muted-foreground">
-                    {quota.limitInfo.isOverridden ? (
-                      <span className="text-amber-600 font-medium">Overridden (Plan default: {quota.limitInfo.originalValue ?? '∞'})</span>
+                    {quota.limitInfo.overridden ? (
+                      <span className="text-amber-600 font-medium">Overridden (Plan default: {quota.limitInfo.planValue ?? '∞'})</span>
                     ) : (
                       'Standard tier limit'
                     )}
@@ -96,7 +83,7 @@ export default function QuotaUsageGrid({ subscription, currentPlan, usage }: Quo
                 </div>
               </div>
 
-              {quota.limitInfo.isOverridden && (
+              {quota.limitInfo.overridden && (
                 <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-600 border border-amber-500/30 flex items-center space-x-1">
                   <ShieldAlert className="h-3 w-3" />
                   <span>Override Active</span>

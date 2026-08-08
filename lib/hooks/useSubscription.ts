@@ -8,7 +8,8 @@ import {
   addSubscriptionOverride,
   removeSubscriptionOverride,
   getPlanChangeHistory,
-  getUsageSnapshot
+  getUsageSnapshot,
+  resendRenewalReminder,
 } from '@/lib/api/organizations';
 import { SubscriptionOverride } from '@/lib/types';
 
@@ -28,9 +29,9 @@ export function useSubscription(orgId: string) {
   });
 
   const usageQuery = useQuery({
-    queryKey: ['organizations', 'usage', orgId, subQuery.data?.id],
-    queryFn: () => getUsageSnapshot(orgId, subQuery.data!),
-    enabled: !!orgId && !!subQuery.data,
+    queryKey: ['organizations', 'usage', orgId],
+    queryFn: () => getUsageSnapshot(orgId),
+    enabled: !!orgId,
   });
 
   const assignInitialPlanMutation = useMutation({
@@ -72,6 +73,13 @@ export function useSubscription(orgId: string) {
     }
   });
 
+  const resendReminderMutation = useMutation({
+    mutationFn: () => resendRenewalReminder(orgId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+    },
+  });
+
   return {
     subscription: subQuery.data || null,
     isSubLoading: subQuery.isLoading,
@@ -91,6 +99,9 @@ export function useSubscription(orgId: string) {
 
     removeOverride: removeOverrideMutation.mutateAsync,
     isRemovingOverride: removeOverrideMutation.isPending,
+
+    resendReminder: resendReminderMutation.mutateAsync,
+    isResendingReminder: resendReminderMutation.isPending,
   };
 }
 

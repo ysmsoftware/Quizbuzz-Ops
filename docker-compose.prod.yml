@@ -24,8 +24,13 @@ services:
       - OPS_JWT_REFRESH_SECRET=${OPS_JWT_REFRESH_SECRET}
       - OPS_ALLOWED_ORIGINS=${OPS_ALLOWED_ORIGINS:-https://ops.ysmquizbuzz.com}
       - MAIN_APP_FRONTEND_URL=${MAIN_APP_FRONTEND_URL:-https://ysmquizbuzz.com}
+      # NOTE: NEXT_PUBLIC_MAIN_APP_URL is intentionally NOT set here — it's a
+      # build-time-only value (see Dockerfile ARG), listing it as a runtime
+      # env var here would be a no-op and misleadingly suggest it's fixable
+      # without a rebuild.
       - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
       - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
       - OTP_EXPIRY_MINUTES=${OTP_EXPIRY_MINUTES:-5}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT:-465}

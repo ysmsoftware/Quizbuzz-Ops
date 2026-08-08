@@ -25,6 +25,7 @@ import {
   Cpu,
   Sliders,
   Landmark,
+  MessagesSquare,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -47,6 +48,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'plans', label: 'Subscription Plans', phase: 'phase 2', href: '/dashboard/plans', icon: Sparkles },
   { id: 'billing', label: 'Billing & Revenue', phase: 'phase 2', href: '/dashboard/billing', icon: Receipt },
   { id: 'payouts', label: 'Payout Accounts', phase: 'phase 2', href: '/dashboard/payouts', icon: Landmark },
+  { id: 'messaging', label: 'Messaging', phase: 'phase 2', href: '/dashboard/messaging', icon: MessagesSquare },
   { id: 'audit', label: 'Audit Log', phase: 'phase 3', href: '/dashboard/audit-log', icon: Database },
   { id: 'calculator', label: 'Contest Calculator', phase: 'phase 4', href: '/dashboard/calculator', icon: Calculator },
   { id: 'bookings', label: 'Bookings', phase: 'phase 4', href: '/dashboard/bookings', icon: CalendarClock },
@@ -60,7 +62,7 @@ const NAV_ITEMS: NavItem[] = [
 const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.hidden);
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { admin, isLoading, logout } = useCurrentAdmin();
+  const { admin, isLoading, isFetching, logout } = useCurrentAdmin();
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
@@ -132,14 +134,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setIsMounted(true);
   }, []);
 
-  // Auth guard: wait for session query to settle after mount before deciding user is logged out
+  // Auth guard: wait for the session query to fully settle after mount
+  // before deciding the user is logged out. `isLoading` alone is NOT
+  // enough here — because useCurrentAdmin() seeds the query with cached
+  // `initialData`, react-query reports isLoading:false immediately even
+  // while it's still validating that cache against the server in the
+  // background. Gating on `isFetching` too means we only redirect once
+  // that validation has actually finished (and, per getCurrentSession(),
+  // it only resolves to a falsy session on a definitive 401 — not on a
+  // transient network blip). This is what previously caused a hard
+  // refresh to sometimes bounce a still-validly-logged-in admin to /login.
+  const authSettled = !isLoading && !isFetching;
+
   useEffect(() => {
-    if (isMounted && !isLoading && !admin) {
+    if (isMounted && authSettled && !admin) {
       router.push('/login');
     }
-  }, [admin, isLoading, isMounted, router]);
+  }, [admin, authSettled, isMounted, router]);
 
   if (!isMounted || isLoading) return null;
+  if (!admin && !authSettled) return null; // still validating a cached-but-unconfirmed session
   if (!admin) return null;
 
   const handleSelectOrgFromSearch = (orgId: string) => {

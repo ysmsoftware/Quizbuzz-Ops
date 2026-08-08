@@ -54,7 +54,7 @@ export default function LimitOverridesTable({
             <thead className="bg-muted/40 text-muted-foreground font-semibold border-b">
               <tr>
                 <th className="py-2.5 px-3">Limit Field</th>
-                <th className="py-2.5 px-3">Overridden Value</th>
+                <th className="py-2.5 px-3">Adjustment</th>
                 <th className="py-2.5 px-3">Authorization Reason</th>
                 <th className="py-2.5 px-3">Expires At</th>
                 <th className="py-2.5 px-3 text-right">Actions</th>
@@ -67,7 +67,11 @@ export default function LimitOverridesTable({
                     {limitLabels[ov.field] || ov.field}
                   </td>
                   <td className="py-2.5 px-3 font-mono font-bold text-amber-600">
-                    {ov.value === null || ov.value === undefined ? 'Unlimited' : ov.value}
+                    {ov.value === null || ov.value === undefined
+                      ? 'Unlimited'
+                      : ov.mode === 'ADDITIVE'
+                        ? `+${ov.value}`
+                        : `= ${ov.value}`}
                   </td>
                   <td className="py-2.5 px-3 text-muted-foreground">{ov.reason}</td>
                   <td className="py-2.5 px-3 text-muted-foreground">

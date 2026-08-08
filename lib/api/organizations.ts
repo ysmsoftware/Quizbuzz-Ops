@@ -236,6 +236,24 @@ export async function getOrganizationPayments(orgId: string): Promise<OrgPayment
   return apiRequest<OrgPayment[]>(`/api/v1/ops/organizations/${orgId}/payments`);
 }
 
+export interface ResendResult {
+  sent: boolean;
+}
+
+/** Resends the BILLING_RECEIPT email for a specific subscription payment. */
+export async function resendPaymentReceipt(orgId: string, paymentId: string): Promise<ResendResult> {
+  return apiRequest<ResendResult>(`/api/v1/ops/organizations/${orgId}/payments/${paymentId}/resend-receipt`, {
+    method: 'POST',
+  });
+}
+
+/** Resends the SUBSCRIPTION_RENEWAL_REMINDER email to the organization owner. */
+export async function resendRenewalReminder(orgId: string): Promise<ResendResult> {
+  return apiRequest<ResendResult>(`/api/v1/ops/organizations/${orgId}/subscription/resend-reminder`, {
+    method: 'POST',
+  });
+}
+
 export async function getOrganizationContests(orgId: string): Promise<Contest[]> {
   const rawList = await apiRequest<any[]>(`/api/v1/ops/organizations/${orgId}/contests`);
   return rawList.map((c) => ({
@@ -277,10 +295,15 @@ export async function getOrganizationSubscription(orgId: string): Promise<Organi
         id: o.id,
         field: o.field,
         value: typeof o.value === 'string' ? JSON.parse(o.value) : o.value,
+        mode: o.mode,
         reason: o.reason,
         expiresAt: o.expiresAt,
         createdAt: o.createdAt,
       })),
+      // Server-computed (server/features/subscriptions/effective-limits.ts) —
+      // the frontend renders this rather than re-deriving it from raw
+      // overrides, so there's exactly one place the fold logic lives.
+      effectiveLimits: res.effectiveLimits,
     };
   } catch (err) {
     return null;
@@ -312,6 +335,7 @@ export async function addSubscriptionOverride(
     body: JSON.stringify({
       field: override.field,
       value: override.value,
+      mode: override.mode,
       reason: override.reason,
       expiresAt: override.expiresAt,
     }),
@@ -345,13 +369,16 @@ export async function getPlanChangeHistory(orgId: string): Promise<PlanChangeEve
   }));
 }
 
-export async function getUsageSnapshot(orgId: string, subscription: OrganizationSubscription): Promise<UsageSnapshot> {
-  const contests = await getOrganizationContests(orgId);
-  const members = await getOrganizationMembers(orgId);
-  
-  return {
-    contestsUsedThisCycle: contests.length,
-    participantsUsedThisCycle: contests.reduce((sum, c) => sum + (c.participantCount || 0), 0),
-    memberCountUsed: members.length,
-  };
+/**
+ * Real, cycle-scoped usage — backed by GET /api/v1/ops/organizations/{orgId}/usage,
+ * which queries the main app's DB directly (see OrganizationsRepository.getUsageSnapshot).
+ *
+ * This replaces the old client-side version, which counted every contest the
+ * org had EVER created (not scoped to the billing period) and summed
+ * participants across all contests against a PER-CONTEST limit — both wrong.
+ * `subscription` is no longer needed as an input; the endpoint resolves the
+ * current billing period itself.
+ */
+export async function getUsageSnapshot(orgId: string): Promise<UsageSnapshot> {
+  return apiRequest<UsageSnapshot>(`/api/v1/ops/organizations/${orgId}/usage`);
 }

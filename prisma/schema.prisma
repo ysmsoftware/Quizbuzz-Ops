@@ -18,6 +18,10 @@ enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
   CANCELLED
+  // Period lapsed (currentPeriodEnd passed) without a renewal payment.
+  // Distinct from CANCELLED (an explicit admin/org action) — set only by
+  // the nightly subscription-reconciliation job. See subscription-reconciliation.job.ts.
+  EXPIRED
 }
 
 enum BillingCycle {
@@ -195,6 +199,12 @@ model OrganizationSubscription {
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   cancelledAt        DateTime?
+  // Set by the nightly reconciliation job when SUBSCRIPTION_RENEWAL_REMINDER
+  // is sent (currentPeriodEnd within 7 days). Counts as "already sent for
+  // the CURRENT period" only when >= currentPeriodStart, so a renewed
+  // subscription becomes eligible for a fresh reminder automatically —
+  // no explicit reset needed on assignPlan/changePlan.
+  renewalReminderSentAt DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -207,18 +217,35 @@ model OrganizationSubscription {
   @@map("organization_subscriptions")
 }
 
+// ADDITIVE: `value` is a delta stacked on top of whatever the effective limit
+// already was (base plan value + any earlier ADDITIVE overrides, applied in
+// createdAt order) — this is the "existing plan + 1" behavior.
+// ABSOLUTE: `value` replaces the limit outright, same as the original
+// (pre-stacking) override behavior. Kept for admins who genuinely want to
+// set an exact number rather than add to what's there.
+//
+// New column defaults to ABSOLUTE so every override that already existed
+// before this field was added keeps behaving exactly as it did (it was
+// always a straight replacement) — only overrides created going forward
+// default to ADDITIVE at the application layer (see SubscriptionsService.addOverride).
+enum OverrideMode {
+  ADDITIVE
+  ABSOLUTE
+}
+
 model SubscriptionOverride {
-  id             String    @id
+  id             String       @id
   subscriptionId String
   field          String
   value          Int?
+  mode           OverrideMode @default(ABSOLUTE)
   reason         String
   createdById    String
   expiresAt      DateTime?
   removedAt      DateTime?
   removedById    String?
   removedReason  String?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime     @default(now())
 
   subscription OrganizationSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
@@ -257,10 +284,22 @@ enum OpsMessageStatus {
 
 enum OpsMessageTemplate {
   BILLING_PAYMENT_SUCCESS
+  // Itemized, resendable record of a payment — distinct from
+  // BILLING_PAYMENT_SUCCESS's short immediate confirmation. Also triggered
+  // on-demand by the resend-receipt admin action.
+  BILLING_RECEIPT
   BILLING_PAYMENT_FAILED
-  SUBSCRIPTION_PAST_DUE
+  // No SUBSCRIPTION_PAST_DUE: this system has no auto-renewal/card-on-file —
+  // every purchase is a manual, advance, one-time charge for a fixed period.
+  // There is no "we tried to charge you and it failed" state to notify
+  // about; SUBSCRIPTION_RENEWAL_REMINDER (before) and SUBSCRIPTION_EXPIRED
+  // (after) already cover the period-end lifecycle.
+  SUBSCRIPTION_RENEWAL_REMINDER
+  SUBSCRIPTION_EXPIRED
   SUBSCRIPTION_CANCELLED
   SUBSCRIPTION_PLAN_CHANGED
+  SUBSCRIPTION_LIMIT_INCREASED
+  SUBSCRIPTION_LIMIT_DECREASED
   PAYOUT_ACCOUNT_LINKED
   PAYOUT_ACCOUNT_STATUS_CHANGED
   ORG_SUSPENDED
@@ -326,6 +365,10 @@ model OpsPayment {
   baseAmount        Decimal?         @db.Decimal(10, 2)
   gatewayFeeAmount  Decimal?         @db.Decimal(10, 2)
   gstAmount         Decimal?         @db.Decimal(10, 2)
+  // Unused-time credit from the org's prior active subscription, already
+  // subtracted from baseAmount above (baseAmount is post-credit). Kept as
+  // its own field so the payment stays a self-contained, itemized receipt.
+  creditApplied     Decimal?         @db.Decimal(10, 2)
 
   amount            Decimal          @db.Decimal(10, 2)
   currency          String           @default("INR")

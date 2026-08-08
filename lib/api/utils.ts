@@ -15,6 +15,19 @@ export function shouldFail(chance = 0.02): boolean {
 }
 
 /**
+ * Error thrown by apiRequest — carries the HTTP status code so callers can
+ * distinguish "definitely unauthenticated" (401) from transient failures
+ * (network blips, 5xx, aborted requests) instead of treating every failure
+ * the same way. See lib/api/auth.ts#getCurrentSession for why this matters.
+ */
+export class ApiRequestError extends Error {
+  constructor(message: string, public status?: number) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
+/**
  * Shared wrapper for Next.js API requests.
  * Parses the standard envelope, checks success status, and returns the payload data.
  */
@@ -40,13 +53,13 @@ export async function apiRequest<T = any>(
 
   if (!response.ok) {
     const errorMsg = body.message || response.statusText || `Request failed with status ${response.status}`;
-    throw new Error(errorMsg);
+    throw new ApiRequestError(errorMsg, response.status);
   }
 
   // Handle case where custom envelope was returned
   if (body.success === false) {
     const errorMsg = body.message || (body.error && body.error.code) || 'API Request failed';
-    throw new Error(errorMsg);
+    throw new ApiRequestError(errorMsg, response.status);
   }
 
   return body.success ? body.data : body;

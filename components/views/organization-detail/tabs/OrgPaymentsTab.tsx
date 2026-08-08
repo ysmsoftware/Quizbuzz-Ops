@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { Search, CheckCircle2, Clock, AlertCircle, Mail, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import TablePagination from '../TablePagination';
 import { OrgPayment } from '@/lib/api/organizations';
+import { useToast } from '@/components/ui/Toast';
 
 interface OrgPaymentsTabProps {
   payments: OrgPayment[];
@@ -14,13 +15,19 @@ interface OrgPaymentsTabProps {
     pending: number;
     refunded: number;
   };
+  /** Resends the BILLING_RECEIPT email for a subscription payment — only PAID, subscription-sourced rows are eligible. */
+  onResendReceipt?: (paymentId: string) => Promise<{ sent: boolean }>;
+  resendingReceiptPaymentId?: string;
 }
 
 export default function OrgPaymentsTab({
   payments,
   isLoadingPayments,
   paymentAggregates,
+  onResendReceipt,
+  resendingReceiptPaymentId,
 }: OrgPaymentsTabProps) {
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -42,6 +49,20 @@ export default function OrgPaymentsTab({
   });
 
   const paginatedPayments = filteredPayments.slice((page - 1) * pageSize, page * pageSize);
+
+  const handleResendReceipt = async (paymentId: string) => {
+    if (!onResendReceipt) return;
+    try {
+      const result = await onResendReceipt(paymentId);
+      if (result.sent) {
+        toast('Receipt Resent', 'The payment receipt email has been sent to the organization owner.', 'success');
+      } else {
+        toast('Nothing Sent', 'No owner contact was found for this organization — the receipt was not sent.', 'warning');
+      }
+    } catch (err: any) {
+      toast('Resend Failed', err.message || 'Could not resend the receipt.', 'error');
+    }
+  };
 
   return (
     <div className="space-y-6 font-sans">
@@ -150,6 +171,7 @@ export default function OrgPaymentsTab({
                   <th className="py-3 px-5 text-right">Amount</th>
                   <th className="py-3 px-5">Status</th>
                   <th className="py-3 px-5 text-right">Transaction Date</th>
+                  <th className="py-3 px-5 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/25 font-sans">
@@ -184,6 +206,23 @@ export default function OrgPaymentsTab({
                     </td>
                     <td className="py-3.5 px-5 text-right text-muted-foreground font-mono">
                       {format(new Date(p.date), 'dd MMM yyyy, hh:mm a')}
+                    </td>
+                    <td className="py-3.5 px-5 text-center">
+                      {onResendReceipt && p.source === 'subscription' && p.status === 'PAID' && (
+                        <button
+                          onClick={() => handleResendReceipt(p.id)}
+                          disabled={resendingReceiptPaymentId === p.id}
+                          title="Resend receipt email to organization owner"
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded-md border border-border/50 bg-card hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {resendingReceiptPaymentId === p.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Mail className="h-3 w-3" />
+                          )}
+                          Resend
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

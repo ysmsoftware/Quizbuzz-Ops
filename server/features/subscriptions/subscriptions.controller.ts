@@ -56,7 +56,7 @@ export class SubscriptionsController {
       role: admin.role,
     };
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : undefined;
-    const result = await this.service.addOverride(orgId, input.field, input.value, input.reason, actor, expiresAt);
+    const result = await this.service.addOverride(orgId, input.field, input.value, input.reason, actor, expiresAt, input.mode);
     return okResponse(result, 'Subscription limit override added successfully.');
   }
 
@@ -72,6 +72,20 @@ export class SubscriptionsController {
     };
     const result = await this.service.removeOverride(orgId, overrideId, input.reason || 'Manual removal', actor);
     return okResponse(result, 'Subscription limit override removed.');
+  }
+
+  async resendRenewalReminder(orgId: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN]);
+    const actor = { id: admin.id, email: admin.email, name: admin.name, role: admin.role };
+    const result = await this.service.resendRenewalReminder(orgId, actor);
+    return okResponse(result, result.sent ? 'Renewal reminder resent.' : 'No owner contact found — nothing was sent.');
+  }
+
+  async resendReceipt(orgId: string, paymentId: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN]);
+    const actor = { id: admin.id, email: admin.email, name: admin.name, role: admin.role };
+    const result = await this.service.resendReceipt(orgId, paymentId, actor);
+    return okResponse(result, result.sent ? 'Receipt resent.' : 'No owner contact found — nothing was sent.');
   }
 }
 export default SubscriptionsController;

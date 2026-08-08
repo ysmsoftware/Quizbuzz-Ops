@@ -143,15 +143,31 @@ export interface SubscriptionPlan {
   organizationCount?: number;
 }
 
+/** ADDITIVE stacks on top of the current effective limit; ABSOLUTE replaces it. See server/features/subscriptions/effective-limits.ts. */
+export type OverrideMode = 'ADDITIVE' | 'ABSOLUTE';
+
 export interface SubscriptionOverride {
   id: string;
   field: string; // e.g. "maxContestsPerCycle"
   value: number | null; // null for Unlimited
+  mode: OverrideMode;
   reason: string;
   expiresAt: string | null; // nullable
   createdAt: string;
   createdByAdminName: string;
 }
+
+/** One limit field's resolved value + breakdown — computed server-side, never re-derived in a component. */
+export interface EffectiveLimit {
+  value: number | null;
+  planValue: number | null;
+  overridden: boolean;
+}
+
+export type EffectiveLimits = Record<
+  'maxContestsPerCycle' | 'maxParticipantsPerContest' | 'maxQuestionsPerContest' | 'maxOrgMembers',
+  EffectiveLimit
+>;
 
 export interface OrganizationSubscription {
   id: string;
@@ -163,12 +179,18 @@ export interface OrganizationSubscription {
   currentPeriodStart: string;
   currentPeriodEnd: string;
   overrides: SubscriptionOverride[];
+  effectiveLimits: EffectiveLimits;
 }
 
 export interface UsageSnapshot {
   contestsUsedThisCycle: number;
-  participantsUsedThisCycle: number;
+  /** The org's single fullest contest's participant count — the limit is per-contest, not an org-wide total. */
+  maxParticipantsInAContest: number;
+  /** The org's single fullest contest's question count — same per-contest reasoning as above. */
+  maxQuestionsInAContest: number;
   memberCountUsed: number;
+  periodStart: string | null;
+  periodEnd: string | null;
 }
 
 export interface PlanChangeEvent {
@@ -317,6 +339,49 @@ export interface ScalingConfig {
   rateLimitWindowSeconds: number;
   rateLimitMax: number;
   otpRateLimit: number;
+}
+
+export type OpsMessageChannel = 'EMAIL' | 'WHATSAPP';
+export type OpsMessageStatus = 'QUEUED' | 'PROCESSING' | 'SENT' | 'DELIVERED' | 'FAILED';
+export type OpsMessageTemplate =
+  | 'BILLING_PAYMENT_SUCCESS'
+  | 'BILLING_RECEIPT'
+  | 'BILLING_PAYMENT_FAILED'
+  | 'SUBSCRIPTION_RENEWAL_REMINDER'
+  | 'SUBSCRIPTION_EXPIRED'
+  | 'SUBSCRIPTION_CANCELLED'
+  | 'SUBSCRIPTION_PLAN_CHANGED'
+  | 'SUBSCRIPTION_LIMIT_INCREASED'
+  | 'SUBSCRIPTION_LIMIT_DECREASED'
+  | 'PAYOUT_ACCOUNT_LINKED'
+  | 'PAYOUT_ACCOUNT_STATUS_CHANGED'
+  | 'ORG_SUSPENDED'
+  | 'ORG_REACTIVATED'
+  | 'CUSTOM';
+
+export interface OpsMessage {
+  id: string;
+  organizationId: string;
+  channel: OpsMessageChannel;
+  template: OpsMessageTemplate;
+  recipient: string;
+  subject: string | null;
+  params: unknown;
+  status: OpsMessageStatus;
+  providerMsgId: string | null;
+  sentAt: string | null;
+  deliveredAt: string | null;
+  failureReason: string | null;
+  retryCount: number;
+  attemptCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MessageTemplateDescriptor {
+  id: OpsMessageTemplate;
+  name: string;
+  variables: string[];
 }
 
 export interface FeatureFlag {

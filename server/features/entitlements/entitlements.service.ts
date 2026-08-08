@@ -1,4 +1,5 @@
 import { IEntitlementsRepository, EntitlementsRepository } from './entitlements.repository';
+import { computeEffectiveLimits, LIMIT_FIELDS } from '../subscriptions/effective-limits';
 
 export interface IEntitlementsService {
   syncOrgPlanLimitsCache(orgId: string): Promise<void>;
@@ -12,9 +13,27 @@ export class EntitlementsService implements IEntitlementsService {
 
     if (!sub || !sub.plan) return;
 
-    const overrideMap = new Map<string, any>();
+    // Numeric plan limits (contests/cycle, participants/contest,
+    // questions/contest, org members): base value + stacked overrides,
+    // computed by the single shared fold — see effective-limits.ts.
+    const effective = computeEffectiveLimits(
+      {
+        maxContestsPerCycle: sub.plan.maxContestsPerCycle,
+        maxParticipantsPerContest: sub.plan.maxParticipantsPerContest,
+        maxQuestionsPerContest: sub.plan.maxQuestionsPerContest,
+        maxOrgMembers: sub.plan.maxOrgMembers,
+      },
+      sub.overrides,
+    );
+
+    // Feature flags are booleans (on/off), not stackable numbers — "last
+    // active override wins" is the correct semantic here, so this stays a
+    // simple map rather than going through the numeric fold above.
+    const featureOverrideMap = new Map<string, any>();
     for (const ov of sub.overrides) {
-      overrideMap.set(ov.field, ov.value);
+      if (!LIMIT_FIELDS.includes(ov.field as any)) {
+        featureOverrideMap.set(ov.field, ov.value);
+      }
     }
 
     const cachePayload = {
@@ -27,33 +46,25 @@ export class EntitlementsService implements IEntitlementsService {
       periodMonths: sub.periodMonths,
       currentPeriodStart: sub.currentPeriodStart.toISOString(),
       currentPeriodEnd: sub.currentPeriodEnd.toISOString(),
-      maxContestsPerCycle: overrideMap.has('maxContestsPerCycle')
-        ? overrideMap.get('maxContestsPerCycle')
-        : sub.plan.maxContestsPerCycle,
-      maxParticipantsPerContest: overrideMap.has('maxParticipantsPerContest')
-        ? overrideMap.get('maxParticipantsPerContest')
-        : sub.plan.maxParticipantsPerContest,
-      maxQuestionsPerContest: overrideMap.has('maxQuestionsPerContest')
-        ? overrideMap.get('maxQuestionsPerContest')
-        : sub.plan.maxQuestionsPerContest,
-      maxOrgMembers: overrideMap.has('maxOrgMembers')
-        ? overrideMap.get('maxOrgMembers')
-        : sub.plan.maxOrgMembers,
+      maxContestsPerCycle: effective.maxContestsPerCycle.value,
+      maxParticipantsPerContest: effective.maxParticipantsPerContest.value,
+      maxQuestionsPerContest: effective.maxQuestionsPerContest.value,
+      maxOrgMembers: effective.maxOrgMembers.value,
       features: {
-        proctoring: overrideMap.has('featureProctoring')
-          ? Boolean(overrideMap.get('featureProctoring'))
+        proctoring: featureOverrideMap.has('featureProctoring')
+          ? Boolean(featureOverrideMap.get('featureProctoring'))
           : sub.plan.featureProctoring,
-        certBranding: overrideMap.has('featureCertBranding')
-          ? Boolean(overrideMap.get('featureCertBranding'))
+        certBranding: featureOverrideMap.has('featureCertBranding')
+          ? Boolean(featureOverrideMap.get('featureCertBranding'))
           : sub.plan.featureCertBranding,
-        prioritySupport: overrideMap.has('featurePrioritySupport')
-          ? Boolean(overrideMap.get('featurePrioritySupport'))
+        prioritySupport: featureOverrideMap.has('featurePrioritySupport')
+          ? Boolean(featureOverrideMap.get('featurePrioritySupport'))
           : sub.plan.featurePrioritySupport,
-        analyticsExport: overrideMap.has('featureAnalyticsExport')
-          ? Boolean(overrideMap.get('featureAnalyticsExport'))
+        analyticsExport: featureOverrideMap.has('featureAnalyticsExport')
+          ? Boolean(featureOverrideMap.get('featureAnalyticsExport'))
           : sub.plan.featureAnalyticsExport,
-        customDomain: overrideMap.has('featureCustomDomain')
-          ? Boolean(overrideMap.get('featureCustomDomain'))
+        customDomain: featureOverrideMap.has('featureCustomDomain')
+          ? Boolean(featureOverrideMap.get('featureCustomDomain'))
           : sub.plan.featureCustomDomain,
       },
       computedAt: new Date().toISOString(),

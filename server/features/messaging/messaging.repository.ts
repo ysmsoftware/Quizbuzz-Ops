@@ -19,12 +19,23 @@ export interface CreateMessageLogData {
  * machine, because it's a data-integrity constraint on this exact table,
  * not a business rule — it belongs next to the writes it protects.
  */
+export interface MessageListFilters {
+  organizationId?: string;
+  status?: OpsMessageStatus;
+  channel?: OpsMessageChannel;
+  template?: OpsMessageTemplate;
+  /** Case-insensitive match against recipient or subject. */
+  search?: string;
+}
+
 export interface IMessagingRepository {
   create(data: CreateMessageLogData): Promise<any>;
   findById(id: string, organizationId?: string): Promise<any | null>;
   findByOrganization(organizationId: string, skip: number, take: number): Promise<any[]>;
   countByOrganization(organizationId: string): Promise<number>;
   findFailed(organizationId: string): Promise<any[]>;
+  findAll(filters: MessageListFilters, skip: number, take: number): Promise<any[]>;
+  countAll(filters: MessageListFilters): Promise<number>;
   updateStatus(id: string, toStatus: OpsMessageStatus, additionalData?: Record<string, any>): Promise<any | null>;
   incrementAttempt(id: string): Promise<void>;
 }
@@ -68,6 +79,24 @@ export class MessagingRepository implements IMessagingRepository {
   }
 
   /**
+   * Platform-wide message log — backs the centralized Messaging dashboard
+   * page. Unlike findByOrganization, this is not scoped to a single tenant;
+   * `filters.organizationId` narrows it down when the caller wants that.
+   */
+  async findAll(filters: MessageListFilters, skip: number, take: number) {
+    return prisma.opsMessageLog.findMany({
+      where: buildWhere(filters),
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    });
+  }
+
+  async countAll(filters: MessageListFilters) {
+    return prisma.opsMessageLog.count({ where: buildWhere(filters) });
+  }
+
+  /**
    * Forward-only state transitions: QUEUED -> PROCESSING -> SENT/DELIVERED,
    * with FAILED -> QUEUED allowed explicitly as a retry, and a same-state
    * write treated as a no-op (BullMQ can redeliver a stalled job and hit
@@ -107,4 +136,19 @@ export class MessagingRepository implements IMessagingRepository {
       data: { attemptCount: { increment: 1 } },
     });
   }
+}
+
+function buildWhere(filters: MessageListFilters) {
+  const where: Record<string, any> = {};
+  if (filters.organizationId) where.organizationId = filters.organizationId;
+  if (filters.status) where.status = filters.status;
+  if (filters.channel) where.channel = filters.channel;
+  if (filters.template) where.template = filters.template;
+  if (filters.search) {
+    where.OR = [
+      { recipient: { contains: filters.search, mode: 'insensitive' } },
+      { subject: { contains: filters.search, mode: 'insensitive' } },
+    ];
+  }
+  return where;
 }

@@ -15,6 +15,7 @@ import {
   getOrganizationMembers,
   getOrganizationParticipants,
   getOrganizationPayments,
+  resendPaymentReceipt,
 } from '@/lib/api/organizations';
 
 export function useOrganizations(params: {
@@ -133,11 +134,18 @@ export function useOrganizationDetail(orgId: string) {
   });
 
   const addNoteMutation = useMutation({
-    mutationFn: (note: { authorName: string; body: string; tags: string[] }) => 
+    mutationFn: (note: { authorName: string; body: string; tags: string[] }) =>
       addOrganizationNote(orgId, note),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations', 'detail', orgId] });
     }
+  });
+
+  const resendReceiptMutation = useMutation({
+    mutationFn: (paymentId: string) => resendPaymentReceipt(orgId, paymentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+    },
   });
 
   return {
@@ -173,5 +181,11 @@ export function useOrganizationDetail(orgId: string) {
     
     addNote: addNoteMutation.mutateAsync,
     isAddingNote: addNoteMutation.isPending,
+
+    resendReceipt: resendReceiptMutation.mutateAsync,
+    isResendingReceipt: resendReceiptMutation.isPending,
+    // Which paymentId is currently in flight — lets the payments table show a
+    // per-row spinner instead of disabling every "Resend" button at once.
+    resendingReceiptPaymentId: resendReceiptMutation.isPending ? resendReceiptMutation.variables : undefined,
   };
 }

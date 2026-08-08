@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { prisma } from '@/server/db/ops-prisma';
+import { okResponse, errorResponse } from '@/server/http/envelope';
 
 export async function GET(req: Request) {
   try {
@@ -7,10 +7,7 @@ export async function GET(req: Request) {
     const paymentId = searchParams.get('paymentId');
 
     if (!paymentId) {
-      return NextResponse.json(
-        { success: false, error: 'paymentId query parameter is required' },
-        { status: 400 }
-      );
+      return errorResponse('paymentId query parameter is required', 'VALIDATION_ERROR', null, 400);
     }
 
     const payment = await prisma.opsPayment.findUnique({
@@ -19,22 +16,19 @@ export async function GET(req: Request) {
     });
 
     if (!payment) {
-      return NextResponse.json({ success: false, error: 'Payment not found' }, { status: 404 });
+      return errorResponse('Payment not found', 'NOT_FOUND', null, 404);
     }
 
-    return NextResponse.json({
-      success: true,
-      data: {
+    return okResponse(
+      {
         paymentId: payment.id,
         status: payment.status,
         paidAt: payment.paidAt ? payment.paidAt.toISOString() : null,
       },
-    });
+      'Payment status retrieved.'
+    );
   } catch (error: any) {
     console.error('Error checking billing portal payment status:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error checking payment status' },
-      { status: 500 }
-    );
+    return errorResponse('Internal server error checking payment status', 'INTERNAL_SERVER_ERROR', null, 500);
   }
 }

@@ -51,7 +51,41 @@ The Messaging API domain handles template-based email message composition, dispa
 
 ---
 
-### 2. Enqueue Message for Delivery
+### 2. Preview a Message
+`POST /api/v1/ops/messaging/preview`
+
+- **Purpose**: Render the exact subject/HTML a template+params combo would produce, without sending anything.
+- **Description**:
+  Runs the same template renderer the real send path uses (`server/templates/email.templates.ts`), so the compose UI's live preview is byte-accurate rather than a separately maintained copy. No DB write, no queue job, no audit entry.
+
+#### Request Body
+```json
+{
+  "template": "SUBSCRIPTION_RENEWAL_REMINDER",
+  "params": {
+    "adminName": "Dr. Aris Thorne",
+    "planName": "Pro Business",
+    "currentPeriodEnd": "2026-08-20",
+    "daysRemaining": "12"
+  }
+}
+```
+
+#### Responses
+```json
+{
+  "success": true,
+  "data": {
+    "subject": "Your Pro Business plan expires in 12 days",
+    "html": "<div style=\"font-family:sans-serif;...\">...</div>"
+  },
+  "message": "Preview rendered."
+}
+```
+
+---
+
+### 3. Enqueue Message for Delivery
 `POST /api/v1/ops/messaging/send`
 
 - **Purpose**: Compose and enqueue an email notification for delivery to an organization recipient.
@@ -97,7 +131,54 @@ The Messaging API domain handles template-based email message composition, dispa
 
 ---
 
-### 3. Get Message Status & Log Detail
+### 4. List Platform-Wide Message Log
+`GET /api/v1/ops/messaging`
+
+- **Purpose**: Browse every outbound message across every organization — powers the centralized Messaging dashboard page.
+- **Description**:
+  Returns a paginated, most-recent-first list of message log entries. All filters are optional and combine with AND (`search` matches recipient or subject).
+
+#### Request Parameters
+- **Query Parameters**:
+  - `page` (number, default: 1)
+  - `limit` (number, default: 20)
+  - `organizationId` (string, optional) — narrow to one organization.
+  - `status` (`QUEUED` | `PROCESSING` | `SENT` | `DELIVERED` | `FAILED`, optional)
+  - `channel` (`EMAIL` | `WHATSAPP`, optional)
+  - `template` (one of the `OpsMessageTemplate` enum values, optional)
+  - `search` (string, optional) — case-insensitive match against recipient or subject.
+
+#### Responses
+```json
+{
+  "success": true,
+  "data": {
+    "data": [
+      {
+        "id": "msg_99012",
+        "organizationId": "org_7712",
+        "channel": "EMAIL",
+        "template": "ORG_SUSPENDED",
+        "recipient": "director@globaltech.edu",
+        "subject": "Important Notice: Quizbuzz Account Suspended",
+        "status": "SENT",
+        "retryCount": 0,
+        "attemptCount": 1,
+        "createdAt": "2026-07-26T11:48:00.000Z"
+      }
+    ],
+    "total": 15,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 1
+  },
+  "message": "Message log retrieved."
+}
+```
+
+---
+
+### 5. Get Message Status & Log Detail
 `GET /api/v1/ops/messaging/[id]`
 
 - **Purpose**: Check delivery status, attempt counts, error details, and delivery timestamps for a message ID.
@@ -128,7 +209,7 @@ The Messaging API domain handles template-based email message composition, dispa
 
 ---
 
-### 4. List Organization Message History
+### 6. List Organization Message History
 `GET /api/v1/ops/messaging/organization/[orgId]`
 
 - **Purpose**: View full message log history dispatched to a specific organization.
@@ -169,7 +250,7 @@ The Messaging API domain handles template-based email message composition, dispa
 
 ---
 
-### 5. Retry Individual Failed Message
+### 7. Retry Individual Failed Message
 `POST /api/v1/ops/messaging/[id]/retry`
 
 - **Purpose**: Re-enqueue a failed email message for delivery.
@@ -191,7 +272,7 @@ The Messaging API domain handles template-based email message composition, dispa
 
 ---
 
-### 6. Bulk Retry Failed Messages for Organization
+### 8. Bulk Retry Failed Messages for Organization
 `POST /api/v1/ops/messaging/retry-failed`
 
 - **Purpose**: Bulk retry all failed messages associated with an organization.

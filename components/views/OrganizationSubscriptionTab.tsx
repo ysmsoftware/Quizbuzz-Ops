@@ -42,6 +42,8 @@ export default function OrganizationSubscriptionTab({
     isAddingOverride,
     removeOverride,
     isRemovingOverride,
+    resendReminder,
+    isResendingReminder,
   } = useSubscription(organization.id);
 
   // Modals
@@ -131,6 +133,22 @@ export default function OrganizationSubscriptionTab({
     }
   };
 
+  // Resend renewal reminder
+  const handleResendReminder = async () => {
+    try {
+      const result = await resendReminder();
+      if (result.sent) {
+        toast('Reminder Resent', `Renewal reminder sent to ${organization.name}'s owner.`, 'success');
+      } else {
+        toast('Nothing Sent', 'No owner contact was found for this organization — the reminder was not sent.', 'warning');
+      }
+      return result;
+    } catch (err: any) {
+      toast('Resend Failed', err.message || 'Could not resend the renewal reminder.', 'error');
+      throw err;
+    }
+  };
+
   // Revoke override submit
   const handleRevokeOverrideSubmit = async (reason: string) => {
     if (!revokingOverrideId) return;
@@ -156,11 +174,12 @@ export default function OrganizationSubscriptionTab({
           currentPlan={currentPlan}
           onChangePlanClick={() => setIsChangePlanOpen(true)}
           payments={subscriptionPayments}
+          onResendReminder={handleResendReminder}
+          isResendingReminder={isResendingReminder}
         />
 
         <QuotaUsageGrid
           subscription={subscription}
-          currentPlan={currentPlan}
           usage={usage}
         />
       </div>
@@ -193,6 +212,7 @@ export default function OrganizationSubscriptionTab({
         onClose={() => setIsAddOverrideOpen(false)}
         onSubmit={handleAddOverrideSubmit}
         isSubmitting={isAddingOverride}
+        effectiveLimits={subscription.effectiveLimits}
       />
 
       <RevokeOverrideModal

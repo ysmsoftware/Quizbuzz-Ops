@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { OrganizationSubscription, SubscriptionPlan } from '@/lib/types';
 import { OrgPayment } from '@/lib/api/organizations';
-import { Layers, Calendar, ArrowRight, ShieldCheck, CreditCard, Receipt, ChevronDown, ChevronUp } from 'lucide-react';
+import { Layers, Calendar, ArrowRight, ShieldCheck, CreditCard, Receipt, ChevronDown, ChevronUp, BellRing, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface CurrentPlanCardProps {
@@ -12,6 +12,9 @@ interface CurrentPlanCardProps {
   onChangePlanClick: () => void;
   /** Subscription-source payments for this org, newest first is not required — sorted here. */
   payments?: OrgPayment[];
+  /** Resends the SUBSCRIPTION_RENEWAL_REMINDER email — only meaningful for an active subscription with a future period end. */
+  onResendReminder?: () => Promise<{ sent: boolean }>;
+  isResendingReminder?: boolean;
 }
 
 export default function CurrentPlanCard({
@@ -19,8 +22,15 @@ export default function CurrentPlanCard({
   currentPlan,
   onChangePlanClick,
   payments = [],
+  onResendReminder,
+  isResendingReminder,
 }: CurrentPlanCardProps) {
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+
+  const canResendReminder =
+    subscription.status === 'active' &&
+    !!subscription.currentPeriodEnd &&
+    new Date(subscription.currentPeriodEnd) > new Date();
   const cycle = subscription.billingCycle || 'MONTHLY';
   const displayPrice = currentPlan
     ? cycle === 'ANNUAL'
@@ -75,9 +85,23 @@ export default function CurrentPlanCard({
             </div>
           )}
           {subscription.currentPeriodEnd && (
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground/70" />
-              <span>Cycle End: <strong className="text-foreground">{format(new Date(subscription.currentPeriodEnd), 'MMM d, yyyy')}</strong></span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center space-x-2">
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground/70" />
+                <span>Cycle End: <strong className="text-foreground">{format(new Date(subscription.currentPeriodEnd), 'MMM d, yyyy')}</strong></span>
+              </div>
+              {canResendReminder && onResendReminder && (
+                <button
+                  type="button"
+                  onClick={onResendReminder}
+                  disabled={isResendingReminder}
+                  title="Resend the renewal reminder email to the organization owner"
+                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded-md border border-border/50 bg-card hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  {isResendingReminder ? <Loader2 className="h-3 w-3 animate-spin" /> : <BellRing className="h-3 w-3" />}
+                  Resend Reminder
+                </button>
+              )}
             </div>
           )}
         </div>

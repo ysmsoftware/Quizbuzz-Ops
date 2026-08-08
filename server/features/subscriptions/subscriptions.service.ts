@@ -1,16 +1,52 @@
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
-import { AuditTargetType, BillingCycle } from '@prisma/client';
+import { AuditTargetType, BillingCycle, OverrideMode } from '@prisma/client';
+import { prisma } from '../../db/ops-prisma';
 import { generateUlid } from '../../utils/ulid';
 import { ISubscriptionsRepository, SubscriptionsRepository } from './subscriptions.repository';
 import { IEntitlementsService, EntitlementsService } from '../entitlements/entitlements.service';
 import { periodMonthsForCycle } from '../../../lib/pricing/subscriptionPricing';
+import { computeEffectiveLimits } from './effective-limits';
+import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
+
+/** Human-readable labels for override/limit-change emails — display only. */
+const FIELD_LABELS: Record<string, string> = {
+  maxContestsPerCycle: 'Contests per Month',
+  maxParticipantsPerContest: 'Participants per Contest',
+  maxQuestionsPerContest: 'Questions per Contest',
+  maxOrgMembers: 'Organization Members',
+  featureProctoring: 'Advanced Proctoring',
+  featureCertBranding: 'Custom Certificate Branding',
+  featureAnalyticsExport: 'Analytics Export',
+  featurePrioritySupport: 'Priority Support',
+  featureCustomDomain: 'Custom Domain',
+};
+function fieldLabel(field: string): string {
+  return FIELD_LABELS[field] || field;
+}
 
 export interface ISubscriptionsService {
   getSubscription(orgId: string): Promise<any | null>;
-  assignPlan(orgId: string, planId: string, actor: AuditActor, billingCycle?: BillingCycle, periodStart?: Date): Promise<any>;
+  assignPlan(
+    orgId: string,
+    planId: string,
+    actor: AuditActor,
+    billingCycle?: BillingCycle,
+    periodStart?: Date,
+    linkedPaymentId?: string
+  ): Promise<any>;
   changePlan(orgId: string, toPlanId: string, actor: AuditActor, billingCycle?: BillingCycle, reason?: string): Promise<any>;
-  addOverride(orgId: string, field: string, value: any, reason: string, actor: AuditActor, expiresAt?: Date): Promise<any>;
+  addOverride(
+    orgId: string,
+    field: string,
+    value: any,
+    reason: string,
+    actor: AuditActor,
+    expiresAt?: Date,
+    mode?: OverrideMode,
+  ): Promise<any>;
   removeOverride(orgId: string, overrideId: string, reason: string, actor: AuditActor): Promise<any>;
+  resendRenewalReminder(orgId: string, actor: AuditActor): Promise<{ sent: boolean }>;
+  resendReceipt(orgId: string, paymentId: string, actor: AuditActor): Promise<{ sent: boolean }>;
 }
 
 /**
@@ -32,36 +68,15 @@ export class SubscriptionsService implements ISubscriptionsService {
 
     if (!sub) return null;
 
-    // Calculate effective limits breakdown
-    const overrideMap = new Map<string, any>();
-    for (const ov of sub.overrides) {
-      if (!ov.expiresAt || ov.expiresAt > new Date()) {
-        overrideMap.set(ov.field, ov.value);
-      }
-    }
-
-    const effectiveLimits = {
-      maxContestsPerCycle: {
-        value: overrideMap.has('maxContestsPerCycle') ? overrideMap.get('maxContestsPerCycle') : sub.plan.maxContestsPerCycle,
-        planValue: sub.plan.maxContestsPerCycle,
-        overridden: overrideMap.has('maxContestsPerCycle'),
+    const effectiveLimits = computeEffectiveLimits(
+      {
+        maxContestsPerCycle: sub.plan.maxContestsPerCycle,
+        maxParticipantsPerContest: sub.plan.maxParticipantsPerContest,
+        maxQuestionsPerContest: sub.plan.maxQuestionsPerContest,
+        maxOrgMembers: sub.plan.maxOrgMembers,
       },
-      maxParticipantsPerContest: {
-        value: overrideMap.has('maxParticipantsPerContest') ? overrideMap.get('maxParticipantsPerContest') : sub.plan.maxParticipantsPerContest,
-        planValue: sub.plan.maxParticipantsPerContest,
-        overridden: overrideMap.has('maxParticipantsPerContest'),
-      },
-      maxQuestionsPerContest: {
-        value: overrideMap.has('maxQuestionsPerContest') ? overrideMap.get('maxQuestionsPerContest') : sub.plan.maxQuestionsPerContest,
-        planValue: sub.plan.maxQuestionsPerContest,
-        overridden: overrideMap.has('maxQuestionsPerContest'),
-      },
-      maxOrgMembers: {
-        value: overrideMap.has('maxOrgMembers') ? overrideMap.get('maxOrgMembers') : sub.plan.maxOrgMembers,
-        planValue: sub.plan.maxOrgMembers,
-        overridden: overrideMap.has('maxOrgMembers'),
-      },
-    };
+      sub.overrides,
+    );
 
     return {
       subscription: {
@@ -83,6 +98,7 @@ export class SubscriptionsService implements ISubscriptionsService {
         id: o.id,
         field: o.field,
         value: o.value,
+        mode: o.mode,
         reason: o.reason,
         expiresAt: o.expiresAt ? o.expiresAt.toISOString() : null,
         createdAt: o.createdAt.toISOString(),
@@ -120,7 +136,26 @@ export class SubscriptionsService implements ISubscriptionsService {
     throw new Error(`Plan "${plan.slug}" does not offer any billing cycle`);
   }
 
-  async assignPlan(orgId: string, planId: string, actor: AuditActor, billingCycle?: BillingCycle, periodStart?: Date) {
+  /**
+   * @param linkedPaymentId When set (the paid-webhook path only), the
+   *   subscription upsert and the OpsPayment.subscriptionId backfill run in
+   *   one Postgres transaction. Without this, a transient failure in just the
+   *   backfill step used to leave `subscriptionId` null on an already-PAID
+   *   payment — which the webhook's own idempotency check reads as "not yet
+   *   processed", causing a Razorpay retry to call assignPlan() a second time
+   *   and silently reset currentPeriodStart/End to a fresh "now" for free.
+   *   Wrapping both writes together means a failure here rolls back the
+   *   subscription upsert too, so a retry cleanly redoes the whole thing
+   *   exactly once instead of racing a half-applied prior attempt.
+   */
+  async assignPlan(
+    orgId: string,
+    planId: string,
+    actor: AuditActor,
+    billingCycle?: BillingCycle,
+    periodStart?: Date,
+    linkedPaymentId?: string
+  ) {
     const plan = await this.repo.findPlanById(planId);
     if (!plan) throw new Error('Subscription plan not found');
     if (!plan.isActive) throw new Error('Cannot assign an inactive plan');
@@ -132,18 +167,42 @@ export class SubscriptionsService implements ISubscriptionsService {
     const end = new Date(start);
     end.setMonth(end.getMonth() + periodMonths);
 
-    const sub = await this.repo.upsertSubscription({
+    const subscriptionParams = {
       id: generateUlid(),
       organizationId: orgId,
       planId,
-      status: 'ACTIVE',
+      status: 'ACTIVE' as const,
       billingCycle: resolvedCycle,
       periodMonths,
       currentPeriodStart: start,
       currentPeriodEnd: end,
-    });
+    };
 
-    await this.entitlementsService.syncOrgPlanLimitsCache(orgId);
+    const sub = linkedPaymentId
+      ? await prisma.$transaction(async (tx) => {
+          const s = await this.repo.upsertSubscription(subscriptionParams, tx);
+          await this.repo.linkPayment(linkedPaymentId, s.id, tx);
+          return s;
+        })
+      : await this.repo.upsertSubscription(subscriptionParams);
+
+    // Cross-database write (main app's Postgres) — cannot join the
+    // transaction above. If this throws, the subscription itself is already
+    // safely committed; log it distinctly rather than let the failure look
+    // like a generic 500, and let the nightly reconciliation job's
+    // unconditional re-sync of every ACTIVE subscription self-heal it.
+    try {
+      await this.entitlementsService.syncOrgPlanLimitsCache(orgId);
+    } catch (syncErr: any) {
+      await writeAuditLogEntry(
+        actor,
+        'subscription.cache_sync_failed',
+        AuditTargetType.SUBSCRIPTION,
+        sub.id,
+        plan.name,
+        { organizationId: orgId, planId, error: syncErr?.message || String(syncErr) }
+      );
+    }
 
     await writeAuditLogEntry(
       actor,
@@ -151,7 +210,7 @@ export class SubscriptionsService implements ISubscriptionsService {
       AuditTargetType.SUBSCRIPTION,
       sub.id,
       plan.name,
-      { organizationId: orgId, planId, planSlug: plan.slug, billingCycle: resolvedCycle, periodMonths }
+      { organizationId: orgId, planId, planSlug: plan.slug, billingCycle: resolvedCycle, periodMonths, linkedPaymentId: linkedPaymentId || null }
     );
 
     return sub;
@@ -196,6 +255,12 @@ export class SubscriptionsService implements ISubscriptionsService {
       { organizationId: orgId, fromPlanId, toPlanId }
     );
 
+    const fromPlan = await this.repo.findPlanById(fromPlanId);
+    await orgOwnerNotifier.notify(orgId, 'SUBSCRIPTION_PLAN_CHANGED', {
+      fromPlan: fromPlan?.name || 'your previous plan',
+      toPlan: toPlan.name,
+    });
+
     return updatedSub;
   }
 
@@ -205,7 +270,14 @@ export class SubscriptionsService implements ISubscriptionsService {
     value: any,
     reason: string,
     actor: AuditActor,
-    expiresAt?: Date
+    expiresAt?: Date,
+    // API-level default. Note this differs from the DB column's own default
+    // (ABSOLUTE) — that one exists purely to keep pre-existing override rows
+    // behaving exactly as they did before this field was added. Every
+    // *new* override created through this method defaults to the "add to
+    // what's already there" behavior instead, unless the caller opts into
+    // ABSOLUTE (the AddOverrideModal "Set exact limit to" toggle).
+    mode: OverrideMode = OverrideMode.ADDITIVE,
   ) {
     const sub = await this.repo.findSubscriptionByOrgId(orgId);
     if (!sub) throw new Error('Organization does not have an active subscription');
@@ -214,7 +286,8 @@ export class SubscriptionsService implements ISubscriptionsService {
       id: generateUlid(),
       subscriptionId: sub.id,
       field,
-      value: typeof value === 'number' ? value : parseInt(value, 10),
+      value: value === null ? null : (typeof value === 'number' ? value : parseInt(value, 10)),
+      mode,
       reason,
       createdById: actor.id!,
       expiresAt,
@@ -230,6 +303,15 @@ export class SubscriptionsService implements ISubscriptionsService {
       field,
       { organizationId: orgId, overrideId: override.id, field, value, reason }
     );
+
+    const planForOverride = await this.repo.findPlanById(sub.planId);
+    await orgOwnerNotifier.notify(orgId, 'SUBSCRIPTION_LIMIT_INCREASED', {
+      planName: planForOverride?.name || 'your plan',
+      fieldLabel: fieldLabel(field),
+      newValue: override.value,
+      reason,
+      expiresAt: override.expiresAt ? override.expiresAt.toISOString().slice(0, 10) : null,
+    });
 
     return override;
   }
@@ -251,7 +333,92 @@ export class SubscriptionsService implements ISubscriptionsService {
       { organizationId: orgId, overrideId, reason }
     );
 
+    const planForRemoval = await this.repo.findPlanById(sub.planId);
+    await orgOwnerNotifier.notify(orgId, 'SUBSCRIPTION_LIMIT_DECREASED', {
+      planName: planForRemoval?.name || 'your plan',
+      fieldLabel: fieldLabel(override.field),
+      wasExpiry: false,
+    });
+
     return override;
+  }
+
+  /**
+   * Ops-admin-triggered "remind them again" — bypasses the nightly job's
+   * once-per-period guard entirely (renewalReminderSentAt is still updated
+   * afterward so tonight's automatic run doesn't also fire one). Requires an
+   * ACTIVE subscription with a still-future currentPeriodEnd — resending a
+   * "your plan is about to expire" notice makes no sense once it already has.
+   */
+  async resendRenewalReminder(orgId: string, actor: AuditActor): Promise<{ sent: boolean }> {
+    const sub = await this.repo.findSubscriptionByOrgId(orgId);
+    if (!sub) throw new Error('Organization does not have a subscription');
+    if (sub.status !== 'ACTIVE') throw new Error(`Cannot send a renewal reminder — subscription status is ${sub.status}`);
+
+    const now = new Date();
+    if (sub.currentPeriodEnd <= now) throw new Error('Subscription period has already ended — resend the expired notice instead');
+
+    const plan = await this.repo.findPlanById(sub.planId);
+    const daysRemaining = Math.max(1, Math.ceil((sub.currentPeriodEnd.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
+
+    const sent = await orgOwnerNotifier.notify(orgId, 'SUBSCRIPTION_RENEWAL_REMINDER', {
+      planName: plan?.name || 'your plan',
+      currentPeriodEnd: sub.currentPeriodEnd.toISOString().slice(0, 10),
+      daysRemaining,
+    });
+
+    if (sent) {
+      await this.repo.setRenewalReminderSent(orgId, now);
+    }
+
+    await writeAuditLogEntry(
+      actor,
+      'subscription.renewal_reminder_resent',
+      AuditTargetType.SUBSCRIPTION,
+      sub.id,
+      plan?.name || 'Subscription',
+      { organizationId: orgId, sent }
+    );
+
+    return { sent };
+  }
+
+  /**
+   * Ops-admin-triggered resend of a past payment's itemized receipt — the
+   * "sometimes we have to resend the billing receipt to the admin" case.
+   * Only meaningful for a payment that actually completed.
+   */
+  async resendReceipt(orgId: string, paymentId: string, actor: AuditActor): Promise<{ sent: boolean }> {
+    const payment = await prisma.opsPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new Error('Payment not found');
+    if (payment.organizationId !== orgId) throw new Error('Payment does not belong to this organization');
+    if (payment.status !== 'PAID') throw new Error(`Cannot resend a receipt — payment status is ${payment.status}`);
+
+    const plan = payment.planId ? await this.repo.findPlanById(payment.planId) : null;
+
+    const sent = await orgOwnerNotifier.notify(payment.organizationId, 'BILLING_RECEIPT', {
+      planName: plan?.name || 'your plan',
+      billingCycle: payment.billingCycle || 'MONTHLY',
+      baseAmount: payment.baseAmount ? Number(payment.baseAmount) : 0,
+      creditApplied: payment.creditApplied ? Number(payment.creditApplied) : 0,
+      gatewayFeeAmount: payment.gatewayFeeAmount ? Number(payment.gatewayFeeAmount) : 0,
+      gstAmount: payment.gstAmount ? Number(payment.gstAmount) : 0,
+      amount: Number(payment.amount),
+      paidAt: payment.paidAt ? payment.paidAt.toISOString().slice(0, 10) : null,
+      razorpayPaymentId: payment.razorpayPaymentId,
+      paymentId: payment.id,
+    });
+
+    await writeAuditLogEntry(
+      actor,
+      'billing_portal.receipt_resent',
+      AuditTargetType.PAYMENT,
+      payment.id,
+      plan?.name || 'Payment',
+      { organizationId: payment.organizationId, sent }
+    );
+
+    return { sent };
   }
 }
 export default SubscriptionsService;

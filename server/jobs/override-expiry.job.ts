@@ -1,7 +1,20 @@
 import { prisma } from '../db/ops-prisma';
 import { syncOrgPlanLimitsCache } from '../features/subscriptions/subscriptions.service';
+import { orgOwnerNotifier } from '../notifications/org-owner-notifier';
 import { writeAuditLogEntry, SYSTEM_ACTOR } from '../audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
+
+const FIELD_LABELS: Record<string, string> = {
+  maxContestsPerCycle: 'Contests per Month',
+  maxParticipantsPerContest: 'Participants per Contest',
+  maxQuestionsPerContest: 'Questions per Contest',
+  maxOrgMembers: 'Organization Members',
+  featureProctoring: 'Advanced Proctoring',
+  featureCertBranding: 'Custom Certificate Branding',
+  featureAnalyticsExport: 'Analytics Export',
+  featurePrioritySupport: 'Priority Support',
+  featureCustomDomain: 'Custom Domain',
+};
 
 export async function runOverrideExpiryJob(): Promise<number> {
   const now = new Date();
@@ -13,7 +26,7 @@ export async function runOverrideExpiryJob(): Promise<number> {
       },
     },
     include: {
-      subscription: true,
+      subscription: { include: { plan: { select: { name: true } } } },
     },
   });
 
@@ -44,6 +57,15 @@ export async function runOverrideExpiryJob(): Promise<number> {
         organizationId: ov.subscription.organizationId,
       }
     );
+
+    // Same SUBSCRIPTION_LIMIT_DECREASED template as a manual removeOverride()
+    // call — only the trigger differs (this is the override's own scheduled
+    // expiry, not an ops admin manually revoking it).
+    await orgOwnerNotifier.notify(ov.subscription.organizationId, 'SUBSCRIPTION_LIMIT_DECREASED', {
+      planName: ov.subscription.plan?.name || 'your plan',
+      fieldLabel: FIELD_LABELS[ov.field] || ov.field,
+      wasExpiry: true,
+    });
   }
 
   for (const orgId of affectedOrgIds) {

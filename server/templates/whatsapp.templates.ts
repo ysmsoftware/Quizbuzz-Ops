@@ -24,9 +24,25 @@ const WHATSAPP_TEMPLATES: Record<OpsMessageTemplate, WhatsAppTemplateBuilder> = 
     campaignName: 'ops_billing_payment_failed',
     templateParams: [p.adminName, p.planName, String(p.amount)],
   }),
-  SUBSCRIPTION_PAST_DUE: (p) => ({
-    campaignName: 'ops_subscription_past_due',
+  BILLING_RECEIPT: (p) => ({
+    campaignName: 'ops_billing_receipt',
+    templateParams: [p.adminName, p.planName, String(p.amount)],
+  }),
+  SUBSCRIPTION_RENEWAL_REMINDER: (p) => ({
+    campaignName: 'ops_subscription_renewal_reminder',
+    templateParams: [p.adminName, p.planName, String(p.daysRemaining)],
+  }),
+  SUBSCRIPTION_EXPIRED: (p) => ({
+    campaignName: 'ops_subscription_expired',
     templateParams: [p.adminName, p.planName],
+  }),
+  SUBSCRIPTION_LIMIT_INCREASED: (p) => ({
+    campaignName: 'ops_subscription_limit_increased',
+    templateParams: [p.adminName, p.fieldLabel, String(p.newValue ?? '')],
+  }),
+  SUBSCRIPTION_LIMIT_DECREASED: (p) => ({
+    campaignName: 'ops_subscription_limit_decreased',
+    templateParams: [p.adminName, p.fieldLabel],
   }),
   SUBSCRIPTION_CANCELLED: (p) => ({
     campaignName: 'ops_subscription_cancelled',

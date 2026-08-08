@@ -36,6 +36,12 @@ export class OrganizationsController {
     return okResponse(result, 'Organization contest list retrieved.');
   }
 
+  async getUsage(orgId: string) {
+    await getSessionAdmin();
+    const result = await this.service.getUsage(orgId);
+    return okResponse(result, 'Organization plan usage retrieved.');
+  }
+
   async getParticipants(orgId: string) {
     await getSessionAdmin();
     const result = await this.service.getParticipants(orgId);

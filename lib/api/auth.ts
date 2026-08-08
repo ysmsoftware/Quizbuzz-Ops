@@ -1,7 +1,7 @@
 'use client';
 
 import { AdminSession } from '@/lib/types';
-import { apiRequest } from '@/lib/api/utils';
+import { apiRequest, ApiRequestError } from '@/lib/api/utils';
 
 const SESSION_KEY = 'quizbuzz_super_admin_session';
 
@@ -54,6 +54,15 @@ export function getCurrentSessionSync(): AdminSession | null {
 
 /**
  * Fetches the current admin profile from the backend session cookie.
+ *
+ * IMPORTANT: only a definitive 401 means "not authenticated" — that's the
+ * one case where falling back to /refresh (and then, if that also 401s,
+ * declaring the user logged out) is correct. Any other failure — a network
+ * blip, a 5xx, a request aborted by React Strict Mode's dev-only double
+ * effect invocation — is NOT proof the session is invalid, so it must
+ * bubble up and let react-query's retry handle it. Silently treating every
+ * failure as "logged out" here is what caused users to get bounced to
+ * /login on a hard refresh even though their cookies were still valid.
  */
 export async function getCurrentSession(): Promise<AdminSession | null> {
   try {
@@ -63,7 +72,12 @@ export async function getCurrentSession(): Promise<AdminSession | null> {
     }
     return result.admin;
   } catch (err) {
-    // If access token expired, attempt session refresh via refresh token cookie
+    const meStatus = err instanceof ApiRequestError ? err.status : undefined;
+    if (meStatus !== 401) {
+      throw err;
+    }
+
+    // Access token is genuinely invalid/expired — attempt a silent refresh.
     try {
       const refreshResult = await apiRequest<{ admin: AdminSession }>('/api/v1/ops/auth/refresh', {
         method: 'POST',
@@ -73,6 +87,12 @@ export async function getCurrentSession(): Promise<AdminSession | null> {
       }
       return refreshResult.admin;
     } catch (refreshErr) {
+      const refreshStatus = refreshErr instanceof ApiRequestError ? refreshErr.status : undefined;
+      if (refreshStatus !== 401) {
+        throw refreshErr;
+      }
+
+      // Refresh token is also genuinely invalid/expired — this is a real logout.
       if (typeof window !== 'undefined') {
         localStorage.removeItem(SESSION_KEY);
       }

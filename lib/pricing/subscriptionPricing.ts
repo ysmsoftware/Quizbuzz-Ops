@@ -79,3 +79,57 @@ export function availableCyclesForPlan(plan: PlanCyclePricing): BillingCycleChoi
   if (plan.allowsAnnual && plan.annualPrice != null) cycles.push('ANNUAL');
   return cycles;
 }
+
+export interface CurrentSubscriptionForProration {
+  currentPeriodStart: Date | string;
+  currentPeriodEnd: Date | string;
+  billingCycle: BillingCycleChoice;
+  /** Most recent PAID OpsPayment.baseAmount for the current subscription, if one exists. */
+  lastPaidBaseAmount: number | null;
+  /** Fallback when no payment row is found (e.g. an ops-admin-assigned subscription). */
+  planMonthlyPrice: number | null;
+  planAnnualPrice: number | null;
+}
+
+export interface ProrationResult {
+  proratedBase: number;
+  creditApplied: number;
+}
+
+/**
+ * Credits unused time on the org's current subscription against the price of
+ * a new purchase (upgrade, downgrade, or early renewal while still active).
+ * Not used when there is no active, non-expired current subscription — the
+ * caller should skip straight to calculateSubscriptionPricing(baseAmount) in
+ * that case (creditApplied = 0).
+ *
+ * remainingCredit = currentPlanValue x (remainingMs / totalPeriodMs)
+ * proratedBase    = max(0, newPlanBaseAmount - remainingCredit)
+ */
+export function calculateProratedBase(
+  newPlanBaseAmount: number,
+  current: CurrentSubscriptionForProration,
+  now: Date = new Date()
+): ProrationResult {
+  const start = new Date(current.currentPeriodStart);
+  const end = new Date(current.currentPeriodEnd);
+  const totalMs = end.getTime() - start.getTime();
+  const remainingMs = end.getTime() - now.getTime();
+
+  if (totalMs <= 0 || remainingMs <= 0) {
+    // Current period already elapsed or malformed — nothing left to credit.
+    return { proratedBase: round2(newPlanBaseAmount), creditApplied: 0 };
+  }
+
+  const currentPlanValue =
+    current.lastPaidBaseAmount != null
+      ? current.lastPaidBaseAmount
+      : (current.billingCycle === 'ANNUAL' ? current.planAnnualPrice : current.planMonthlyPrice) ?? 0;
+
+  const remainingFraction = Math.min(1, remainingMs / totalMs);
+  const unusedCredit = round2(currentPlanValue * remainingFraction);
+  const proratedBase = Math.max(0, round2(newPlanBaseAmount - unusedCredit));
+  const creditApplied = round2(newPlanBaseAmount - proratedBase);
+
+  return { proratedBase, creditApplied };
+}

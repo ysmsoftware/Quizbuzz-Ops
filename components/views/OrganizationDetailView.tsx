@@ -58,7 +58,9 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
     isActivating,
     isDeleting,
     isUpdating,
-    isAddingNote
+    isAddingNote,
+    resendReceipt,
+    resendingReceiptPaymentId,
   } = useOrganizationDetail(orgId);
 
   // Load participants hook query
@@ -117,7 +119,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
     );
   }
 
-  const currentPlan = plans.find(p => p.id === organization.planId);
+  const currentPlan = plans.find(p => p.id === organization.planId || p.slug === organization.planId);
 
   // Event Handlers
   const handleBackClick = () => {
@@ -268,6 +270,8 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
             payments={payments}
             isLoadingPayments={isLoadingPayments}
             paymentAggregates={paymentAggregates}
+            onResendReceipt={resendReceipt}
+            resendingReceiptPaymentId={resendingReceiptPaymentId}
           />
         )}
 

@@ -1,15 +1,17 @@
 'use client';
 
 import React from 'react';
-import { 
-  ChevronLeft, 
-  ShieldCheck, 
-  ShieldAlert, 
-  ExternalLink, 
-  Edit3, 
-  Lock, 
-  RefreshCw, 
-  Trash2 
+import { useRouter } from 'next/navigation';
+import {
+  ChevronLeft,
+  ShieldCheck,
+  ShieldAlert,
+  ExternalLink,
+  Edit3,
+  Lock,
+  RefreshCw,
+  Trash2,
+  MessagesSquare,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Organization } from '@/lib/types';
@@ -33,6 +35,8 @@ export default function OrgDetailHeader({
   onOpenDelete,
   isActivating,
 }: OrgDetailHeaderProps) {
+  const router = useRouter();
+
   return (
     <div className="space-y-6 font-sans">
       {/* Breadcrumb back navigation */}
@@ -91,6 +95,15 @@ export default function OrgDetailHeader({
           >
             <Edit3 className="h-3.5 w-3.5 text-muted-foreground" />
             <span>Edit Profile</span>
+          </button>
+
+          {/* Deep link into the centralized Messaging log, pre-filtered to this org */}
+          <button
+            onClick={() => router.push(`/dashboard/messaging?organizationId=${organization.id}`)}
+            className="flex items-center justify-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg border border-border/50 bg-card hover:bg-secondary/40 text-foreground transition-colors cursor-pointer"
+          >
+            <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>View Messages</span>
           </button>
 
           {/* Suspend / Reactivate controls */}

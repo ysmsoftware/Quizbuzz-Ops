@@ -1,5 +1,6 @@
 import { IOrganizationsRepository, OrganizationsRepository } from './organizations.repository';
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
+import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
 import { AuditTargetType } from '@prisma/client';
 import { OrgListMember, OrgProfileDetail, OrgMemberDetail, OrgContestDetail, OrgParticipantDetail, OrgPaymentDetail, SupportNoteDetail } from './organizations.types';
 
@@ -19,6 +20,14 @@ export interface IOrganizationsService {
   addNote(orgId: string, actor: AuditActor, body: string, tags: string[]): Promise<SupportNoteDetail>;
   suspend(orgId: string, actor: AuditActor, reason: string): Promise<void>;
   reactivate(orgId: string, actor: AuditActor, reason?: string): Promise<void>;
+  getUsage(orgId: string): Promise<{
+    contestsUsedThisCycle: number;
+    maxParticipantsInAContest: number;
+    maxQuestionsInAContest: number;
+    memberCountUsed: number;
+    periodStart: string | null;
+    periodEnd: string | null;
+  }>;
 }
 
 export class OrganizationsService implements IOrganizationsService {
@@ -137,6 +146,31 @@ export class OrganizationsService implements IOrganizationsService {
     return this.repo.getOrganizationContests(orgId);
   }
 
+  async getUsage(orgId: string): Promise<{
+    contestsUsedThisCycle: number;
+    maxParticipantsInAContest: number;
+    maxQuestionsInAContest: number;
+    memberCountUsed: number;
+    periodStart: string | null;
+    periodEnd: string | null;
+  }> {
+    const sub = await this.repo.getSubscriptionForOrg(orgId);
+
+    // No subscription synced yet — nothing meaningfully "used this cycle"
+    // to report; fall back to an all-time window so the numbers are at
+    // least not wrong, just not cycle-scoped.
+    const periodStart: Date = sub?.currentPeriodStart ?? new Date(0);
+    const periodEnd: Date = sub?.currentPeriodEnd ?? new Date(8640000000000000);
+
+    const usage = await this.repo.getUsageSnapshot(orgId, periodStart, periodEnd);
+
+    return {
+      ...usage,
+      periodStart: sub?.currentPeriodStart ? sub.currentPeriodStart.toISOString() : null,
+      periodEnd: sub?.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
+    };
+  }
+
   async getParticipants(orgId: string): Promise<OrgParticipantDetail[]> {
     return this.repo.getOrganizationParticipants(orgId);
   }
@@ -200,6 +234,8 @@ export class OrganizationsService implements IOrganizationsService {
       rawOrg.name,
       { reason }
     );
+
+    await orgOwnerNotifier.notify(orgId, 'ORG_SUSPENDED', { reason });
   }
 
   async reactivate(orgId: string, actor: AuditActor, reason?: string): Promise<void> {
@@ -218,6 +254,8 @@ export class OrganizationsService implements IOrganizationsService {
       rawOrg.name,
       { reason: reason || 'Suspension lifted' }
     );
+
+    await orgOwnerNotifier.notify(orgId, 'ORG_REACTIVATED', {});
   }
 }
 

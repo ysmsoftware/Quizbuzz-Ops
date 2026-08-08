@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { prisma } from '@/server/db/ops-prisma';
+import { okResponse, errorResponse } from '@/server/http/envelope';
 
 export async function GET() {
   try {
@@ -54,15 +54,9 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({
-      success: true,
-      data: formattedPlans,
-    });
+    return okResponse(formattedPlans, 'Subscription plans retrieved.');
   } catch (error: any) {
     console.error('Error fetching billing portal plans:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch subscription plans' },
-      { status: 500 }
-    );
+    return errorResponse('Failed to fetch subscription plans', 'INTERNAL_SERVER_ERROR', null, 500);
   }
 }

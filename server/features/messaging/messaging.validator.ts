@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { OpsMessageTemplate } from '@prisma/client';
+import { OpsMessageChannel, OpsMessageStatus, OpsMessageTemplate } from '@prisma/client';
 
 /**
  * Public "compose & send" DTO — used by the manual send endpoint an admin
@@ -23,7 +23,28 @@ export const SendMessageSchema = z.object({
   params: z.record(z.string(), z.any()).optional(),
 });
 
+/** Preview DTO — same shape as the interesting half of SendMessageSchema, minus the recipient/organization (a preview never sends anything). */
+export const PreviewMessageSchema = z.object({
+  template: z.nativeEnum(OpsMessageTemplate),
+  params: z.record(z.string(), z.any()).optional(),
+});
+
 export const PaginationQuerySchema = z.object({
   page: z.string().optional().default('1').transform((v) => parseInt(v, 10)),
   limit: z.string().optional().default('20').transform((v) => parseInt(v, 10)),
+});
+
+/**
+ * Query DTO for the platform-wide message log (centralized Messaging
+ * dashboard page). All filters are optional — an empty query returns every
+ * message across every organization, newest first.
+ */
+export const MessagingListQuerySchema = z.object({
+  page: z.string().optional().default('1').transform((v) => parseInt(v, 10)),
+  limit: z.string().optional().default('20').transform((v) => parseInt(v, 10)),
+  organizationId: z.string().optional(),
+  status: z.nativeEnum(OpsMessageStatus).optional(),
+  channel: z.nativeEnum(OpsMessageChannel).optional(),
+  template: z.nativeEnum(OpsMessageTemplate).optional(),
+  search: z.string().optional(),
 });

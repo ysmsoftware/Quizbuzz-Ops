@@ -1,45 +1,66 @@
 'use client';
 
 import React, { useState } from 'react';
-import { SubscriptionPlan, SubscriptionOverride } from '@/lib/types';
+import { EffectiveLimits, OverrideMode, SubscriptionOverride } from '@/lib/types';
 import { ShieldAlert, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+type LimitField = keyof EffectiveLimits;
 
 interface AddOverrideModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (override: Omit<SubscriptionOverride, 'id' | 'createdAt'>) => Promise<void>;
   isSubmitting: boolean;
+  /** Current effective values (base plan + any existing overrides) — used only for the live "Current → New" preview below. */
+  effectiveLimits: EffectiveLimits;
 }
 
-const limitLabels: Record<string, string> = {
+const limitLabels: Record<LimitField, string> = {
   maxContestsPerCycle: 'Max Quizzes per Period',
   maxParticipantsPerContest: 'Max Participants per Quiz',
   maxQuestionsPerContest: 'Max Questions per Quiz',
   maxOrgMembers: 'Max Team Members',
 };
 
+/** Pure preview of what this one override would resolve to, given the field's current effective value. Mirrors (for a single override) the same fold rule effective-limits.ts applies for all of them. */
+function previewNewValue(
+  currentValue: number | null,
+  mode: OverrideMode,
+  enteredValue: number | null,
+): number | null {
+  if (mode === 'ABSOLUTE') return enteredValue;
+  if (currentValue === null || enteredValue === null) return currentValue; // adding to/from "unlimited" stays unlimited
+  return currentValue + enteredValue;
+}
+
 export default function AddOverrideModal({
   isOpen,
   onClose,
   onSubmit,
   isSubmitting,
+  effectiveLimits,
 }: AddOverrideModalProps) {
-  const [field, setField] = useState<keyof SubscriptionPlan['limits']>('maxContestsPerCycle');
-  const [value, setValue] = useState('25');
+  const [field, setField] = useState<LimitField>('maxContestsPerCycle');
+  const [mode, setMode] = useState<OverrideMode>('ADDITIVE');
+  const [value, setValue] = useState('1');
   const [isUnlimited, setIsUnlimited] = useState(false);
   const [reason, setReason] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
 
   if (!isOpen) return null;
 
+  const currentValue = effectiveLimits[field].value;
+  const enteredValue = isUnlimited ? null : parseInt(value, 10);
+  const previewValue = previewNewValue(currentValue, mode, Number.isNaN(enteredValue as number) ? 0 : enteredValue);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reason.trim()) return;
-    const numericVal = isUnlimited ? null : parseInt(value, 10);
     await onSubmit({
       field,
-      value: numericVal,
+      value: enteredValue,
+      mode,
       reason,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       createdByAdminName: 'Super Admin',
@@ -70,7 +91,7 @@ export default function AddOverrideModal({
               <label className="block font-semibold text-foreground mb-1">Target Quota Field</label>
               <select
                 value={field}
-                onChange={(e) => setField(e.target.value as any)}
+                onChange={(e) => setField(e.target.value as LimitField)}
                 className="w-full px-3 py-2 rounded-md bg-background border border-input focus:ring-1 focus:ring-amber-500"
               >
                 {Object.entries(limitLabels).map(([k, v]) => (
@@ -79,9 +100,34 @@ export default function AddOverrideModal({
               </select>
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMode('ADDITIVE')}
+                className={`px-3 py-2 rounded-md border text-left transition-colors ${
+                  mode === 'ADDITIVE' ? 'border-amber-500 bg-amber-500/10 text-amber-700' : 'border-input text-muted-foreground'
+                }`}
+              >
+                <div className="font-semibold">Add to current limit</div>
+                <div className="text-[10px] opacity-80">e.g. "+1" on top of what they already have</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('ABSOLUTE')}
+                className={`px-3 py-2 rounded-md border text-left transition-colors ${
+                  mode === 'ABSOLUTE' ? 'border-amber-500 bg-amber-500/10 text-amber-700' : 'border-input text-muted-foreground'
+                }`}
+              >
+                <div className="font-semibold">Set exact limit to</div>
+                <div className="text-[10px] opacity-80">Replaces the current limit outright</div>
+              </button>
+            </div>
+
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="block font-semibold text-foreground">New Override Limit</label>
+                <label className="block font-semibold text-foreground">
+                  {mode === 'ADDITIVE' ? 'Amount to Add' : 'New Override Limit'}
+                </label>
                 <label className="flex items-center space-x-1.5 cursor-pointer text-muted-foreground">
                   <input
                     type="checkbox"
@@ -98,10 +144,16 @@ export default function AddOverrideModal({
                   type="number"
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
-                  placeholder="e.g. 50"
+                  placeholder={mode === 'ADDITIVE' ? 'e.g. 1' : 'e.g. 50'}
                   className="w-full px-3 py-2 rounded-md bg-background border border-input focus:ring-1 focus:ring-amber-500"
                 />
               )}
+
+              <p className="text-[11px] text-muted-foreground pt-1">
+                Current: <span className="font-semibold text-foreground">{currentValue ?? 'Unlimited'}</span>
+                {' → '}
+                New: <span className="font-semibold text-amber-600">{previewValue ?? 'Unlimited'}</span>
+              </p>
             </div>
 
             <div>

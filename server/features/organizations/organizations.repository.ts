@@ -11,6 +11,7 @@ export interface IOrganizationsRepository {
     status: 'all' | 'active' | 'suspended' | 'deleted';
   }): Promise<{ rows: any[]; total: number }>;
   getOrganizationDetail(orgId: string): Promise<any | null>;
+  getOwnerContact(orgId: string): Promise<{ name: string; email: string } | null>;
   getOrganizationMembers(orgId: string): Promise<OrgMemberDetail[]>;
   getOrganizationContests(orgId: string): Promise<OrgContestDetail[]>;
   getOrganizationParticipants(orgId: string): Promise<OrgParticipantDetail[]>;
@@ -24,6 +25,16 @@ export interface IOrganizationsRepository {
   getSubscriptionsForOrgs(orgIds: string[]): Promise<any[]>;
   getSubscriptionForOrg(orgId: string): Promise<any | null>;
   getPlatformAdmin(adminId: string): Promise<any | null>;
+  getUsageSnapshot(
+    orgId: string,
+    periodStart: Date,
+    periodEnd: Date
+  ): Promise<{
+    contestsUsedThisCycle: number;
+    maxParticipantsInAContest: number;
+    maxQuestionsInAContest: number;
+    memberCountUsed: number;
+  }>;
 }
 
 export class OrganizationsRepository implements IOrganizationsRepository {
@@ -110,6 +121,31 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       WHERE o.id = $1 AND o."isDeleted" = false
     `, [orgId]);
     return rows[0] || null;
+  }
+
+  /**
+   * Strict owner lookup for actually SENDING mail — unlike getOrganizationDetail's
+   * "ownerEmail" (which falls back to any contact, then to a placeholder
+   * 'unknown@org.com' purely so the admin UI always has something to render),
+   * this returns null when there's no real OrgMemberRole.OWNER row, so
+   * callers (OrgOwnerNotifier) can skip sending rather than emailing a
+   * placeholder address. Per the decision this system's lifecycle emails go
+   * to the OWNER only — not every active admin/member on the org.
+   */
+  async getOwnerContact(orgId: string): Promise<{ name: string; email: string } | null> {
+    const rows = await queryMainDb<{ name: string; email: string }>(`
+      SELECT a."firstName" || ' ' || COALESCE(a."lastName", '') as name, a.email
+      FROM admins a
+      JOIN org_members om ON om."adminId" = a.id
+      WHERE om."organizationId" = $1
+        AND om.role = 'OWNER'
+        AND om."isActive" = true
+        AND a."isActive" = true
+        AND a."isDeleted" = false
+      LIMIT 1
+    `, [orgId]);
+    if (!rows[0]) return null;
+    return { name: rows[0].name.trim(), email: rows[0].email };
   }
 
   async getOrganizationMembers(orgId: string): Promise<OrgMemberDetail[]> {
@@ -376,6 +412,76 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     return prisma.platformAdmin.findUnique({
       where: { id: adminId },
     });
+  }
+
+  /**
+   * Real, cycle-scoped usage numbers — replaces the old client-side
+   * `getUsageSnapshot()` in lib/api/organizations.ts, which counted
+   * every contest the org had EVER created (not scoped to the billing
+   * period) and summed participants across all contests against a
+   * PER-CONTEST limit. This mirrors exactly what the main app's own
+   * enforcement (src/common/plan-entitlements.ts) checks against:
+   *  - contestsUsedThisCycle: same `createdAt BETWEEN periodStart AND
+   *    periodEnd` window the contests-per-cycle check uses.
+   *  - maxParticipantsInAContest / maxQuestionsInAContest: the ceiling is
+   *    per-contest, not an org-wide total, so what actually matters for
+   *    "how close is this org to hitting it" is their single fullest
+   *    contest — not scoped to the cycle, since a contest created in an
+   *    earlier cycle can still be actively accepting registrations.
+   *  - memberCountUsed: same `isActive: true` count
+   *    assertCanInviteMember() uses (includes pending invites).
+   */
+  async getUsageSnapshot(
+    orgId: string,
+    periodStart: Date,
+    periodEnd: Date
+  ): Promise<{
+    contestsUsedThisCycle: number;
+    maxParticipantsInAContest: number;
+    maxQuestionsInAContest: number;
+    memberCountUsed: number;
+  }> {
+    const rows = await queryMainDb(
+      `
+      SELECT
+        (
+          SELECT COUNT(*)::int FROM contests
+          WHERE "organizationId" = $1 AND "isDeleted" = false
+            AND "createdAt" BETWEEN $2 AND $3
+        ) AS "contestsUsedThisCycle",
+        (
+          SELECT COALESCE(MAX(pc), 0)::int FROM (
+            SELECT COUNT(*) AS pc
+            FROM participants p
+            JOIN contests c ON c.id = p."contestId"
+            WHERE c."organizationId" = $1 AND c."isDeleted" = false
+            GROUP BY p."contestId"
+          ) t
+        ) AS "maxParticipantsInAContest",
+        (
+          SELECT COALESCE(MAX(qc), 0)::int FROM (
+            SELECT COUNT(*) AS qc
+            FROM contest_questions cq
+            JOIN contests c ON c.id = cq."contestId"
+            WHERE c."organizationId" = $1 AND c."isDeleted" = false
+            GROUP BY cq."contestId"
+          ) t
+        ) AS "maxQuestionsInAContest",
+        (
+          SELECT COUNT(*)::int FROM org_members
+          WHERE "organizationId" = $1 AND "isActive" = true
+        ) AS "memberCountUsed"
+      `,
+      [orgId, periodStart, periodEnd]
+    );
+
+    const row = rows[0] ?? {};
+    return {
+      contestsUsedThisCycle: row.contestsUsedThisCycle ?? 0,
+      maxParticipantsInAContest: row.maxParticipantsInAContest ?? 0,
+      maxQuestionsInAContest: row.maxQuestionsInAContest ?? 0,
+      memberCountUsed: row.memberCountUsed ?? 0,
+    };
   }
 }
 export default OrganizationsRepository;

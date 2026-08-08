@@ -91,16 +91,16 @@ export class OverviewRepository implements IOverviewRepository {
 
   async getUpcomingContests(days = 7): Promise<UpcomingContest[]> {
     const rows = await queryMainDb(`
-      SELECT 
-        c.id, c.title, o.name as "organizationName", c."startTime",
+      SELECT
+        c.id, c.title, o.id as "organizationId", o.name as "organizationName", c."startTime",
         COALESCE(p.cnt, 0)::int as "participantCount"
       FROM contests c
       JOIN organizations o ON c."organizationId" = o.id
       LEFT JOIN (
         SELECT "contestId", COUNT(*)::int as cnt FROM participants GROUP BY "contestId"
       ) p ON c.id = p."contestId"
-      WHERE c."isDeleted" = false 
-        AND c."startTime" >= NOW() 
+      WHERE c."isDeleted" = false
+        AND c."startTime" >= NOW()
         AND c."startTime" <= NOW() + INTERVAL '${days} days'
       ORDER BY c."startTime" ASC
       LIMIT 10
@@ -108,6 +108,7 @@ export class OverviewRepository implements IOverviewRepository {
     return rows.map((r) => ({
       id: r.id,
       title: r.title,
+      organizationId: r.organizationId,
       organizationName: r.organizationName,
       startTime: new Date(r.startTime).toISOString(),
       participantCount: r.participantCount,

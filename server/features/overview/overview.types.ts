@@ -28,6 +28,7 @@ export interface OrgGrowthPoint {
 export interface UpcomingContest {
   id: string;
   title: string;
+  organizationId: string;
   organizationName: string;
   startTime: string;
   participantCount: number;

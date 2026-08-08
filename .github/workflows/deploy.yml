@@ -53,6 +53,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_MAIN_APP_URL=${{ vars.NEXT_PUBLIC_MAIN_APP_URL || 'https://ysmquizbuzz.com' }}
 
   deploy-to-vps:
     name: Deploy to AlmaLinux VPS with Automatic Rollback

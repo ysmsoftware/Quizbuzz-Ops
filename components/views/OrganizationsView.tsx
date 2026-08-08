@@ -402,7 +402,7 @@ export default function OrganizationsView() {
                 </tr>
               ) : (
                 sortedOrganizations.map((org: any) => {
-                  const planName = plans.find(p => p.id === org.planId)?.name || org.planId;
+                  const planName = plans.find(p => p.id === org.planId || p.slug === org.planId)?.name || org.planId;
                   const isChecked = !!selectedRowIds[org.id];
 
                   return (

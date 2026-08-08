@@ -6,9 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -p 3010",
-    "worker": "tsx scripts/worker.ts",
+    "worker": "tsx --env-file=.env scripts/worker.ts",
     "lint": "next lint",
-    "db:seed": "node prisma/seed.js"
+    "db:seed": "node prisma/seed.js",
+    "seed:platform-admin": "tsx --env-file=.env scripts/seed-platform-admin.ts"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
@@ -32,6 +33,7 @@
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.80.0",
     "recharts": "^3.9.1",
+    "winston": "^3.17.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

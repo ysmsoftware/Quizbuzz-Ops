@@ -1,14 +1,17 @@
-import { IMessagingRepository, MessagingRepository } from './messaging.repository';
+import { IMessagingRepository, MessageListFilters, MessagingRepository } from './messaging.repository';
 import { messageQueue } from '../../queues/message.queue';
 import { messagingConfig } from '../../config/messaging.config';
 import { NotFoundError, ValidationError } from '../../http/errors';
-import { OpsMessageChannel, OpsMessageStatus } from '@prisma/client';
+import { OpsMessageChannel, OpsMessageStatus, OpsMessageTemplate } from '@prisma/client';
+import { getEmailTemplate, RenderedEmail } from '../../templates/email.templates';
 import { MessageLogResult, PaginatedMessagesResult, SendMessageInput } from './messaging.types';
 
 export interface IMessagingService {
   enqueueMessage(input: SendMessageInput): Promise<MessageLogResult>;
   getMessageById(id: string, organizationId?: string): Promise<MessageLogResult>;
   getMessagesByOrganization(organizationId: string, page: number, limit: number): Promise<PaginatedMessagesResult>;
+  getMessages(filters: MessageListFilters, page: number, limit: number): Promise<PaginatedMessagesResult>;
+  previewMessage(template: OpsMessageTemplate, params: Record<string, any>): RenderedEmail;
   retryMessage(id: string, organizationId?: string): Promise<MessageLogResult>;
   retryFailedMessages(organizationId: string): Promise<{ count: number }>;
   updateMessageStatus(id: string, status: OpsMessageStatus, additionalData?: Record<string, any>): Promise<any>;
@@ -81,13 +84,54 @@ export class MessagingService implements IMessagingService {
     };
   }
 
+  /**
+   * Platform-wide message log for the centralized Messaging dashboard page —
+   * same pagination shape as getMessagesByOrganization, but not scoped to a
+   * single tenant unless the caller passes filters.organizationId.
+   */
+  async getMessages(filters: MessageListFilters, page: number, limit: number): Promise<PaginatedMessagesResult> {
+    const skip = (page - 1) * limit;
+    const [rows, total] = await Promise.all([
+      this.repo.findAll(filters, skip, limit),
+      this.repo.countAll(filters),
+    ]);
+
+    return {
+      data: rows.map(toDTO),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Renders the exact subject/HTML an EMAIL send of this template+params
+   * would produce, without touching the queue, the DB, or the audit log —
+   * lets the compose UI show a byte-accurate live preview instead of a
+   * separately-maintained (and inevitably drifting) copy of the markup.
+   */
+  previewMessage(template: OpsMessageTemplate, params: Record<string, any>): RenderedEmail {
+    return getEmailTemplate(template, params ?? {});
+  }
+
+  /**
+   * Re-queues a message log row for delivery. Originally FAILED-only ("retry");
+   * now also allowed from SENT/DELIVERED so an operator can manually resend a
+   * message that already went out (e.g. the recipient says they never got it) —
+   * still blocked while QUEUED/PROCESSING since that message is already
+   * in-flight and a second concurrent send would just race it. Each call
+   * increments retryCount and re-uses the same message row/history rather
+   * than creating a new one, so the Actions column's "Resend" button works
+   * for any row regardless of its current status.
+   */
   async retryMessage(id: string, organizationId?: string): Promise<MessageLogResult> {
     const message = await this.repo.findById(id, organizationId);
     if (!message) throw new NotFoundError('Message not found');
-    if (message.status !== 'FAILED') {
+    if (message.status === 'QUEUED' || message.status === 'PROCESSING') {
       throw new ValidationError(
         { status: message.status },
-        `Cannot retry message with status ${message.status}. Only FAILED messages can be retried.`
+        `Cannot resend a message that is currently ${message.status.toLowerCase()}. Wait for it to finish before resending.`
       );
     }
 

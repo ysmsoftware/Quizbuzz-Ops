@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import {
   calculateSubscriptionPricing,
+  calculateProratedBase,
   resolvePlanCyclePrice,
   availableCyclesForPlan,
   type BillingCycleChoice,
@@ -72,7 +73,7 @@ function CheckoutContent() {
           const cycles = availableCyclesForPlan(res.data.plan);
           setCycle(cycles[0] || null);
         } else {
-          setError(res.error || 'Failed to verify checkout session.');
+          setError(res.message || 'Failed to verify checkout session.');
         }
       })
       .catch((err) => {
@@ -95,11 +96,30 @@ function CheckoutContent() {
     if (!sessionData?.plan || !cycle) return null;
     try {
       const baseAmount = resolvePlanCyclePrice(sessionData.plan, cycle);
-      return calculateSubscriptionPricing(baseAmount);
+      const currentSub = sessionData.currentSubscription;
+
+      // Same-plan-same-cycle renewal while still active isn't priceable here —
+      // the order route rejects it outright (already subscribed). Any other
+      // combination while a subscription is active gets the same proration
+      // estimate the order route will compute for real at charge time.
+      const isSamePlanSameCycle =
+        currentSub && currentSub.planId === sessionData.plan.id && currentSub.billingCycle === cycle;
+
+      if (currentSub && !isSamePlanSameCycle) {
+        const { proratedBase, creditApplied } = calculateProratedBase(baseAmount, currentSub);
+        return { ...calculateSubscriptionPricing(proratedBase), creditApplied };
+      }
+
+      return { ...calculateSubscriptionPricing(baseAmount), creditApplied: 0 };
     } catch {
       return null;
     }
   }, [sessionData, cycle]);
+
+  const alreadySubscribedToSelected =
+    sessionData?.currentSubscription &&
+    sessionData.currentSubscription.planId === sessionData?.plan?.id &&
+    sessionData.currentSubscription.billingCycle === cycle;
 
   function stopPolling() {
     if (pollStopRef.current) {
@@ -160,7 +180,7 @@ function CheckoutContent() {
       const orderRes = await res.json();
 
       if (!orderRes.success) {
-        setPayError(orderRes.error || 'Failed to initialize payment order.');
+        setPayError(orderRes.message || 'Failed to initialize payment order.');
         setPayState('idle');
         return;
       }
@@ -390,10 +410,28 @@ function CheckoutContent() {
           </div>
 
           {/* Price Breakdown */}
-          {pricing ? (
+          {alreadySubscribedToSelected ? (
+            <div className="text-xs text-muted-foreground pt-5 border-t border-border/50 mb-2 bg-muted/30 rounded-xl p-4">
+              You're already subscribed to this plan until{' '}
+              {new Date(sessionData.currentSubscription.currentPeriodEnd).toLocaleDateString()}. Pick a different plan
+              or billing cycle above to make changes, or return to the dashboard.
+            </div>
+          ) : pricing ? (
             <div className="space-y-3 text-xs border-t border-border/50 pt-5 mb-2">
+              {pricing.creditApplied > 0 && (
+                <>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>{sessionData.currentSubscription?.planName || 'Current plan'} — full price ({cycle === 'ANNUAL' ? 'annual' : 'monthly'})</span>
+                    <span>₹{(pricing.baseAmount + pricing.creditApplied).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-success">
+                    <span>Credit for unused time on current plan</span>
+                    <span>−₹{pricing.creditApplied.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between text-muted-foreground">
-                <span>Subscription ({cycle === 'ANNUAL' ? 'annual' : 'monthly'})</span>
+                <span>Subscription ({cycle === 'ANNUAL' ? 'annual' : 'monthly'}){pricing.creditApplied > 0 ? ', after credit' : ''}</span>
                 <span>₹{pricing.baseAmount.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
@@ -408,6 +446,11 @@ function CheckoutContent() {
                 <span>Total Amount Due Now</span>
                 <span className="text-primary text-lg">₹{pricing.totalAmount.toFixed(2)}</span>
               </div>
+              {pricing.creditApplied > 0 && (
+                <p className="text-[11px] text-muted-foreground italic">
+                  Estimated — the exact amount is recalculated when you click Pay.
+                </p>
+              )}
             </div>
           ) : (
             <div className="text-xs text-destructive pt-5 border-t border-border/50 mb-2">
@@ -430,7 +473,7 @@ function CheckoutContent() {
           <div className="space-y-3">
             <button
               onClick={handlePay}
-              disabled={paying || !pricing}
+              disabled={paying || !pricing || !!alreadySubscribedToSelected}
               className="w-full py-4 px-6 rounded-2xl bg-primary hover:bg-primary/90 active:bg-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-lg shadow-primary/30 transition-all duration-200 disabled:opacity-50 text-base cursor-pointer"
             >
               {paying ? (
@@ -438,6 +481,8 @@ function CheckoutContent() {
                   <Loader2 className="w-5 h-5 animate-spin" />
                   <span>{payState === 'checkout_open' ? 'Waiting for Razorpay…' : 'Processing Order…'}</span>
                 </>
+              ) : alreadySubscribedToSelected ? (
+                <span>Already Subscribed to This Plan</span>
               ) : (
                 <>
                   <CreditCard className="w-5 h-5" />

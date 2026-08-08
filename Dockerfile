@@ -17,6 +17,13 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time — a
+# runtime `docker run -e` or docker-compose `environment:` entry does NOT
+# reach them, only a build ARG does. Must be passed via --build-arg (see
+# .github/workflows/deploy.yml) whenever this changes per environment.
+ARG NEXT_PUBLIC_MAIN_APP_URL
+ENV NEXT_PUBLIC_MAIN_APP_URL=$NEXT_PUBLIC_MAIN_APP_URL
+
 # Generate Prisma Client
 RUN npx prisma generate
 

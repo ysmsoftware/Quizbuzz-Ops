@@ -47,13 +47,13 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'organizations', label: 'Organizations', phase: 'phase 1', href: '/dashboard/organizations', icon: Building2 },
   { id: 'plans', label: 'Subscription Plans', phase: 'phase 2', href: '/dashboard/plans', icon: Sparkles },
   { id: 'billing', label: 'Billing & Revenue', phase: 'phase 2', href: '/dashboard/billing', icon: Receipt },
-  { id: 'payouts', label: 'Payout Accounts', phase: 'phase 2', href: '/dashboard/payouts', icon: Landmark },
   { id: 'messaging', label: 'Messaging', phase: 'phase 2', href: '/dashboard/messaging', icon: MessagesSquare },
-  { id: 'audit', label: 'Audit Log', phase: 'phase 3', href: '/dashboard/audit-log', icon: Database },
   { id: 'calculator', label: 'Contest Calculator', phase: 'phase 4', href: '/dashboard/calculator', icon: Calculator },
   { id: 'bookings', label: 'Bookings', phase: 'phase 4', href: '/dashboard/bookings', icon: CalendarClock },
+  { id: 'audit', label: 'Audit Log', phase: 'phase 3', href: '/dashboard/audit-log', icon: Database },
+  { id: 'flags', label: 'Feature Flags', phase: 'phase 6', href: '/dashboard/flags', icon: Sliders },
+  { id: 'payouts', label: 'Payout Accounts', phase: 'phase 2', href: '/dashboard/payouts', icon: Landmark, hidden: true },
   { id: 'infra', label: 'Infra & Cost', phase: 'phase 5', href: '/dashboard/infra', icon: Cpu, hidden: true },
-  { id: 'flags', label: 'Feature Flags', phase: 'phase 6', href: '/dashboard/flags', icon: Sliders, hidden: true },
 ];
 
 // Items actually rendered in the sidebar — `hidden` items stay defined above
@@ -463,9 +463,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <h2 className="font-bold text-base sm:text-lg tracking-tight text-foreground leading-none">
                 {currentSectionLabel}
               </h2>
-              <span className="text-[10px] text-muted-foreground hidden sm:block mt-0.5">
-                QuizBuzz Platform Ops • Sandbox Environment
-              </span>
             </div>
           </div>
 

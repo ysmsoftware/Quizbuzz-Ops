@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getInfraStatus, getScalingConfig, getFeatureFlags, toggleFeatureFlag } from '@/lib/api/ops';
+import { FeatureFlag } from '@/lib/types';
 
 export function useOps() {
   const queryClient = useQueryClient();
@@ -24,7 +25,18 @@ export function useOps() {
   const toggleFlagMutation = useMutation({
     mutationFn: ({ key, isEnabled }: { key: string; isEnabled: boolean }) =>
       toggleFeatureFlag(key, isEnabled),
-    onSuccess: () => {
+    onMutate: async ({ key, isEnabled }) => {
+      await queryClient.cancelQueries({ queryKey: ['ops', 'flags'] });
+      const previous = queryClient.getQueryData<FeatureFlag[]>(['ops', 'flags']);
+      queryClient.setQueryData<FeatureFlag[]>(['ops', 'flags'], (old) =>
+        old?.map((f) => (f.key === key ? { ...f, isEnabled } : f))
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['ops', 'flags'], context.previous);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['ops', 'flags'] });
       queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
     },

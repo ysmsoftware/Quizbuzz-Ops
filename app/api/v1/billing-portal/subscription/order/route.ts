@@ -6,6 +6,7 @@ import { generateUlid } from '@/server/utils/ulid';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
 import { okResponse, errorResponse } from '@/server/http/envelope';
+import { isFeatureEnabled } from '@/server/features/feature-flags/is-feature-enabled';
 import {
   calculateSubscriptionPricing,
   calculateProratedBase,
@@ -50,6 +51,15 @@ export async function POST(req: Request) {
     }
 
     const { organizationId, adminId, adminEmail, adminName, planSlug } = payload;
+
+    if (!(await isFeatureEnabled('razorpay_gateway_active', organizationId))) {
+      return errorResponse(
+        'Payments are temporarily unavailable for this organization. Please try again shortly.',
+        'FEATURE_DISABLED',
+        { featureKey: 'razorpay_gateway_active' },
+        403
+      );
+    }
 
     const plan = await prisma.subscriptionPlan.findUnique({
       where: { slug: planSlug },

@@ -1,21 +1,27 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOps } from '@/lib/hooks/useOps';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
-import { 
-  Sliders, 
-  HelpCircle, 
-  AlertOctagon, 
-  User, 
-  Clock, 
-  ShieldAlert, 
-  Lock, 
-  Unlock, 
-  Play, 
+import { getFlagOrgOverrides, setFlagOrgOverride, removeFlagOrgOverride } from '@/lib/api/ops';
+import {
+  Sliders,
+  HelpCircle,
+  AlertOctagon,
+  User,
+  Clock,
+  ShieldAlert,
+  Lock,
+  Unlock,
+  Play,
   Pause,
-  AlertTriangle
+  AlertTriangle,
+  Building2,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
@@ -29,11 +35,154 @@ interface ConfirmationState {
   type: 'critical' | 'warning';
 }
 
+type ToastFn = (title: string, description?: string, type?: 'success' | 'warning' | 'error' | 'info') => void;
+
+// Per-org override management for one flag — only rendered for flags with
+// supportsOrgOverride: true. Read-open (any admin can see who has an
+// override); every mutating control is gated by canManage.
+function OrgOverridesPanel({ flagKey, canManage, toast }: { flagKey: string; canManage: boolean; toast: ToastFn }) {
+  const queryClient = useQueryClient();
+  const [orgId, setOrgId] = useState('');
+  const [isEnabled, setIsEnabled] = useState(true);
+  const [reason, setReason] = useState('');
+
+  const overridesQuery = useQuery({
+    queryKey: ['ops', 'flags', flagKey, 'overrides'],
+    queryFn: () => getFlagOrgOverrides(flagKey),
+  });
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['ops', 'flags', flagKey, 'overrides'] });
+    queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+  };
+
+  const setMutation = useMutation({
+    mutationFn: () => setFlagOrgOverride(flagKey, orgId.trim(), isEnabled, reason.trim()),
+    onSuccess: () => {
+      toast('Override Saved', `Organization "${orgId.trim()}" now has an override for this flag.`, 'success');
+      setOrgId('');
+      setReason('');
+      setIsEnabled(true);
+      invalidate();
+    },
+    onError: (err: any) => {
+      toast('Failed to Save Override', err?.message || 'Could not set the organization override.', 'error');
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (targetOrgId: string) => removeFlagOrgOverride(flagKey, targetOrgId),
+    onSuccess: () => {
+      toast('Override Removed', 'Organization now follows the global default.', 'success');
+      invalidate();
+    },
+    onError: (err: any) => {
+      toast('Failed to Remove Override', err?.message || 'Could not remove the organization override.', 'error');
+    },
+  });
+
+  return (
+    <div className="ml-2 sm:ml-4 p-4 bg-secondary/20 border border-border/30 rounded-lg space-y-4">
+      <div className="space-y-2">
+        {overridesQuery.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading organization overrides…</p>
+        ) : overridesQuery.data?.length ? (
+          overridesQuery.data.map((override) => (
+            <div
+              key={override.id}
+              className="flex items-start justify-between gap-3 p-3 bg-card border border-border/30 rounded-lg"
+            >
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <code className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary/80 text-foreground">
+                    {override.organizationId}
+                  </code>
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      override.isEnabled ? 'bg-primary/10 text-primary' : 'bg-secondary text-muted-foreground'
+                    }`}
+                  >
+                    {override.isEnabled ? 'ENABLED' : 'DISABLED'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">{override.reason}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  By {override.createdByName} · {format(parseISO(override.createdAt), 'dd MMM yyyy, hh:mm a')}
+                </p>
+              </div>
+              {canManage && (
+                <button
+                  onClick={() => removeMutation.mutate(override.organizationId)}
+                  disabled={removeMutation.isPending}
+                  className="shrink-0 p-1.5 rounded-md text-destructive hover:bg-destructive/10 cursor-pointer disabled:opacity-50"
+                  title="Remove override"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          ))
+        ) : (
+          <p className="text-xs text-muted-foreground">No organizations have an override — all follow the global default.</p>
+        )}
+      </div>
+
+      {canManage && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!orgId.trim() || !reason.trim()) return;
+            setMutation.mutate();
+          }}
+          className="flex flex-wrap items-end gap-2 pt-2 border-t border-border/20"
+        >
+          <div className="flex-1 min-w-[140px] space-y-1">
+            <label className="text-[10px] font-semibold text-muted-foreground">Organization ID</label>
+            <input
+              value={orgId}
+              onChange={(e) => setOrgId(e.target.value)}
+              placeholder="org_9f3c1a"
+              className="w-full h-8 px-2 text-xs rounded-md bg-background border border-border/40 text-foreground"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-muted-foreground">Value</label>
+            <select
+              value={isEnabled ? 'on' : 'off'}
+              onChange={(e) => setIsEnabled(e.target.value === 'on')}
+              className="h-8 px-2 text-xs rounded-md bg-background border border-border/40 text-foreground"
+            >
+              <option value="on">Enabled</option>
+              <option value="off">Disabled</option>
+            </select>
+          </div>
+          <div className="flex-[2] min-w-[180px] space-y-1">
+            <label className="text-[10px] font-semibold text-muted-foreground">Reason (required)</label>
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Add-on purchased per contract dated…"
+              className="w-full h-8 px-2 text-xs rounded-md bg-background border border-border/40 text-foreground"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={setMutation.isPending || !orgId.trim() || !reason.trim()}
+            className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-bold cursor-pointer disabled:opacity-50"
+          >
+            {setMutation.isPending ? 'Saving…' : 'Add Override'}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 export default function FeatureFlagsView() {
   const { featureFlags, isLoadingFlags, toggleFlag, isToggling } = useOps();
-  const { admin } = useCurrentAdmin();
+  const { hasPermission } = useCurrentAdmin();
   const { toast } = useToast();
-  
+
   // Modal dialog confirmation state
   const [confirmState, setConfirmState] = useState<ConfirmationState>({
     isOpen: false,
@@ -45,7 +194,11 @@ export default function FeatureFlagsView() {
     type: 'warning',
   });
 
-  const isSupport = admin?.role === 'SUPPORT';
+  const canManage = hasPermission('FEATURE_FLAG_MANAGE');
+
+  // Only one flag's org-override panel open at a time — keeps the list
+  // scannable and avoids firing N override queries at once.
+  const [expandedFlagKey, setExpandedFlagKey] = useState<string | null>(null);
 
   if (isLoadingFlags) {
     return (
@@ -60,37 +213,47 @@ export default function FeatureFlagsView() {
     );
   }
 
-  const handleToggleClick = (flagKey: string, flagLabel: string, currentValue: boolean) => {
-    if (isSupport) {
-      toast('Permission Denied', 'Support operators are not authorized to modify platform feature flags.', 'error');
+  // Copy overrides for the two flags whose confirmation text was
+  // hand-written before severity became data-driven. Any other CRITICAL/
+  // WARNING flag (e.g. a future disable_paid_contest_publishing) falls
+  // through to the generic severity-driven copy below instead of requiring
+  // a new if-branch here — see finding 1.5.
+  const CONFIRMATION_COPY: Record<string, { title: string; message: string }> = {
+    maintenance_mode: {
+      title: 'Activate Platform-Wide Maintenance Mode?',
+      message: 'CRITICAL ACTION: This immediately suspends all active operations, contests, and admin controls across every single tenant organization on the platform. Current users will see a maintenance message.',
+    },
+    new_registrations_paused: {
+      title: 'Pause All Candidate Registrations?',
+      message: 'WARNING: This halts all participant registration queries and operations across all live and upcoming contests platform-wide. Existing registered candidates can still participate.',
+    },
+  };
+
+  const handleToggleClick = (flagKey: string, flagLabel: string, currentValue: boolean, severity: string) => {
+    if (!canManage) {
+      toast('Permission Denied', 'You are not authorized to modify platform feature flags.', 'error');
       return;
     }
 
     const nextValue = !currentValue;
 
-    // Special verification rules for maintenance_mode and new_registrations_paused when turning ON
-    if (flagKey === 'maintenance_mode' && nextValue === true) {
+    // CRITICAL/WARNING flags require confirmation when turning ON.
+    if (nextValue === true && (severity === 'CRITICAL' || severity === 'WARNING')) {
+      const copy = CONFIRMATION_COPY[flagKey] ?? {
+        title: `${severity === 'CRITICAL' ? 'Activate' : 'Enable'} "${flagLabel}"?`,
+        message:
+          severity === 'CRITICAL'
+            ? `CRITICAL ACTION: This is a platform-wide, high-impact change. Confirm you want to turn "${flagLabel}" ON.`
+            : `WARNING: This is a platform-wide change with user-facing impact. Confirm you want to turn "${flagLabel}" ON.`,
+      };
       setConfirmState({
         isOpen: true,
         flagKey,
         flagLabel,
         targetValue: nextValue,
-        title: 'Activate Platform-Wide Maintenance Mode?',
-        message: 'CRITICAL ACTION: This immediately suspends all active operations, contests, and admin controls across every single tenant organization on the platform. Current users will see a maintenance message.',
-        type: 'critical',
-      });
-      return;
-    }
-
-    if (flagKey === 'new_registrations_paused' && nextValue === true) {
-      setConfirmState({
-        isOpen: true,
-        flagKey,
-        flagLabel,
-        targetValue: nextValue,
-        title: 'Pause All Candidate Registrations?',
-        message: 'WARNING: This halts all participant registration queries and operations across all live and upcoming contests platform-wide. Existing registered candidates can still participate.',
-        type: 'warning',
+        title: copy.title,
+        message: copy.message,
+        type: severity === 'CRITICAL' ? 'critical' : 'warning',
       });
       return;
     }
@@ -146,14 +309,14 @@ export default function FeatureFlagsView() {
         )}
       </div>
 
-      {/* SUPPORT ROLE WARNING BANNER */}
-      {isSupport && (
+      {/* READ-ONLY ROLE WARNING BANNER */}
+      {!canManage && (
         <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl flex items-start gap-3">
           <ShieldAlert className="h-5 w-5 shrink-0 mt-0.5" />
           <div className="space-y-1 text-xs">
-            <h4 className="font-bold">Support Role Read-Only Restrictions</h4>
+            <h4 className="font-bold">Read-Only Access</h4>
             <p className="leading-relaxed opacity-90">
-              Your active operator profile is registered under the <strong>SUPPORT</strong> clearance group. Toggling global configuration flags, emergency shutdown matrices, or feature scopes is strictly limited to <strong>SUPER_ADMIN</strong> and <strong>BILLING_ADMIN</strong> roles.
+              You don&apos;t have permission to manage feature flags. Toggling global configuration flags and per-organization overrides is limited to <strong>SUPER_ADMIN</strong>.
             </p>
           </div>
         </div>
@@ -162,76 +325,93 @@ export default function FeatureFlagsView() {
       {/* FEATURE FLAGS LIST */}
       <div className="space-y-4">
         {featureFlags.map(flag => {
-          const isEmergency = flag.key === 'maintenance_mode' || flag.key === 'new_registrations_paused';
-          
+          const isEmergency = flag.severity !== 'STANDARD';
+          const isExpanded = expandedFlagKey === flag.key;
+
           return (
-            <div 
-              key={flag.id}
-              id={`flag-card-${flag.key}`}
-              className={`p-5 sm:p-6 bg-card border rounded-xl shadow-sm transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative group ${
-                flag.isEnabled && isEmergency
-                  ? 'border-amber-500/30 bg-amber-500/[0.01]'
-                  : 'border-border/40 hover:border-border'
-              }`}
-            >
-              <div className="space-y-2.5 max-w-xl">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-sm sm:text-base text-foreground tracking-tight">
-                    {flag.label}
-                  </h3>
-                  <code className="text-[10px] font-mono px-2 py-0.5 rounded bg-secondary/80 text-muted-foreground">
-                    {flag.key}
-                  </code>
+            <div key={flag.id} className="space-y-2">
+              <div
+                id={`flag-card-${flag.key}`}
+                className={`p-5 sm:p-6 bg-card border rounded-xl shadow-sm transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative group ${
+                  flag.isEnabled && isEmergency
+                    ? 'border-amber-500/30 bg-amber-500/[0.01]'
+                    : 'border-border/40 hover:border-border'
+                }`}
+              >
+                <div className="space-y-2.5 max-w-xl">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-sm sm:text-base text-foreground tracking-tight">
+                      {flag.label}
+                    </h3>
+                    <code className="text-[10px] font-mono px-2 py-0.5 rounded bg-secondary/80 text-muted-foreground">
+                      {flag.key}
+                    </code>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {flag.description}
+                  </p>
+
+                  {/* Meta details changed log */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-muted-foreground font-semibold pt-1 border-t border-border/10">
+                    <span className="flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      By: {flag.updatedByAdminName}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Last changed: {format(parseISO(flag.updatedAt), 'dd MMM yyyy, hh:mm a')}
+                    </span>
+                    {flag.supportsOrgOverride && (
+                      <button
+                        id={`manage-orgs-btn-${flag.key}`}
+                        onClick={() => setExpandedFlagKey(isExpanded ? null : flag.key)}
+                        className="flex items-center gap-1 text-primary hover:underline cursor-pointer"
+                      >
+                        <Building2 className="h-3 w-3" />
+                        Manage organizations
+                        {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {flag.description}
-                </p>
-
-                {/* Meta details changed log */}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-muted-foreground font-semibold pt-1 border-t border-border/10">
-                  <span className="flex items-center gap-1">
-                    <User className="h-3 w-3" />
-                    By: {flag.updatedByAdminName}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    Last changed: {format(parseISO(flag.updatedAt), 'dd MMM yyyy, hh:mm a')}
-                  </span>
-                </div>
-              </div>
-
-              {/* Toggle Switch Component with Support clearance tooltip */}
-              <div className="shrink-0 flex items-center justify-end">
-                <div className="relative group/toggle">
-                  <button
-                    id={`toggle-btn-${flag.key}`}
-                    disabled={isSupport || isToggling}
-                    onClick={() => handleToggleClick(flag.key, flag.label, flag.isEnabled)}
-                    className={`relative inline-flex h-6.5 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      isSupport ? 'opacity-60 cursor-not-allowed' : ''
-                    } ${
-                      flag.isEnabled 
-                        ? (isEmergency ? 'bg-amber-500' : 'bg-primary') 
-                        : 'bg-secondary'
-                    }`}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5.5 w-5.5 transform rounded-full bg-background shadow-md ring-0 transition duration-200 ease-in-out ${
-                        flag.isEnabled ? 'translate-x-5.5' : 'translate-x-0'
+                {/* Toggle Switch Component with read-only clearance tooltip */}
+                <div className="shrink-0 flex items-center justify-end">
+                  <div className="relative group/toggle">
+                    <button
+                      id={`toggle-btn-${flag.key}`}
+                      disabled={!canManage || isToggling}
+                      onClick={() => handleToggleClick(flag.key, flag.label, flag.isEnabled, flag.severity)}
+                      className={`relative inline-flex h-6.5 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        !canManage ? 'opacity-60 cursor-not-allowed' : ''
+                      } ${
+                        flag.isEnabled
+                          ? (isEmergency ? 'bg-amber-500' : 'bg-primary')
+                          : 'bg-secondary'
                       }`}
-                    />
-                  </button>
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5.5 w-5.5 transform rounded-full bg-background shadow-md ring-0 transition duration-200 ease-in-out ${
+                          flag.isEnabled ? 'translate-x-5.5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
 
-                  {/* Explanatory Tooltip when hovering a disabled flag switch */}
-                  {isSupport && (
-                    <div className="absolute right-0 bottom-full mb-2 hidden group-hover/toggle:block w-52 p-2 bg-popover text-popover-foreground text-[10px] rounded border border-border/50 shadow-md leading-relaxed z-15">
-                      <Lock className="h-3 w-3 inline mr-1 text-destructive" />
-                      Role <strong>SUPPORT</strong> is locked out from editing. Request Super Admin privileges.
-                    </div>
-                  )}
+                    {/* Explanatory Tooltip when hovering a disabled flag switch */}
+                    {!canManage && (
+                      <div className="absolute right-0 bottom-full mb-2 hidden group-hover/toggle:block w-52 p-2 bg-popover text-popover-foreground text-[10px] rounded border border-border/50 shadow-md leading-relaxed z-15">
+                        <Lock className="h-3 w-3 inline mr-1 text-destructive" />
+                        You don&apos;t have permission to manage feature flags.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {isExpanded && flag.supportsOrgOverride && (
+                <OrgOverridesPanel flagKey={flag.key} canManage={canManage} toast={toast} />
+              )}
             </div>
           );
         })}

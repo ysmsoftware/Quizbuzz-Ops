@@ -57,6 +57,12 @@ enum BookingStatus {
   CANCELLED
 }
 
+enum FeatureFlagSeverity {
+  STANDARD // routine toggle, no confirmation dialog
+  WARNING  // confirmation dialog, amber "emergency" styling — e.g. new_registrations_paused
+  CRITICAL // confirmation dialog, red styling, strongest copy — e.g. maintenance_mode
+}
+
 // MODELS
 
 model PlatformAdmin {
@@ -78,6 +84,7 @@ model PlatformAdmin {
   orgNotes      OrganizationNote[]
   pricingConfigUpdates PricingConfig[]
   contestBookings      ContestBooking[]
+  featureFlagUpdates   FeatureFlag[]
 
   @@index([email])
   @@map("platform_admins")
@@ -252,6 +259,60 @@ model SubscriptionOverride {
   @@index([subscriptionId, removedAt])
   @@index([expiresAt])
   @@map("subscription_overrides")
+}
+
+model FeatureFlag {
+  id                  String               @id
+  key                 String               @unique // stable slug, e.g. "maintenance_mode"
+  label               String
+  description         String
+  isEnabled           Boolean              @default(false) // global default value
+  severity            FeatureFlagSeverity  @default(STANDARD)
+  // Whether this flag can carry per-organization overrides at all. False for
+  // flags that are inherently platform-wide (maintenance_mode — "maintenance
+  // for one org" isn't a coherent concept) so the ops UI/API can decline to
+  // even offer the "manage per-org" affordance rather than silently allowing
+  // an override that would never be read.
+  supportsOrgOverride Boolean              @default(true)
+  updatedById         String?
+  updatedByName       String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  updatedBy      PlatformAdmin?          @relation(fields: [updatedById], references: [id])
+  orgOverrides   FeatureFlagOrgOverride[]
+
+  @@index([key])
+  @@map("feature_flags")
+}
+
+// Per-organization override of a flag's global value — modeled on
+// SubscriptionOverride above: soft-deleted via removedAt/removedById/
+// removedReason rather than updated in place, so the full history of who
+// granted/revoked an org's access to a feature is preserved in the row
+// itself. Scoped directly to organizationId (a plain String, not a
+// relation) because org data lives entirely in Quizbuzz-new's own database —
+// this repo only ever stores/references organizationId as an opaque string.
+model FeatureFlagOrgOverride {
+  id             String    @id
+  // References FeatureFlag.key, not FeatureFlag.id — readable in queries and
+  // consistent with how API paths key off `key` (/feature-flags/[key]/...).
+  flagKey        String
+  organizationId String
+  isEnabled      Boolean
+  reason         String
+  createdById    String
+  createdByName  String
+  expiresAt      DateTime?
+  removedAt      DateTime?
+  removedById    String?
+  removedReason  String?
+  createdAt      DateTime  @default(now())
+
+  flag FeatureFlag @relation(fields: [flagKey], references: [key])
+
+  @@index([flagKey, organizationId, removedAt])
+  @@map("feature_flag_org_overrides")
 }
 
 model SubscriptionChangeLog {

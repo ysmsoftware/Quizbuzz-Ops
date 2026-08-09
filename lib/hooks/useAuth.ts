@@ -52,8 +52,8 @@ export function useCurrentAdmin() {
       case 'SUPER_ADMIN':
         return true; // Super Admins can do anything
       case 'SUPPORT':
-        // Support can view, and initiate impersonation, but cannot do billing refunds or plan price updates
-        return !['BILLING_REFUND', 'PLAN_UPDATE_PRICING', 'ORG_DELETE'].includes(action);
+        // Support can view, and initiate impersonation, but cannot do billing refunds, plan price updates, or manage feature flags
+        return !['BILLING_REFUND', 'PLAN_UPDATE_PRICING', 'ORG_DELETE', 'FEATURE_FLAG_MANAGE'].includes(action);
       case 'BILLING_ADMIN':
         // Billing Admins can manage plans, issue refunds, view, but cannot suspend/activate orgs or view secure system audit logs
         return ['BILLING_REFUND', 'PLAN_UPDATE_PRICING', 'PLAN_UPDATE', 'BILLING_VIEW'].includes(action);

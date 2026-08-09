@@ -128,6 +128,81 @@ async function main() {
     console.log(`Plan seeded: ${plan.name} (${plan.slug})`);
   }
 
+  // 2. Feature flags — carries over the exact keys/labels/descriptions from
+  // the old lib/data/db.ts INITIAL_FEATURE_FLAGS mock 1:1 so existing UI
+  // copy doesn't need to change.
+  const featureFlags = [
+    {
+      id: 'flag_maintenance',
+      key: 'maintenance_mode',
+      label: 'Maintenance Mode',
+      description: 'Activates maintenance window platform-wide. All live operations are suspended.',
+      isEnabled: false,
+      severity: 'CRITICAL',
+      supportsOrgOverride: false,
+      updatedByName: 'System Auto-Config',
+    },
+    {
+      id: 'flag_pause_reg',
+      key: 'new_registrations_paused',
+      label: 'Pause Registrations',
+      description: 'Temporarily pause registration for new contest participants across the platform.',
+      isEnabled: false,
+      severity: 'WARNING',
+      supportsOrgOverride: false,
+      updatedByName: 'System Auto-Config',
+    },
+    {
+      id: 'flag_proctoring',
+      key: 'proctoring_enabled_platform_wide',
+      label: 'Platform-wide AI Proctoring',
+      description: 'Enables AI proctoring services across all qualified organization contests.',
+      isEnabled: true,
+      severity: 'STANDARD',
+      supportsOrgOverride: true,
+      updatedByName: 'System Auto-Config',
+    },
+    {
+      id: 'flag_cert_auto',
+      key: 'certificate_auto_delivery',
+      label: 'Certificate Auto-delivery',
+      description: 'Automatically deliver signed PDF certificates to participants completing a contest.',
+      isEnabled: true,
+      severity: 'STANDARD',
+      supportsOrgOverride: true,
+      updatedByName: 'System Auto-Config',
+    },
+    {
+      id: 'flag_analytics',
+      key: 'enhanced_analytics_pipeline',
+      label: 'Enhanced Analytics Pipeline',
+      description: 'Streams raw candidate responses to the high-concurrency analytical engine.',
+      isEnabled: true,
+      severity: 'STANDARD',
+      supportsOrgOverride: true,
+      updatedByName: 'System Auto-Config',
+    },
+    {
+      id: 'flag_razorpay',
+      key: 'razorpay_gateway_active',
+      label: 'Razorpay Payment Gateway',
+      description: 'Accept live candidate registration payments via Razorpay merchant portal.',
+      isEnabled: true,
+      severity: 'WARNING',
+      supportsOrgOverride: true,
+      updatedByName: 'System Auto-Config',
+    },
+  ];
+
+  for (const flag of featureFlags) {
+    await prisma.featureFlag.upsert({
+      where: { key: flag.key },
+      update: {},
+      create: flag,
+    });
+    console.log(`Feature flag seeded: ${flag.label} (${flag.key})`);
+  }
+
   // NOTE: this script intentionally does NOT seed a platform admin account.
   // It used to upsert a fixed admin@ysmquizbuzz.com / YsmSecureOps2026!
   // super admin on every run — a real, known, working credential that would

@@ -41,7 +41,7 @@ yarn-error.log*
 .cursorrules
 .cursorignore
 .gemini/
-.claude*
+.claude/
 .agents*
 CLAUDE.md*
 AGENTS.md*

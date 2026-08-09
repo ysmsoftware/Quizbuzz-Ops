@@ -9,6 +9,10 @@ import { BillingController } from './features/billing/billing.controller';
 import { EntitlementsRepository } from './features/entitlements/entitlements.repository';
 import { EntitlementsService } from './features/entitlements/entitlements.service';
 
+import { FeatureFlagsRepository } from './features/feature-flags/feature-flags.repository';
+import { FeatureFlagsService } from './features/feature-flags/feature-flags.service';
+import { FeatureFlagsController } from './features/feature-flags/feature-flags.controller';
+
 import { MessagingRepository } from './features/messaging/messaging.repository';
 import { MessagingService } from './features/messaging/messaging.service';
 import { MessagingController } from './features/messaging/messaging.controller';
@@ -48,6 +52,7 @@ export const auditLogRepository = new AuditLogRepository();
 export const billingRepository = new BillingRepository();
 export const bookingsRepository = new BookingsRepository();
 export const entitlementsRepository = new EntitlementsRepository();
+export const featureFlagsRepository = new FeatureFlagsRepository();
 export const messagingRepository = new MessagingRepository();
 export const organizationsRepository = new OrganizationsRepository();
 export const overviewRepository = new OverviewRepository();
@@ -61,6 +66,7 @@ export const auditLogService = new AuditLogService(auditLogRepository);
 export const billingService = new BillingService(billingRepository);
 export const bookingsService = new BookingsService(bookingsRepository);
 export const entitlementsService = new EntitlementsService(entitlementsRepository);
+export const featureFlagsService = new FeatureFlagsService(featureFlagsRepository);
 export const messagingService = new MessagingService(messagingRepository);
 export const organizationsService = new OrganizationsService(organizationsRepository);
 export const overviewService = new OverviewService(overviewRepository);
@@ -72,6 +78,7 @@ export const platformAuthService = new PlatformAuthService(platformAuthRepositor
 
 // ─── Controllers ────────────────────────────────────────────
 export const auditLogController = new AuditLogController(auditLogService);
+export const featureFlagsController = new FeatureFlagsController(featureFlagsService);
 export const billingController = new BillingController(billingService);
 export const bookingsController = new BookingsController(bookingsService);
 export const messagingController = new MessagingController(messagingService);

@@ -1,10 +1,9 @@
 'use client';
 
-import { getDatabase, saveDatabase } from '@/lib/data/db';
-import { InfraStatus, ScalingConfig, FeatureFlag } from '@/lib/types';
+import { getDatabase } from '@/lib/data/db';
+import { InfraStatus, ScalingConfig, FeatureFlag, FeatureFlagOrgOverride } from '@/lib/types';
 import { simulateLatency } from '@/lib/api/utils';
-import { getCurrentSessionSync } from '@/lib/api/auth';
-import { writeAuditLogEntry } from '@/lib/api/auditLog';
+import { apiRequest } from '@/lib/api/utils';
 
 export async function getInfraStatus(): Promise<InfraStatus> {
   await simulateLatency(100, 200);
@@ -18,48 +17,53 @@ export async function getScalingConfig(): Promise<ScalingConfig> {
   return db.scalingConfig;
 }
 
+function mapFlag(f: any): FeatureFlag {
+  return {
+    id: f.id,
+    key: f.key,
+    label: f.label,
+    description: f.description,
+    isEnabled: f.isEnabled,
+    scope: 'global',
+    severity: f.severity,
+    supportsOrgOverride: f.supportsOrgOverride,
+    updatedAt: f.updatedAt,
+    updatedByAdminName: f.updatedByName,
+  };
+}
+
 export async function getFeatureFlags(): Promise<FeatureFlag[]> {
-  await simulateLatency(100, 200);
-  const db = getDatabase();
-  return db.featureFlags || [];
+  const raw = await apiRequest<any[]>('/api/v1/ops/feature-flags');
+  return raw.map(mapFlag);
 }
 
 export async function toggleFeatureFlag(key: string, isEnabled: boolean): Promise<FeatureFlag> {
-  await simulateLatency(100, 250);
-  const db = getDatabase();
-  const session = getCurrentSessionSync();
-  
-  if (!db.featureFlags) {
-    db.featureFlags = [];
-  }
-  
-  const flagIndex = db.featureFlags.findIndex(f => f.key === key);
-  if (flagIndex === -1) {
-    throw new Error(`Feature flag with key '${key}' not found`);
-  }
-  
-  const oldFlag = db.featureFlags[flagIndex];
-  const oldVal = oldFlag.isEnabled;
-  
-  const updatedFlag: FeatureFlag = {
-    ...oldFlag,
-    isEnabled,
-    updatedAt: new Date().toISOString(),
-    updatedByAdminName: session?.name || 'System Operator'
-  };
-  
-  db.featureFlags[flagIndex] = updatedFlag;
-  
-  // Write PlatformAuditLog entry
-  writeAuditLogEntry(
-    'feature_flag.toggled',
-    'feature_flag',
-    key,
-    updatedFlag.label,
-    { from: oldVal, to: isEnabled }
-  );
-  
-  saveDatabase(db);
-  
-  return updatedFlag;
+  const raw = await apiRequest<any>(`/api/v1/ops/feature-flags/${key}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isEnabled }),
+  });
+  return mapFlag(raw);
+}
+
+export async function getFlagOrgOverrides(key: string): Promise<FeatureFlagOrgOverride[]> {
+  return apiRequest<FeatureFlagOrgOverride[]>(`/api/v1/ops/feature-flags/${key}/organizations`);
+}
+
+export async function setFlagOrgOverride(
+  key: string,
+  orgId: string,
+  isEnabled: boolean,
+  reason: string
+): Promise<FeatureFlagOrgOverride> {
+  return apiRequest<FeatureFlagOrgOverride>(`/api/v1/ops/feature-flags/${key}/organizations/${orgId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ isEnabled, reason }),
+  });
+}
+
+export async function removeFlagOrgOverride(key: string, orgId: string): Promise<void> {
+  await apiRequest<any>(`/api/v1/ops/feature-flags/${key}/organizations/${orgId}`, {
+    method: 'DELETE',
+    body: JSON.stringify({}),
+  });
 }

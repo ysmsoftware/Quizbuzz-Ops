@@ -384,6 +384,8 @@ export interface MessageTemplateDescriptor {
   variables: string[];
 }
 
+export type FeatureFlagSeverity = 'STANDARD' | 'WARNING' | 'CRITICAL';
+
 export interface FeatureFlag {
   id: string;
   key: string;
@@ -391,6 +393,19 @@ export interface FeatureFlag {
   description: string;
   isEnabled: boolean;
   scope: 'global';
+  severity: FeatureFlagSeverity;
+  supportsOrgOverride: boolean;
   updatedAt: string;
   updatedByAdminName: string;
+}
+
+export interface FeatureFlagOrgOverride {
+  id: string;
+  flagKey: string;
+  organizationId: string;
+  isEnabled: boolean;
+  reason: string;
+  createdByName: string;
+  expiresAt: string | null;
+  createdAt: string;
 }

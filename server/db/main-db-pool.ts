@@ -1,8 +1,14 @@
 import { Pool } from 'pg';
 import { env } from '../config/env';
 
+// Distinct globalThis key from ops-prisma.ts's own `globalForPrisma.pool` —
+// both files used to cache under the same generic `pool` property, so in
+// dev (where Next.js hot-reload survival relies on globalThis caching)
+// whichever module's top-level code ran first silently "won" the slot and
+// the other's pool export quietly became an alias for the wrong database
+// (main-db-pool.ts's queries were actually running against the ops DB).
 const globalForPool = globalThis as unknown as {
-  pool: Pool | undefined;
+  mainDbPool: Pool | undefined;
 };
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -13,7 +19,7 @@ const isLocalhost =
   env.MAIN_DATABASE_URL.includes('::1');
 
 export const mainDbPool =
-  globalForPool.pool ??
+  globalForPool.mainDbPool ??
   new Pool({
     connectionString: env.MAIN_DATABASE_URL,
     max: env.MAIN_DB_POOL_MAX,
@@ -36,5 +42,5 @@ export const queryMainDb = async <T = any>(
   }
 };
 
-if (process.env.NODE_ENV !== 'production') globalForPool.pool = mainDbPool;
+if (process.env.NODE_ENV !== 'production') globalForPool.mainDbPool = mainDbPool;
 export default mainDbPool;

@@ -89,14 +89,15 @@ export async function getAuditLogs(params: GetAuditLogsParams = {}): Promise<Pag
 }
 
 /**
- * Mock-domain audit writer — still used by lib/api/{ops,bookings}.ts and
- * OrganizationDetailView.tsx (feature flags, bookings, impersonation), which remain
- * mocked pending later phases. Not the real audit trail: server/audit/audit-writer.ts
- * is what backs getAuditLogs() above. Remove this once those domains get real backends.
+ * Mock-domain audit writer — still used by lib/api/bookings.ts (bookings,
+ * impersonation), which remain mocked pending later phases. Not the real
+ * audit trail: server/audit/audit-writer.ts is what backs getAuditLogs()
+ * above. Remove this once those domains get real backends. Feature flags no
+ * longer use this — they write through server/audit/audit-writer.ts now.
  */
 export function writeAuditLogEntry(
   action: string,
-  targetType: 'organization' | 'plan' | 'payment' | 'feature_flag',
+  targetType: 'organization' | 'plan' | 'payment',
   targetId: string,
   targetLabel: string,
   metadata: any

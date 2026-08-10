@@ -71,6 +71,13 @@ export class FeatureFlagsService implements IFeatureFlagsService {
   // per-row role check here.
   async toggleFlag(key: string, isEnabled: boolean, admin: AuditActor) {
     const flag = await this.requireFlag(key);
+    if (flag.deprecatedAt) {
+      throw new AppError(
+        `Flag '${key}' was removed from the feature-flag registry and can no longer be toggled`,
+        'FLAG_DEPRECATED',
+        400
+      );
+    }
     const oldValue = flag.isEnabled;
 
     const updated = await this.repo.updateFlag(key, isEnabled, admin.id!, admin.name);
@@ -107,6 +114,13 @@ export class FeatureFlagsService implements IFeatureFlagsService {
   // always a new row, never a mutated one.
   async setOrgOverride(key: string, organizationId: string, isEnabled: boolean, reason: string, admin: AuditActor) {
     const flag = await this.requireFlag(key);
+    if (flag.deprecatedAt) {
+      throw new AppError(
+        `Flag '${key}' was removed from the feature-flag registry and can no longer take new overrides`,
+        'FLAG_DEPRECATED',
+        400
+      );
+    }
     if (!flag.supportsOrgOverride) {
       throw new AppError(`Flag '${key}' does not support org overrides`, 'ORG_OVERRIDE_NOT_SUPPORTED', 400);
     }

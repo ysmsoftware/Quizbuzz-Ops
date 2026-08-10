@@ -9,7 +9,8 @@
     "worker": "tsx --env-file=.env scripts/worker.ts",
     "lint": "next lint",
     "db:seed": "node prisma/seed.js",
-    "seed:platform-admin": "tsx --env-file=.env scripts/seed-platform-admin.ts"
+    "seed:platform-admin": "tsx --env-file=.env scripts/seed-platform-admin.ts",
+    "flags:sync": "tsx --env-file=.env scripts/sync-feature-flags.ts"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

@@ -25,8 +25,12 @@ export interface IFeatureFlagsRepository {
 }
 
 export class FeatureFlagsRepository implements IFeatureFlagsRepository {
+  // Deprecated flags (removed from server/features/feature-flags/
+  // feature-flag-registry.ts, per sync-feature-flags.ts) are excluded from
+  // the default admin list — their rows and override history still exist,
+  // just not surfaced as something an admin can currently manage.
   async listFlags() {
-    return prisma.featureFlag.findMany({ orderBy: { key: 'asc' } });
+    return prisma.featureFlag.findMany({ where: { deprecatedAt: null }, orderBy: { key: 'asc' } });
   }
 
   async getFlagByKey(key: string) {

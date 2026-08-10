@@ -274,6 +274,14 @@ model FeatureFlag {
   // even offer the "manage per-org" affordance rather than silently allowing
   // an override that would never be read.
   supportsOrgOverride Boolean              @default(true)
+  // Set when this flag's key is removed from the code registry
+  // (server/features/feature-flags/feature-flag-registry.ts) — never
+  // hard-deleted, since feature_flag_org_overrides.flagKey has an
+  // ON DELETE RESTRICT FK back to this table's `key`, and even a flag with
+  // no live overrides should keep its PlatformAuditLog trail addressable.
+  // Deprecated flags are excluded from the default admin list view but keep
+  // functioning exactly as before for any code path still reading them.
+  deprecatedAt        DateTime?
   updatedById         String?
   updatedByName       String
   createdAt           DateTime             @default(now())

@@ -50,6 +50,29 @@ services:
     networks:
       - quizbuzz-net
 
+  ops-worker:
+    image: ${DOCKER_IMAGE:-ghcr.io/ysmsoftware/quizbuzz-ops:latest}
+    container_name: quizbuzz-ops-worker
+    restart: unless-stopped
+    command: ["npx", "tsx", "scripts/worker.ts"]
+    environment:
+      - NODE_ENV=production
+      - OPS_DATABASE_URL=${OPS_DATABASE_URL}
+      - MAIN_DATABASE_URL=${MAIN_DATABASE_URL}
+      - REDIS_URL=redis://ops-redis:6379
+      - OPS_JWT_ACCESS_SECRET=${OPS_JWT_ACCESS_SECRET}
+      - OPS_JWT_REFRESH_SECRET=${OPS_JWT_REFRESH_SECRET}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM:-${EMAIL_FROM}}
+      - BILLING_HANDOFF_SECRET=${BILLING_HANDOFF_SECRET}
+    depends_on:
+      - ops-redis
+    networks:
+      - quizbuzz-net
+
 networks:
   quizbuzz-net:
     external: true

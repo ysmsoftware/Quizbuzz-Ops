@@ -49,10 +49,15 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/server ./server
+COPY --from=builder /app/lib ./lib
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
-# Install Prisma CLI + deps for `prisma migrate deploy` (resolves full dependency tree)
+# Install Prisma CLI + deps for `prisma migrate deploy` and standalone worker process
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
-RUN npm install --no-save prisma dotenv && npm cache clean --force
+RUN npm install --no-save prisma dotenv tsx typescript && npm cache clean --force
 
 USER nextjs
 

@@ -14,6 +14,7 @@ export class AuditLogService implements IAuditLogService {
     return {
       data: rows.map((r) => ({
         id: r.id,
+        requestId: r.requestId,
         actorId: r.actorId,
         actorLabel: r.actorLabel,
         action: r.action,

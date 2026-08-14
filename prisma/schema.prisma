@@ -39,6 +39,7 @@ enum AuditTargetType {
   PRICING_CONFIG
   FEATURE_FLAG
   PLATFORM_ADMIN
+  AMBASSADOR_TYPE
 }
 
 enum OpsPaymentStatus {
@@ -85,6 +86,8 @@ model PlatformAdmin {
   pricingConfigUpdates PricingConfig[]
   contestBookings      ContestBooking[]
   featureFlagUpdates   FeatureFlag[]
+  ambassadorTypesCreated       AmbassadorType[]
+  ambassadorTypeAccessUpdates  OrganizationAmbassadorTypeAccess[]
 
   @@index([email])
   @@map("platform_admins")
@@ -138,6 +141,7 @@ model OrganizationSuspension {
 
 model PlatformAuditLog {
   id          String          @id
+  requestId   String?
   actorId     String?
   actorLabel  String
   action      String
@@ -152,6 +156,7 @@ model PlatformAuditLog {
   @@index([actorId])
   @@index([targetType, targetId])
   @@index([action, createdAt])
+  @@index([requestId])
   @@map("platform_audit_logs")
 }
 
@@ -321,6 +326,54 @@ model FeatureFlagOrgOverride {
 
   @@index([flagKey, organizationId, removedAt])
   @@map("feature_flag_org_overrides")
+}
+
+// Ambassador Type catalog — ops-curated, runtime-creatable (unlike FeatureFlag above, which is
+// code-registry-first). "Student" / "Faculty" / "General" / a future "Industry" type each carry their
+// own applicationFields form schema, so a new type — and what it asks an applicant for — never needs a
+// code deploy. See ambassador-incentive-program-plan.md §0.3 for the full design reasoning.
+model AmbassadorType {
+  id                String    @id
+  key               String    @unique // stable slug set at creation, e.g. "student" — immutable, mirrored into the main app
+  label             String
+  description       String?
+  proofFieldLabel   String    @default("Identity / Enrollment Proof")
+  // Ordered array of { key, label, type, required, options? } — the extra fields this type's
+  // application form asks for beyond the fixed baseline (name/email/phone/proof). See
+  // ambassador-types.validator.ts for the exact shape this is validated against.
+  applicationFields Json      @default("[]")
+  isActive          Boolean   @default(true) // ops can retire a type without deleting history
+  createdById       String?
+  createdByName     String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  createdBy   PlatformAdmin?                     @relation(fields: [createdById], references: [id])
+  orgAccess   OrganizationAmbassadorTypeAccess[]
+
+  @@index([key])
+  @@map("ambassador_types")
+}
+
+// Per-organization enablement of a type — deliberately lighter-weight than FeatureFlagOrgOverride
+// (no required reason/expiresAt): this is a lower-stakes "which types can this org's applicants pick
+// from" toggle, not a platform kill-switch. Updated in place (not soft-deleted/replaced) since there's
+// no override-history requirement here the way there is for flags.
+model OrganizationAmbassadorTypeAccess {
+  id               String   @id
+  organizationId   String   // Quizbuzz-new's Organization.id — opaque string, no FK (cross-database)
+  ambassadorTypeId String
+  isEnabled        Boolean  @default(false)
+  updatedById      String?
+  updatedByName    String
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
+
+  ambassadorType AmbassadorType @relation(fields: [ambassadorTypeId], references: [id])
+  updatedBy      PlatformAdmin? @relation(fields: [updatedById], references: [id])
+
+  @@unique([organizationId, ambassadorTypeId])
+  @@map("organization_ambassador_type_access")
 }
 
 model SubscriptionChangeLog {

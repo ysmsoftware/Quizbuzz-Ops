@@ -1,0 +1,2 @@
+-- RenameIndex
+ALTER INDEX "organization_ambassador_type_access_organizationId_ambass_key" RENAME TO "organization_ambassador_type_access_organizationId_ambassad_key";

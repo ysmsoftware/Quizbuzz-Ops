@@ -8,7 +8,7 @@ export interface IAuditLogRepository {
 
 export class AuditLogRepository implements IAuditLogRepository {
   async listAuditLogs(params: AuditLogListQuery) {
-    const { page, limit, action, actionPrefix, targetType, targetId, actorId, actorName, targetLabel, dateFrom, dateTo } = params;
+    const { page, limit, action, actionPrefix, targetType, targetId, requestId, actorId, actorName, targetLabel, dateFrom, dateTo } = params;
 
     const where: Prisma.PlatformAuditLogWhereInput = {
       // Exact match wins when both are present; actionPrefix only kicks in
@@ -20,6 +20,7 @@ export class AuditLogRepository implements IAuditLogRepository {
         : {}),
       ...(targetType && { targetType }),
       ...(targetId && { targetId }),
+      ...(requestId && { requestId }),
       ...(actorId && { actorId }),
       // actorLabel/targetLabel are denormalized display strings (admin name,
       // organization name), so "contains" is the only way to search them —

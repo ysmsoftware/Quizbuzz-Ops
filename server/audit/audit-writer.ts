@@ -19,6 +19,12 @@ export const SYSTEM_ACTOR: AuditActor = {
 /**
  * Creates an audit log entry in the database.
  * actor = null designates a SYSTEM action.
+ *
+ * requestId is optional and defaults to null — most call sites don't have a
+ * per-request id to thread through yet (see middleware.ts's x-request-id /
+ * withApiLogger, only wired for the auth routes today). Callers that do have
+ * one (e.g. via withApiLogger) can pass it for request-chaining in the ops
+ * dashboard's audit log filters.
  */
 export async function writeAuditLogEntry(
   actor: AuditActor | null,
@@ -26,7 +32,8 @@ export async function writeAuditLogEntry(
   targetType: AuditTargetType,
   targetId: string,
   targetLabel: string,
-  metadata?: any
+  metadata?: any,
+  requestId?: string | null
 ): Promise<void> {
   try {
     const actorId = actor?.id || null;
@@ -35,6 +42,7 @@ export async function writeAuditLogEntry(
     await prisma.platformAuditLog.create({
       data: {
         id: generateUlid(),
+        requestId: requestId || null,
         actorId,
         actorLabel,
         action,

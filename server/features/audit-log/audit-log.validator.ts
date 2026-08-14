@@ -8,6 +8,7 @@ export const auditLogListQuerySchema = z.object({
   actionPrefix: z.string().optional(),
   targetType: z.nativeEnum(AuditTargetType).optional(),
   targetId: z.string().optional(),
+  requestId: z.string().optional(),
   actorId: z.string().optional(),
   actorName: z.string().optional(),
   targetLabel: z.string().optional(),

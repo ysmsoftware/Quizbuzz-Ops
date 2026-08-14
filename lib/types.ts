@@ -256,6 +256,24 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+/** Main app's own audit_logs table, read cross-DB — see lib/api/mainAppAuditLog.ts. */
+export interface MainAppAuditLogEntry {
+  id: string;
+  requestId: string | null;
+  organizationId: string | null;
+  actorId: string | null;
+  actorType: 'ADMIN' | 'PARTICIPANT' | 'SYSTEM' | 'WEBHOOK';
+  actorLabel: string;
+  action: string; // e.g. "contest.published", "payment.captured", "auth.admin_login"
+  targetType: string; // main app's own AuditTargetType enum casing (e.g. "CONTEST", "PAYMENT")
+  targetId: string;
+  targetLabel: string;
+  metadata: any;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
 export interface PricingConfig {
   id: string;
   currency: string;
@@ -408,4 +426,36 @@ export interface FeatureFlagOrgOverride {
   createdByName: string;
   expiresAt: string | null;
   createdAt: string;
+}
+
+export type AmbassadorApplicationFieldType = 'TEXT' | 'EMAIL' | 'PHONE' | 'NUMBER' | 'SELECT' | 'DATE';
+
+export interface AmbassadorApplicationFieldDef {
+  key: string;
+  label: string;
+  type: AmbassadorApplicationFieldType;
+  required: boolean;
+  options?: string[];
+}
+
+export interface AmbassadorType {
+  id: string;
+  key: string;
+  label: string;
+  description: string | null;
+  proofFieldLabel: string;
+  applicationFields: AmbassadorApplicationFieldDef[];
+  isActive: boolean;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AmbassadorTypeOrgAccess {
+  id: string;
+  organizationId: string;
+  ambassadorTypeId: string;
+  isEnabled: boolean;
+  updatedByName: string;
+  updatedAt: string;
 }

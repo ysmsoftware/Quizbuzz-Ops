@@ -1,7 +1,15 @@
 'use client';
 
 import { getDatabase } from '@/lib/data/db';
-import { InfraStatus, ScalingConfig, FeatureFlag, FeatureFlagOrgOverride } from '@/lib/types';
+import {
+  InfraStatus,
+  ScalingConfig,
+  FeatureFlag,
+  FeatureFlagOrgOverride,
+  AmbassadorType,
+  AmbassadorApplicationFieldDef,
+  AmbassadorTypeOrgAccess,
+} from '@/lib/types';
 import { simulateLatency } from '@/lib/api/utils';
 import { apiRequest } from '@/lib/api/utils';
 
@@ -65,5 +73,58 @@ export async function removeFlagOrgOverride(key: string, orgId: string): Promise
   await apiRequest<any>(`/api/v1/ops/feature-flags/${key}/organizations/${orgId}`, {
     method: 'DELETE',
     body: JSON.stringify({}),
+  });
+}
+
+// ─── Ambassador Type catalog ──────────────────────────────────
+// Runtime-creatable (unlike feature flags above) — see AmbassadorTypesView.tsx
+// and ambassador-incentive-program-plan.md §0.3/§1.2 for why this is a
+// separate, simpler mechanism instead of more flag entries.
+
+export async function getAmbassadorTypes(): Promise<AmbassadorType[]> {
+  return apiRequest<AmbassadorType[]>('/api/v1/ops/ambassador-types');
+}
+
+export async function createAmbassadorType(input: {
+  key: string;
+  label: string;
+  description?: string;
+  proofFieldLabel: string;
+  applicationFields: AmbassadorApplicationFieldDef[];
+}): Promise<AmbassadorType> {
+  return apiRequest<AmbassadorType>('/api/v1/ops/ambassador-types', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateAmbassadorType(
+  key: string,
+  input: Partial<{
+    label: string;
+    description: string;
+    proofFieldLabel: string;
+    applicationFields: AmbassadorApplicationFieldDef[];
+    isActive: boolean;
+  }>
+): Promise<AmbassadorType> {
+  return apiRequest<AmbassadorType>(`/api/v1/ops/ambassador-types/${key}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getAmbassadorTypeOrgAccess(key: string): Promise<AmbassadorTypeOrgAccess[]> {
+  return apiRequest<AmbassadorTypeOrgAccess[]>(`/api/v1/ops/ambassador-types/${key}/organizations`);
+}
+
+export async function setAmbassadorTypeOrgAccess(
+  key: string,
+  orgId: string,
+  isEnabled: boolean
+): Promise<AmbassadorTypeOrgAccess> {
+  return apiRequest<AmbassadorTypeOrgAccess>(`/api/v1/ops/ambassador-types/${key}/organizations/${orgId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ isEnabled }),
   });
 }

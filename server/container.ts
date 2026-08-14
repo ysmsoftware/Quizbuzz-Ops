@@ -1,6 +1,14 @@
+import { AmbassadorTypesRepository } from './features/ambassador-types/ambassador-types.repository';
+import { AmbassadorTypesService } from './features/ambassador-types/ambassador-types.service';
+import { AmbassadorTypesController } from './features/ambassador-types/ambassador-types.controller';
+
 import { AuditLogRepository } from './features/audit-log/audit-log.repository';
 import { AuditLogService } from './features/audit-log/audit-log.service';
 import { AuditLogController } from './features/audit-log/audit-log.controller';
+
+import { MainAppAuditLogRepository } from './features/audit-log-main-app/audit-log-main-app.repository';
+import { MainAppAuditLogService } from './features/audit-log-main-app/audit-log-main-app.service';
+import { MainAppAuditLogController } from './features/audit-log-main-app/audit-log-main-app.controller';
 
 import { BillingRepository } from './features/billing/billing.repository';
 import { BillingService } from './features/billing/billing.service';
@@ -48,7 +56,9 @@ import { BookingsController } from './features/bookings/bookings.controller';
 import { OrgOwnerNotifier } from './notifications/org-owner-notifier';
 
 // ─── Repositories ──────────────────────────────────────────
+export const ambassadorTypesRepository = new AmbassadorTypesRepository();
 export const auditLogRepository = new AuditLogRepository();
+export const mainAppAuditLogRepository = new MainAppAuditLogRepository();
 export const billingRepository = new BillingRepository();
 export const bookingsRepository = new BookingsRepository();
 export const entitlementsRepository = new EntitlementsRepository();
@@ -62,7 +72,9 @@ export const platformAuthRepository = new PlatformAuthRepository();
 export const subscriptionsRepository = new SubscriptionsRepository();
 
 // ─── Services ───────────────────────────────────────────────
+export const ambassadorTypesService = new AmbassadorTypesService(ambassadorTypesRepository);
 export const auditLogService = new AuditLogService(auditLogRepository);
+export const mainAppAuditLogService = new MainAppAuditLogService(mainAppAuditLogRepository);
 export const billingService = new BillingService(billingRepository);
 export const bookingsService = new BookingsService(bookingsRepository);
 export const entitlementsService = new EntitlementsService(entitlementsRepository);
@@ -77,7 +89,9 @@ export const plansService = new PlansService(plansRepository, entitlementsServic
 export const platformAuthService = new PlatformAuthService(platformAuthRepository);
 
 // ─── Controllers ────────────────────────────────────────────
+export const ambassadorTypesController = new AmbassadorTypesController(ambassadorTypesService);
 export const auditLogController = new AuditLogController(auditLogService);
+export const mainAppAuditLogController = new MainAppAuditLogController(mainAppAuditLogService);
 export const featureFlagsController = new FeatureFlagsController(featureFlagsService);
 export const billingController = new BillingController(billingService);
 export const bookingsController = new BookingsController(bookingsService);

@@ -26,7 +26,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  * Both sides tag their line with the same `x-request-id` so the two log
  * lines for one call can be matched up.
  */
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const requestId =
     req.headers.get('x-request-id') ||
     `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;

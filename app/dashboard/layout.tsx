@@ -26,6 +26,7 @@ import {
   Sliders,
   Landmark,
   MessagesSquare,
+  UserSquare2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -52,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'bookings', label: 'Bookings', phase: 'phase 4', href: '/dashboard/bookings', icon: CalendarClock },
   { id: 'audit', label: 'Audit Log', phase: 'phase 3', href: '/dashboard/audit-log', icon: Database },
   { id: 'flags', label: 'Feature Flags', phase: 'phase 6', href: '/dashboard/flags', icon: Sliders },
+  { id: 'ambassador-types', label: 'Ambassador Types', phase: 'phase 6', href: '/dashboard/ambassador-types', icon: UserSquare2 },
   { id: 'payouts', label: 'Payout Accounts', phase: 'phase 2', href: '/dashboard/payouts', icon: Landmark, hidden: true },
   { id: 'infra', label: 'Infra & Cost', phase: 'phase 5', href: '/dashboard/infra', icon: Cpu, hidden: true },
 ];

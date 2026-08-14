@@ -6,6 +6,8 @@ import { useOps } from '@/lib/hooks/useOps';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
 import { getFlagOrgOverrides, setFlagOrgOverride, removeFlagOrgOverride } from '@/lib/api/ops';
+import { OrganizationCombobox } from '@/components/ui/OrganizationCombobox';
+import { useOrganizations } from '@/lib/hooks/useOrganizations';
 import {
   Sliders,
   HelpCircle,
@@ -51,6 +53,11 @@ function OrgOverridesPanel({ flagKey, canManage, toast }: { flagKey: string; can
     queryFn: () => getFlagOrgOverrides(flagKey),
   });
 
+  // Resolve raw organizationId -> name/owner for display only — the override
+  // rows themselves and every mutation still key off the plain id.
+  const { organizations } = useOrganizations({ limit: 500 });
+  const orgById = new Map((organizations ?? []).map((o) => [o.id, o]));
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['ops', 'flags', flagKey, 'overrides'] });
     queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
@@ -59,7 +66,8 @@ function OrgOverridesPanel({ flagKey, canManage, toast }: { flagKey: string; can
   const setMutation = useMutation({
     mutationFn: () => setFlagOrgOverride(flagKey, orgId.trim(), isEnabled, reason.trim()),
     onSuccess: () => {
-      toast('Override Saved', `Organization "${orgId.trim()}" now has an override for this flag.`, 'success');
+      const orgName = orgById.get(orgId.trim())?.name ?? orgId.trim();
+      toast('Override Saved', `"${orgName}" now has an override for this flag.`, 'success');
       setOrgId('');
       setReason('');
       setIsEnabled(true);
@@ -87,16 +95,18 @@ function OrgOverridesPanel({ flagKey, canManage, toast }: { flagKey: string; can
         {overridesQuery.isLoading ? (
           <p className="text-xs text-muted-foreground">Loading organization overrides…</p>
         ) : overridesQuery.data?.length ? (
-          overridesQuery.data.map((override) => (
+          overridesQuery.data.map((override) => {
+            const org = orgById.get(override.organizationId);
+            return (
             <div
               key={override.id}
               className="flex items-start justify-between gap-3 p-3 bg-card border border-border/30 rounded-lg"
             >
               <div className="space-y-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <code className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary/80 text-foreground">
-                    {override.organizationId}
-                  </code>
+                  <span className="text-xs font-semibold text-foreground">
+                    {org?.name ?? 'Unknown organization'}
+                  </span>
                   <span
                     className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                       override.isEnabled ? 'bg-primary/10 text-primary' : 'bg-secondary text-muted-foreground'
@@ -105,6 +115,9 @@ function OrgOverridesPanel({ flagKey, canManage, toast }: { flagKey: string; can
                     {override.isEnabled ? 'ENABLED' : 'DISABLED'}
                   </span>
                 </div>
+                <p className="text-[10px] text-muted-foreground">
+                  {org?.ownerName ?? org?.ownerEmail ?? override.organizationId}
+                </p>
                 <p className="text-[11px] text-muted-foreground">{override.reason}</p>
                 <p className="text-[10px] text-muted-foreground">
                   By {override.createdByName} · {format(parseISO(override.createdAt), 'dd MMM yyyy, hh:mm a')}
@@ -121,7 +134,8 @@ function OrgOverridesPanel({ flagKey, canManage, toast }: { flagKey: string; can
                 </button>
               )}
             </div>
-          ))
+            );
+          })
         ) : (
           <p className="text-xs text-muted-foreground">No organizations have an override — all follow the global default.</p>
         )}
@@ -136,14 +150,9 @@ function OrgOverridesPanel({ flagKey, canManage, toast }: { flagKey: string; can
           }}
           className="flex flex-wrap items-end gap-2 pt-2 border-t border-border/20"
         >
-          <div className="flex-1 min-w-[140px] space-y-1">
-            <label className="text-[10px] font-semibold text-muted-foreground">Organization ID</label>
-            <input
-              value={orgId}
-              onChange={(e) => setOrgId(e.target.value)}
-              placeholder="org_9f3c1a"
-              className="w-full h-8 px-2 text-xs rounded-md bg-background border border-border/40 text-foreground"
-            />
+          <div className="flex-1 min-w-[220px] space-y-1">
+            <label className="text-[10px] font-semibold text-muted-foreground">Organization</label>
+            <OrganizationCombobox value={orgId} onChange={setOrgId} />
           </div>
           <div className="space-y-1">
             <label className="text-[10px] font-semibold text-muted-foreground">Value</label>

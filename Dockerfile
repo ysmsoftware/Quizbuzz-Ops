@@ -47,17 +47,29 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
-# Install Prisma CLI + deps for `prisma migrate deploy` and standalone worker process
+# Install Prisma CLI + deps for `prisma migrate deploy` and standalone worker
+# process. Must run BEFORE the generated-client copy below, into an
+# otherwise-empty node_modules/@prisma — if @prisma/config is already
+# present when this runs, npm treats it as already-satisfied and skips
+# installing its own transitive deps (effect, c12, deepmerge-ts, empathic),
+# which crashes `prisma migrate deploy` at runtime with "Cannot find module
+# 'effect'". Version pinned to match package.json's own prisma range so this
+# step can't silently drift to whatever Prisma happens to publish on a given
+# build day — see DECISIONS.md for the incident this fixed.
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
-RUN npm install --no-save prisma dotenv tsx typescript && npm cache clean --force
+RUN npm install --no-save prisma@^7.8.0 dotenv tsx typescript && npm cache clean --force
+
+# Overlay the already-generated Prisma Client (schema-specific output from
+# `npx prisma generate` in the builder stage) on top of the fresh install
+# above — must come after, so the correctly-generated client always wins.
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 USER nextjs
 

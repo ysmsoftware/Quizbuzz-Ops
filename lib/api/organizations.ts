@@ -199,7 +199,11 @@ export async function getOrganizationParticipants(orgId: string, contestId?: str
   return rawList.map((p) => ({
     id: p.id,
     organizationId: orgId,
-    contestId: contestId || 'contest_1',
+    // Use the participant's real contest linkage returned by the API.
+    // `contestId` (the function argument) is an optional caller-supplied
+    // filter, not a per-row fallback — it must never overwrite real data,
+    // and there is no literal placeholder here anymore.
+    contestId: p.contestId || contestId || '',
     registrationRef: p.registrationRef,
     firstName: p.firstName,
     lastName: p.lastName,

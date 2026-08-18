@@ -210,7 +210,11 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       status: r.status,
       startTime: new Date(r.startTime).toISOString(),
       duration: r.duration,
-      registrationFee: r.registrationFee / 100, // paise to INR
+      // PaymentConfig.amount is stored in whole rupees (not paise) — see
+      // contest.validator.ts / payment.service.ts's `* 100` conversion when
+      // building the Razorpay order. No conversion needed here; dividing by
+      // 100 previously turned a ₹1 fee into ₹0.01 on this tab.
+      registrationFee: r.registrationFee,
       participantCount: r.participantCount,
       revenueCollected: revenueMap.get(r.id) || 0,
       createdAt: new Date(r.createdAt).toISOString(),
@@ -219,8 +223,9 @@ export class OrganizationsRepository implements IOrganizationsRepository {
 
   async getOrganizationParticipants(orgId: string): Promise<OrgParticipantDetail[]> {
     const rows = await queryMainDb(`
-      SELECT 
+      SELECT
         p.id,
+        p."contestId",
         p."registrationRef",
         c."firstName",
         c."lastName",
@@ -239,6 +244,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
 
     return rows.map(r => ({
       id: r.id,
+      contestId: r.contestId,
       registrationRef: r.registrationRef,
       firstName: r.firstName,
       lastName: r.lastName || '',
@@ -246,6 +252,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       phone: r.phone || '',
       status: r.status,
       paymentStatus: r.paymentStatus || 'FREE',
+      // payments.amount (this Payment row, distinct from PaymentConfig) is
+      // genuinely stored in paise — this conversion is correct as-is.
       paymentAmount: r.paymentAmount / 100, // paise to INR
       registeredAt: new Date(r.registeredAt).toISOString(),
     }));

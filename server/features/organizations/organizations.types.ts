@@ -69,6 +69,7 @@ export interface OrgContestDetail {
 
 export interface OrgParticipantDetail {
   id: string;
+  contestId: string;
   registrationRef: string;
   firstName: string;
   lastName: string;

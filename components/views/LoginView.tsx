@@ -79,11 +79,13 @@ export default function LoginView() {
         email: otpEmail,
         otp: otpCode,
       });
+
       toast(
         'Welcome Back!',
         'Logged in successfully.',
         'success'
       );
+
       router.push('/dashboard');
     } catch (e: any) {
       toast('Verification Failed', e.message || 'Incorrect OTP code.', 'error');
@@ -111,7 +113,7 @@ export default function LoginView() {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
             </span>
           </div>
-          
+
           <h1 className="text-3xl font-bold tracking-tight text-foreground font-sans">
             QuizBuzz <span className="text-primary font-light">— Ops</span>
           </h1>

@@ -274,6 +274,51 @@ export interface MainAppAuditLogEntry {
   createdAt: string;
 }
 
+/**
+ * Main app's own scheduled_jobs summary row (per BullMQ job — one certificate,
+ * one submission, etc.), read cross-DB — see lib/api/jobCheckpoints.ts.
+ * Populated by the checkpoint-drain worker, batched out of Redis every
+ * ~10min (or sooner if the checkpoint stream fills up) — NOT written
+ * synchronously per job, so this view can lag live activity by that window.
+ * queueWaitMs/processingMs/totalMs are null until the relevant timestamps
+ * are set (e.g. totalMs is null while a job is still ACTIVE).
+ */
+export interface ScheduledJobSummary {
+  id: string;
+  organizationId: string;
+  contestId: string | null;
+  bullJobId: string | null;
+  queue: string;
+  name: string;
+  status: 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'DELAYED';
+  scheduledFor: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  error: string | null;
+  retryCount: number;
+  createdAt: string;
+  queueWaitMs: number | null;
+  processingMs: number | null;
+  totalMs: number | null;
+}
+
+/** One stage's timing within a job — the waterfall detail behind a ScheduledJobSummary row. */
+export interface JobCheckpointStage {
+  id: string;
+  jobId: string;
+  queue: string;
+  requestId: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  stage: string; // e.g. "render_html", "generate_pdf", "upload_storage"
+  status: 'OK' | 'ERROR';
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  createdAt: string;
+}
+
 export interface PricingConfig {
   id: string;
   currency: string;

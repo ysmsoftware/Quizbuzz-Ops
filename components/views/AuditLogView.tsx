@@ -5,12 +5,21 @@ import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { Lock, UserCheck } from 'lucide-react';
 import OpsAuditLogTable from './audit-log/OpsAuditLogTable';
 import MainAppAuditLogTable from './audit-log/MainAppAuditLogTable';
+import JobTimelineTable from './audit-log/JobTimelineTable';
 
-type AuditLogTab = 'ops' | 'main-app';
+type AuditLogTab = 'ops' | 'main-app' | 'job-timeline';
 
 export default function AuditLogView() {
   const { admin } = useCurrentAdmin();
   const [tab, setTab] = useState<AuditLogTab>('ops');
+  // Set by MainAppAuditLogTable's "View job timeline" button — carries the
+  // requestId across to a fresh Job Timeline tab mount, pre-filtered.
+  const [jobTimelineRequestId, setJobTimelineRequestId] = useState<string | undefined>(undefined);
+
+  const openJobTimelineForRequest = (requestId: string) => {
+    setJobTimelineRequestId(requestId);
+    setTab('job-timeline');
+  };
 
   return (
     <div id="audit-logs-view" className="space-y-6 font-sans select-none">
@@ -73,9 +82,24 @@ export default function AuditLogView() {
         >
           Main Application
         </button>
+        <button
+          onClick={() => setTab('job-timeline')}
+          className={`px-4 py-2 text-xs font-semibold border-b-2 transition-all cursor-pointer ${tab === 'job-timeline'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+        >
+          Job Timeline
+        </button>
       </div>
 
-      {tab === 'ops' ? <OpsAuditLogTable /> : <MainAppAuditLogTable />}
+      {tab === 'ops' ? (
+        <OpsAuditLogTable />
+      ) : tab === 'main-app' ? (
+        <MainAppAuditLogTable onViewJobTimeline={openJobTimelineForRequest} />
+      ) : (
+        <JobTimelineTable initialRequestId={jobTimelineRequestId} />
+      )}
     </div>
   );
 }

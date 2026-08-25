@@ -18,6 +18,7 @@ import {
   Building2,
   Loader2,
   Link2,
+  Timer,
 } from 'lucide-react';
 import { MainAppAuditLogEntry } from '@/lib/types';
 
@@ -49,8 +50,13 @@ function subActionLabel(domain: string, action: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export interface MainAppAuditLogTableProps {
+  /** Set by AuditLogView — jumps to a fresh "Job Timeline" tab mount, pre-filtered to this requestId. */
+  onViewJobTimeline?: (requestId: string) => void;
+}
+
 /** Main app's own audit trail — reads audit_logs cross-DB via queryMainDb. See AuditLogView.tsx for the tab shell. */
-export default function MainAppAuditLogTable() {
+export default function MainAppAuditLogTable({ onViewJobTimeline }: MainAppAuditLogTableProps) {
   const [page, setPage] = useState(1);
   const [orgIdFilter, setOrgIdFilter] = useState('');
   const [targetIdFilter, setTargetIdFilter] = useState('');
@@ -297,13 +303,24 @@ export default function MainAppAuditLogTable() {
 
                         <td className="py-2.5 px-5 font-mono text-muted-foreground/80 text-[11px]">
                           {log.requestId ? (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); filterByRequestId(log.requestId!); }}
-                              className="hover:text-primary hover:underline cursor-pointer"
-                              title="Filter to everything this request did"
-                            >
-                              {log.requestId.slice(0, 8)}…
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); filterByRequestId(log.requestId!); }}
+                                className="hover:text-primary hover:underline cursor-pointer"
+                                title="Filter to everything this request did"
+                              >
+                                {log.requestId.slice(0, 8)}…
+                              </button>
+                              {onViewJobTimeline && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onViewJobTimeline(log.requestId!); }}
+                                  className="p-1 rounded hover:bg-secondary/30 text-muted-foreground/70 hover:text-primary transition-all cursor-pointer"
+                                  title="View this request's per-stage job timeline"
+                                >
+                                  <Timer className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
                           ) : '—'}
                         </td>
 

@@ -10,6 +10,10 @@ import { MainAppAuditLogRepository } from './features/audit-log-main-app/audit-l
 import { MainAppAuditLogService } from './features/audit-log-main-app/audit-log-main-app.service';
 import { MainAppAuditLogController } from './features/audit-log-main-app/audit-log-main-app.controller';
 
+import { JobCheckpointsRepository } from './features/job-checkpoints/job-checkpoints.repository';
+import { JobCheckpointsService } from './features/job-checkpoints/job-checkpoints.service';
+import { JobCheckpointsController } from './features/job-checkpoints/job-checkpoints.controller';
+
 import { BillingRepository } from './features/billing/billing.repository';
 import { BillingService } from './features/billing/billing.service';
 import { BillingController } from './features/billing/billing.controller';
@@ -59,6 +63,7 @@ import { OrgOwnerNotifier } from './notifications/org-owner-notifier';
 export const ambassadorTypesRepository = new AmbassadorTypesRepository();
 export const auditLogRepository = new AuditLogRepository();
 export const mainAppAuditLogRepository = new MainAppAuditLogRepository();
+export const jobCheckpointsRepository = new JobCheckpointsRepository();
 export const billingRepository = new BillingRepository();
 export const bookingsRepository = new BookingsRepository();
 export const entitlementsRepository = new EntitlementsRepository();
@@ -75,6 +80,7 @@ export const subscriptionsRepository = new SubscriptionsRepository();
 export const ambassadorTypesService = new AmbassadorTypesService(ambassadorTypesRepository);
 export const auditLogService = new AuditLogService(auditLogRepository);
 export const mainAppAuditLogService = new MainAppAuditLogService(mainAppAuditLogRepository);
+export const jobCheckpointsService = new JobCheckpointsService(jobCheckpointsRepository);
 export const billingService = new BillingService(billingRepository);
 export const bookingsService = new BookingsService(bookingsRepository);
 export const entitlementsService = new EntitlementsService(entitlementsRepository);
@@ -92,6 +98,7 @@ export const platformAuthService = new PlatformAuthService(platformAuthRepositor
 export const ambassadorTypesController = new AmbassadorTypesController(ambassadorTypesService);
 export const auditLogController = new AuditLogController(auditLogService);
 export const mainAppAuditLogController = new MainAppAuditLogController(mainAppAuditLogService);
+export const jobCheckpointsController = new JobCheckpointsController(jobCheckpointsService);
 export const featureFlagsController = new FeatureFlagsController(featureFlagsService);
 export const billingController = new BillingController(billingService);
 export const bookingsController = new BookingsController(bookingsService);

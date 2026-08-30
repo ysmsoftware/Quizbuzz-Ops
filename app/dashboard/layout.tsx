@@ -27,6 +27,7 @@ import {
   Landmark,
   MessagesSquare,
   UserSquare2,
+  Activity,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -54,6 +55,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'audit', label: 'Audit Log', phase: 'phase 3', href: '/dashboard/audit-log', icon: Database },
   { id: 'flags', label: 'Feature Flags', phase: 'phase 6', href: '/dashboard/flags', icon: Sliders },
   { id: 'ambassador-types', label: 'Ambassador Types', phase: 'phase 6', href: '/dashboard/ambassador-types', icon: UserSquare2 },
+  { id: 'ops-metrics', label: 'Ops Metrics', phase: 'phase 7', href: '/dashboard/metrics', icon: Activity },
   { id: 'payouts', label: 'Payout Accounts', phase: 'phase 2', href: '/dashboard/payouts', icon: Landmark, hidden: true },
   { id: 'infra', label: 'Infra & Cost', phase: 'phase 5', href: '/dashboard/infra', icon: Cpu, hidden: true },
 ];

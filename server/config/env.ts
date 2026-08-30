@@ -17,6 +17,12 @@ const envSchema = z.object({
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
   BILLING_HANDOFF_SECRET: z.string().min(1, 'BILLING_HANDOFF_SECRET must be set — it signs the checkout handoff token'),
   MAIN_APP_FRONTEND_URL: z.string().default('http://localhost:3000'),
+  // Shared secret for calling the main app's /api/v1/ops/metrics/* endpoints
+  // (see server/features/ops-metrics/ops-metrics.repository.ts). Must match
+  // the main app's OPS_METRICS_SECRET env var exactly — no default here since
+  // a mismatched/missing secret should fail loudly rather than silently point
+  // at the main app's own default placeholder value.
+  OPS_METRICS_SECRET: z.string().default('ops_metrics_shared_key_change_me'),
   OTP_EXPIRY_MINUTES: z.coerce.number().default(5),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),

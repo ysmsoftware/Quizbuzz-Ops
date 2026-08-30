@@ -504,3 +504,73 @@ export interface AmbassadorTypeOrgAccess {
   updatedByName: string;
   updatedAt: string;
 }
+
+/**
+ * Live process/fleet metrics read from the main app's /api/v1/ops/metrics/*
+ * endpoints (see lib/api/opsMetrics.ts) — real numbers straight from each
+ * running instance via a shared-Redis heartbeat fan-in, not estimates or
+ * mock data like InfraMonitoringView's InfraStatus/ScalingConfig.
+ */
+export interface OpsInstanceHeartbeat {
+  instanceId: string;
+  role: 'backend' | 'worker';
+  reportedAt: string;
+  uptimeSec: number;
+  memory: {
+    rssMb: number;
+    heapUsedMb: number;
+    heapTotalMb: number;
+    externalMb: number;
+    heapLimitMb: number;
+    heapUsedPct: number;
+  };
+  ws?: {
+    activeConnections: number;
+    maxConnections: number;
+    draining: boolean;
+  };
+  redisHost: string;
+}
+
+export interface OpsFleetSnapshot {
+  reportingInstances: number;
+  totals: {
+    activeConnections: number;
+    rssMb: number;
+    heapUsedMb: number;
+  };
+  instances: OpsInstanceHeartbeat[];
+}
+
+export interface OpsLiveContestSummary {
+  contestId: string;
+  organizationId: string;
+  title: string;
+  status: string;
+}
+
+export interface OpsRedisCounts {
+  waiting: number;
+  active: number;
+  submitted: number;
+  disconnected: number;
+}
+
+export interface OpsLiveParticipantRow {
+  participantId: string;
+  name: string;
+  phase: string;
+  currentQuestionIndex: number;
+  totalQuestions: number;
+  answeredCount: number;
+  violationCount: number;
+  trustScore: number;
+  isFlagged: boolean;
+  lastActivityAt: string;
+  isAlive: boolean;
+}
+
+export interface OpsContestLiveSnapshot {
+  counts: OpsRedisCounts;
+  participants: OpsLiveParticipantRow[];
+}

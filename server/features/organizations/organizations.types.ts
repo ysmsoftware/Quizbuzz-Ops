@@ -4,6 +4,7 @@ export interface OrgListMember {
   id: string;
   name: string;
   slug: string;
+  ownerName: string;
   ownerEmail: string;
   memberCount: number;
   contestCount: number;

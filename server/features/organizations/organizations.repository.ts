@@ -81,6 +81,11 @@ export class OrganizationsRepository implements IOrganizationsRepository {
         (SELECT COUNT(*)::int FROM contests WHERE "organizationId" = o.id AND "isDeleted" = false) as "contestCount",
         (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id) as "participantCount",
         COALESCE(
+          (SELECT a."firstName" || ' ' || COALESCE(a."lastName", '') FROM admins a JOIN org_members om ON om."adminId" = a.id WHERE om."organizationId" = o.id AND om.role = 'OWNER' LIMIT 1),
+          (SELECT c."firstName" || ' ' || COALESCE(c."lastName", '') FROM contacts c WHERE c."organizationId" = o.id LIMIT 1),
+          'Unknown Owner'
+        ) as "ownerName",
+        COALESCE(
           (SELECT email FROM admins a JOIN org_members om ON om."adminId" = a.id WHERE om."organizationId" = o.id AND om.role = 'OWNER' LIMIT 1),
           (SELECT email FROM contacts c WHERE c."organizationId" = o.id LIMIT 1),
           'unknown@org.com'

@@ -47,9 +47,9 @@ export async function getOrganizations(params: {
     contestCount: item.contestCount,
     participantCount: item.participantCount,
     ownerEmail: item.ownerEmail,
-    ownerName: item.ownerEmail.split('@')[0],
+    ownerName: item.ownerName || item.ownerEmail.split('@')[0],
     contactPerson: {
-      name: item.ownerEmail.split('@')[0],
+      name: item.ownerName || item.ownerEmail.split('@')[0],
       email: item.ownerEmail,
       phone: '',
     },

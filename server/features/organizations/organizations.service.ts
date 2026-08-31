@@ -67,6 +67,7 @@ export class OrganizationsService implements IOrganizationsService {
         id: r.id,
         name: r.name,
         slug: r.slug,
+        ownerName: r.ownerName,
         ownerEmail: r.ownerEmail,
         memberCount: r.memberCount,
         contestCount: r.contestCount,

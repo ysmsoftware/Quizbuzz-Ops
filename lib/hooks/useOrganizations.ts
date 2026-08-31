@@ -39,6 +39,7 @@ export function useOrganizations(params: {
     },
     isLoading: listQuery.isLoading,
     isError: listQuery.isError,
+    error: listQuery.error as Error | null,
     refetch: listQuery.refetch,
   };
 }

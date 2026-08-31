@@ -31,7 +31,7 @@ export function OrganizationCombobox({ value, onChange, placeholder = 'Select an
 
   // A generous single page — this is an internal ops picker, not a paginated
   // table; the tenant count doesn't warrant server-side search for this UI.
-  const { organizations, isLoading } = useOrganizations({ limit: 500 });
+  const { organizations, isLoading, isError, error, refetch } = useOrganizations({ limit: 500 });
 
   const selected = useMemo(() => organizations?.find((o) => o.id === value), [organizations, value]);
 
@@ -86,8 +86,25 @@ export function OrganizationCombobox({ value, onChange, placeholder = 'Select an
           <div className="max-h-64 overflow-y-auto py-1">
             {isLoading ? (
               <p className="px-3 py-2 text-xs text-muted-foreground">Loading organizations…</p>
+            ) : isError ? (
+              <div className="px-3 py-2 space-y-1">
+                <p className="text-xs text-destructive">
+                  Couldn&apos;t load organizations{error?.message ? `: ${error.message}` : '.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  className="text-xs font-semibold text-primary hover:underline cursor-pointer"
+                >
+                  Retry
+                </button>
+              </div>
             ) : filtered.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-muted-foreground">No organizations match &quot;{search}&quot;.</p>
+              <p className="px-3 py-2 text-xs text-muted-foreground">
+                {organizations && organizations.length > 0
+                  ? `No organizations match "${search}".`
+                  : 'No organizations found.'}
+              </p>
             ) : (
               filtered.map((org) => (
                 <button

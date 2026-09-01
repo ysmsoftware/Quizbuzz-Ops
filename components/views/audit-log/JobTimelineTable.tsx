@@ -17,11 +17,17 @@ import {
   Clock,
 } from 'lucide-react';
 import { ScheduledJobSummary } from '@/lib/types';
+import { KNOWN_QUEUES } from '@/lib/constants/queues';
 
 const PAGE_SIZE = 50;
 
 function formatMs(ms: number | null): string {
   if (ms === null) return '—';
+  // Defensive guard — legacy rows recorded before the createdAt fix (see
+  // claude/job-timeline-audit-log-fixes-audit-and-plan.md, Issue 1) can still
+  // carry a negative duration; render those as unknown rather than a raw
+  // negative number that reads as broken.
+  if (ms < 0) return '—';
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }
@@ -123,14 +129,17 @@ export default function JobTimelineTable({ initialRequestId }: { initialRequestI
           </div>
 
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              type="text"
+            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <select
               value={queueFilter}
               onChange={(e) => { setQueueFilter(e.target.value); setPage(1); }}
-              placeholder="Queue (e.g. certificate-queue)..."
-              className="pl-9 h-9 w-52 sm:w-60 text-xs rounded-lg border border-border/40 bg-secondary/20 focus:outline-none focus:border-primary transition-all font-mono"
-            />
+              className="pl-9 pr-2 h-9 w-52 sm:w-64 text-xs rounded-lg border border-border/40 bg-secondary/20 focus:outline-none focus:border-primary transition-all font-mono appearance-none text-muted-foreground"
+            >
+              <option value="">All queues</option>
+              {KNOWN_QUEUES.map((q) => (
+                <option key={q.value} value={q.value}>{q.label}</option>
+              ))}
+            </select>
           </div>
 
           <select

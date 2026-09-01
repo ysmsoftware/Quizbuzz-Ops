@@ -30,7 +30,11 @@ export class JobCheckpointsRepository implements IJobCheckpointsRepository {
     };
 
     if (jobId) conditions.push(`"bullJobId" = ${addParam(jobId)}`);
-    if (queue) conditions.push(`"queue" = ${addParam(queue)}`);
+    // Case-insensitive + trimmed — the frontend now offers a dropdown of exact
+    // queue names, but this stays forgiving as a safety net for any other
+    // caller (deep link, future free-text search) instead of silently
+    // returning zero rows on a case/whitespace mismatch.
+    if (queue) conditions.push(`LOWER("queue") = LOWER(${addParam(queue.trim())})`);
     if (status) conditions.push(`"status" = ${addParam(status)}::"JobStatus"`);
     if (organizationId) conditions.push(`"organizationId" = ${addParam(organizationId)}`);
     if (requestId) {

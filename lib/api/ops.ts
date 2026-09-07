@@ -9,6 +9,10 @@ import {
   AmbassadorType,
   AmbassadorApplicationFieldDef,
   AmbassadorTypeOrgAccess,
+  College,
+  Department,
+  UnlistedCollege,
+  UnlistedDepartment,
 } from '@/lib/types';
 import { simulateLatency } from '@/lib/api/utils';
 import { apiRequest } from '@/lib/api/utils';
@@ -127,4 +131,79 @@ export async function setAmbassadorTypeOrgAccess(
     method: 'PUT',
     body: JSON.stringify({ isEnabled }),
   });
+}
+
+// ─── College / Department catalog ──────────────────────────────
+// Curated reference data, mirrored write-through into the main app's own
+// database — see quizbuzz-ops-next College.repository.ts for the sync.
+
+export async function getColleges(): Promise<College[]> {
+  return apiRequest<College[]>('/api/v1/ops/colleges');
+}
+
+export async function createCollege(input: {
+  name: string;
+  state?: string;
+  district?: string;
+  city?: string;
+}): Promise<College> {
+  return apiRequest<College>('/api/v1/ops/colleges', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateCollege(
+  id: string,
+  input: Partial<{ name: string; state: string; district: string; city: string; isActive: boolean }>
+): Promise<College> {
+  return apiRequest<College>(`/api/v1/ops/colleges/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getCollegeDepartments(collegeId: string): Promise<Department[]> {
+  return apiRequest<Department[]>(`/api/v1/ops/colleges/${collegeId}/departments`);
+}
+
+export async function createDepartment(collegeId: string, input: { name: string }): Promise<Department> {
+  return apiRequest<Department>(`/api/v1/ops/colleges/${collegeId}/departments`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateDepartment(
+  collegeId: string,
+  departmentId: string,
+  input: Partial<{ name: string; isActive: boolean }>
+): Promise<Department> {
+  return apiRequest<Department>(`/api/v1/ops/colleges/${collegeId}/departments/${departmentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+// "Other" submissions from contest registration — colleges/departments typed as free text
+// because they weren't in the catalog, so ops can see what's worth adding.
+export async function getUnlistedRequests(): Promise<{ colleges: UnlistedCollege[]; departments: UnlistedDepartment[] }> {
+  return apiRequest<{ colleges: UnlistedCollege[]; departments: UnlistedDepartment[] }>('/api/v1/ops/colleges/unlisted');
+}
+
+// Platform-wide app logo — lives in the main app's own DB; this dashboard is
+// a thin remote admin UI over it (see server/features/app-settings).
+export async function getAppLogo(): Promise<{ appLogoUrl: string | null }> {
+  return apiRequest<{ appLogoUrl: string | null }>('/api/v1/ops/app-logo');
+}
+
+export async function uploadAppLogo(input: { fileData: string; fileName: string }): Promise<{ appLogoUrl: string | null }> {
+  return apiRequest<{ appLogoUrl: string | null }>('/api/v1/ops/app-logo', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function removeAppLogo(): Promise<void> {
+  await apiRequest<null>('/api/v1/ops/app-logo', { method: 'DELETE' });
 }

@@ -119,12 +119,42 @@ function ApplicationFieldsBuilder({
               </button>
             </div>
             {field.type === 'SELECT' && (
-              <input
-                value={(field.options ?? []).join(', ')}
-                onChange={(e) => updateOptions(i, e.target.value)}
-                placeholder="Options, comma-separated (e.g. 2026, 2027, 2028)"
-                className="w-full h-8 px-2 ml-6 text-xs rounded-md bg-background border border-border/40 text-foreground"
-              />
+              <div className="ml-6 space-y-2">
+                <select
+                  value={field.optionsSource ?? 'static'}
+                  onChange={(e) => {
+                    const source = e.target.value as 'static' | 'colleges' | 'departments';
+                    updateField(i, {
+                      optionsSource: source === 'static' ? undefined : source,
+                      options: source === 'static' ? field.options ?? [] : undefined,
+                      dependsOnKey: source === 'departments' ? field.dependsOnKey : undefined,
+                    });
+                  }}
+                  className="h-8 px-2 text-xs rounded-md bg-background border border-border/40 text-foreground"
+                >
+                  <option value="static">Static options</option>
+                  <option value="colleges">College catalog (live)</option>
+                  <option value="departments">Department catalog (live)</option>
+                </select>
+
+                {!field.optionsSource && (
+                  <input
+                    value={(field.options ?? []).join(', ')}
+                    onChange={(e) => updateOptions(i, e.target.value)}
+                    placeholder="Options, comma-separated (e.g. 2026, 2027, 2028)"
+                    className="w-full h-8 px-2 text-xs rounded-md bg-background border border-border/40 text-foreground"
+                  />
+                )}
+
+                {field.optionsSource === 'departments' && (
+                  <input
+                    value={field.dependsOnKey ?? ''}
+                    onChange={(e) => updateField(i, { dependsOnKey: e.target.value })}
+                    placeholder="Depends on college field's key (optional, e.g. college)"
+                    className="w-full h-8 px-2 text-xs rounded-md bg-background border border-border/40 text-foreground font-mono"
+                  />
+                )}
+              </div>
             )}
           </div>
         ))}

@@ -123,7 +123,6 @@ export class OrganizationsService implements IOrganizationsService {
       name: rawOrg.name,
       slug: rawOrg.slug,
       logoUrl: rawOrg.logoUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(rawOrg.name)}&backgroundColor=0d9488`,
-      website: rawOrg.website || `https://${rawOrg.slug}.com`,
       isActive: rawOrg.isActive,
       isDeleted: rawOrg.isDeleted,
       createdAt: new Date(rawOrg.createdAt).toISOString(),

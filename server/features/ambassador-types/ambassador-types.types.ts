@@ -6,6 +6,8 @@ export interface ApplicationFieldDef {
   type: ApplicationFieldType;
   required: boolean;
   options?: string[]; // only meaningful when type === 'SELECT'
+  optionsSource?: 'colleges' | 'departments';
+  dependsOnKey?: string;
 }
 
 export interface AmbassadorTypeDetail {

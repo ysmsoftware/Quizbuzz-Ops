@@ -40,6 +40,8 @@ enum AuditTargetType {
   FEATURE_FLAG
   PLATFORM_ADMIN
   AMBASSADOR_TYPE
+  COLLEGE
+  APP_SETTINGS
 }
 
 enum OpsPaymentStatus {
@@ -88,6 +90,7 @@ model PlatformAdmin {
   featureFlagUpdates   FeatureFlag[]
   ambassadorTypesCreated       AmbassadorType[]
   ambassadorTypeAccessUpdates  OrganizationAmbassadorTypeAccess[]
+  collegesCreated              College[]
 
   @@index([email])
   @@map("platform_admins")
@@ -374,6 +377,49 @@ model OrganizationAmbassadorTypeAccess {
 
   @@unique([organizationId, ambassadorTypeId])
   @@map("organization_ambassador_type_access")
+}
+
+// Curated College -> Department catalog, mirrored into Quizbuzz-new's own database (see
+// College.repository.ts's syncCollegeToMainApp/syncDepartmentToMainApp) so contest registration
+// and ambassador signup can offer a consistent dropdown instead of free text.
+model College {
+  id            String       @id
+  name          String       @unique
+  // Regional metadata — not surfaced anywhere yet, but captured up front so the catalog can be
+  // filtered/reported on by region as it grows into the hundreds of colleges across many states,
+  // instead of needing a backfill later (the exact problem this whole catalog replaced free text
+  // college names to avoid).
+  state         String?
+  district      String?
+  city          String?
+  isActive      Boolean      @default(true) // ops can retire a college without deleting history
+  createdById   String?
+  createdByName String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  createdBy   PlatformAdmin? @relation(fields: [createdById], references: [id])
+  departments Department[]
+
+  @@index([state])
+  @@index([district])
+  @@map("colleges")
+}
+
+model Department {
+  id            String   @id
+  collegeId     String
+  name          String
+  isActive      Boolean  @default(true)
+  createdByName String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  college College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+
+  @@unique([collegeId, name])
+  @@index([collegeId])
+  @@map("departments")
 }
 
 model SubscriptionChangeLog {

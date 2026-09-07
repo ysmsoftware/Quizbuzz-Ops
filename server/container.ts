@@ -1,6 +1,12 @@
 import { AmbassadorTypesRepository } from './features/ambassador-types/ambassador-types.repository';
 import { AmbassadorTypesService } from './features/ambassador-types/ambassador-types.service';
 import { AmbassadorTypesController } from './features/ambassador-types/ambassador-types.controller';
+import { CollegesRepository } from './features/colleges/colleges.repository';
+import { CollegesService } from './features/colleges/colleges.service';
+import { CollegesController } from './features/colleges/colleges.controller';
+import { AppSettingsRepository } from './features/app-settings/app-settings.repository';
+import { AppSettingsService } from './features/app-settings/app-settings.service';
+import { AppSettingsController } from './features/app-settings/app-settings.controller';
 
 import { AuditLogRepository } from './features/audit-log/audit-log.repository';
 import { AuditLogService } from './features/audit-log/audit-log.service';
@@ -65,6 +71,8 @@ import { OrgOwnerNotifier } from './notifications/org-owner-notifier';
 
 // ─── Repositories ──────────────────────────────────────────
 export const ambassadorTypesRepository = new AmbassadorTypesRepository();
+export const collegesRepository = new CollegesRepository();
+export const appSettingsRepository = new AppSettingsRepository();
 export const auditLogRepository = new AuditLogRepository();
 export const mainAppAuditLogRepository = new MainAppAuditLogRepository();
 export const opsMetricsRepository = new OpsMetricsRepository();
@@ -83,6 +91,8 @@ export const subscriptionsRepository = new SubscriptionsRepository();
 
 // ─── Services ───────────────────────────────────────────────
 export const ambassadorTypesService = new AmbassadorTypesService(ambassadorTypesRepository);
+export const collegesService = new CollegesService(collegesRepository);
+export const appSettingsService = new AppSettingsService(appSettingsRepository);
 export const auditLogService = new AuditLogService(auditLogRepository);
 export const mainAppAuditLogService = new MainAppAuditLogService(mainAppAuditLogRepository);
 export const opsMetricsService = new OpsMetricsService(opsMetricsRepository);
@@ -102,6 +112,8 @@ export const platformAuthService = new PlatformAuthService(platformAuthRepositor
 
 // ─── Controllers ────────────────────────────────────────────
 export const ambassadorTypesController = new AmbassadorTypesController(ambassadorTypesService);
+export const collegesController = new CollegesController(collegesService);
+export const appSettingsController = new AppSettingsController(appSettingsService);
 export const auditLogController = new AuditLogController(auditLogService);
 export const mainAppAuditLogController = new MainAppAuditLogController(mainAppAuditLogService);
 export const opsMetricsController = new OpsMetricsController(opsMetricsService);

@@ -50,7 +50,6 @@ export interface Organization {
   ownerName: string;
   ownerEmail: string;
   logoUrl: string;
-  website: string;
   notes: SupportNote[];
   suspendReason?: string;
   suspendedAt?: string;
@@ -481,6 +480,12 @@ export interface AmbassadorApplicationFieldDef {
   type: AmbassadorApplicationFieldType;
   required: boolean;
   options?: string[];
+  // Live-fetched options instead of the static `options` list above — the main app's
+  // DynamicApplicationFields renderer pulls the current College/Department catalog for
+  // these instead of reading `options`. `dependsOnKey`, only meaningful for 'departments',
+  // names the sibling field whose selected college id filters the department list.
+  optionsSource?: 'colleges' | 'departments';
+  dependsOnKey?: string;
 }
 
 export interface AmbassadorType {
@@ -503,6 +508,41 @@ export interface AmbassadorTypeOrgAccess {
   isEnabled: boolean;
   updatedByName: string;
   updatedAt: string;
+}
+
+export interface Department {
+  id: string;
+  collegeId: string;
+  name: string;
+  isActive: boolean;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface College {
+  id: string;
+  name: string;
+  state: string | null;
+  district: string | null;
+  city: string | null;
+  isActive: boolean;
+  departmentCount: number;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UnlistedCollege {
+  name: string;
+  count: number;
+}
+
+export interface UnlistedDepartment {
+  collegeId: string | null;
+  college: string | null;
+  department: string;
+  count: number;
 }
 
 /**

@@ -15,9 +15,14 @@ const applicationFieldSchema = z
     type: z.enum(['TEXT', 'EMAIL', 'PHONE', 'NUMBER', 'SELECT', 'DATE']),
     required: z.boolean(),
     options: z.array(z.string().min(1)).optional(),
+    // Live-fetched options instead of the static `options` list above — see the main app's
+    // src/common/colleges.ts. `dependsOnKey`, only meaningful for 'departments', names the
+    // sibling field whose selected college filters the department list.
+    optionsSource: z.enum(['colleges', 'departments']).optional(),
+    dependsOnKey: z.string().optional(),
   })
-  .refine((f) => f.type !== 'SELECT' || (f.options && f.options.length > 0), {
-    message: 'SELECT fields must have at least one option',
+  .refine((f) => f.type !== 'SELECT' || f.optionsSource || (f.options && f.options.length > 0), {
+    message: 'SELECT fields must have at least one option or a catalog options source',
     path: ['options'],
   });
 

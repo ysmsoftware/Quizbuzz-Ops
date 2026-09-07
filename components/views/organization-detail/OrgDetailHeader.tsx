@@ -1,12 +1,10 @@
 'use client';
 
-import React from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ChevronLeft,
   ShieldCheck,
   ShieldAlert,
-  ExternalLink,
   Edit3,
   Lock,
   RefreshCw,
@@ -69,16 +67,6 @@ export default function OrgDetailHeader({
             </h1>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <span className="font-mono text-[11px] uppercase tracking-wider">{organization.slug}</span>
-              <span>•</span>
-              <a 
-                href={organization.website} 
-                target="_blank" 
-                rel="noreferrer" 
-                className="hover:text-primary flex items-center gap-0.5 hover:underline"
-              >
-                <span>{organization.website.replace('https://', '')}</span>
-                <ExternalLink className="h-3 w-3 shrink-0" />
-              </a>
               <span>•</span>
               <span>Joined {format(new Date(organization.createdAt), 'dd MMM yyyy')}</span>
             </div>

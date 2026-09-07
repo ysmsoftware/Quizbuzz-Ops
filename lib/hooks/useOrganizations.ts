@@ -89,7 +89,7 @@ export function useOrganizationDetail(orgId: string) {
   });
 
   const updateOrgMutation = useMutation({
-    mutationFn: (data: { name: string; website: string; logoUrl: string; planId?: string }) => 
+    mutationFn: (data: { name: string; logoUrl: string; planId?: string }) =>
       updateOrganization(orgId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations'] });

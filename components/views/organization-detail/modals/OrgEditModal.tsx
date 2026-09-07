@@ -10,14 +10,12 @@ interface OrgEditModalProps {
   onClose: () => void;
   editFields: {
     name: string;
-    website: string;
     logoUrl: string;
     planId: string;
   };
   setEditFields: React.Dispatch<
     React.SetStateAction<{
       name: string;
-      website: string;
       logoUrl: string;
       planId: string;
     }>
@@ -63,17 +61,6 @@ export default function OrgEditModal({
               value={editFields.name}
               onChange={(e) => setEditFields(prev => ({ ...prev, name: e.target.value }))}
               className="w-full px-3 py-2 text-xs bg-secondary/20 focus:bg-card border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Website Domain URL</label>
-            <input
-              type="url"
-              required
-              value={editFields.website}
-              onChange={(e) => setEditFields(prev => ({ ...prev, website: e.target.value }))}
-              className="w-full px-3 py-2 text-xs bg-secondary/20 focus:bg-card border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground font-mono"
             />
           </div>
 

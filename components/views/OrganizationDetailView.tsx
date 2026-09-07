@@ -76,7 +76,6 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
   // Edit Form Fields State
   const [editFields, setEditFields] = useState({
     name: '',
-    website: '',
     logoUrl: '',
     planId: ''
   });
@@ -86,7 +85,6 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
     if (organization) {
       setEditFields({
         name: organization.name,
-        website: organization.website,
         logoUrl: organization.logoUrl,
         planId: organization.planId
       });

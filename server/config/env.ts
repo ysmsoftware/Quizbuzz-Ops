@@ -23,6 +23,10 @@ const envSchema = z.object({
   // a mismatched/missing secret should fail loudly rather than silently point
   // at the main app's own default placeholder value.
   OPS_METRICS_SECRET: z.string().default('ops_metrics_shared_key_change_me'),
+  // Shared secret for calling the main app's /api/v1/ops/settings/* endpoints
+  // (app logo upload/remove — see server/features/app-settings/app-settings.repository.ts).
+  // Must match the main app's own OPS_SETTINGS_SECRET env var exactly.
+  OPS_SETTINGS_SECRET: z.string().default('ops_settings_shared_key_change_me'),
   OTP_EXPIRY_MINUTES: z.coerce.number().default(5),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),

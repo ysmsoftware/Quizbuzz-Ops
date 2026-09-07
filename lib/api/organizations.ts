@@ -54,7 +54,6 @@ export async function getOrganizations(params: {
       phone: '',
     },
     logoUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(item.name)}&backgroundColor=0d9488`,
-    website: `https://${item.slug}.com`,
     notes: [],
   }));
 
@@ -105,7 +104,6 @@ export async function getOrganizationDetail(orgId: string): Promise<Organization
         phone: '',
       },
       logoUrl: raw.logoUrl,
-      website: raw.website,
       suspendReason: raw.suspension?.reason,
       suspendedAt: raw.suspension?.suspendedAt,
       notes: notes,
@@ -129,7 +127,6 @@ export async function updateOrganization(
   orgId: string,
   params: {
     name: string;
-    website: string;
     logoUrl: string;
     planId?: string;
   }

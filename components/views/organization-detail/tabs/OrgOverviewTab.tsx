@@ -1,7 +1,6 @@
 'use client';
 
-import React from 'react';
-import { Globe, User, ExternalLink } from 'lucide-react';
+import { Globe, User } from 'lucide-react';
 import { format } from 'date-fns';
 import { Organization, Contest, Member, SubscriptionPlan } from '@/lib/types';
 
@@ -101,13 +100,6 @@ export default function OrgOverviewTab({
             <div>
               <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Owner Email Address</span>
               <a href={`mailto:${organization.ownerEmail}`} className="font-mono text-primary hover:underline">{organization.ownerEmail}</a>
-            </div>
-            <div>
-              <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Official Web Domain</span>
-              <a href={organization.website} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1 mt-0.5">
-                <span>{organization.website}</span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
             </div>
           </div>
         </div>

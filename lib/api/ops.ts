@@ -163,6 +163,10 @@ export async function updateCollege(
   });
 }
 
+export async function deleteCollege(id: string): Promise<void> {
+  await apiRequest<null>(`/api/v1/ops/colleges/${id}`, { method: 'DELETE' });
+}
+
 export async function getCollegeDepartments(collegeId: string): Promise<Department[]> {
   return apiRequest<Department[]>(`/api/v1/ops/colleges/${collegeId}/departments`);
 }
@@ -189,6 +193,22 @@ export async function updateDepartment(
 // because they weren't in the catalog, so ops can see what's worth adding.
 export async function getUnlistedRequests(): Promise<{ colleges: UnlistedCollege[]; departments: UnlistedDepartment[] }> {
   return apiRequest<{ colleges: UnlistedCollege[]; departments: UnlistedDepartment[] }>('/api/v1/ops/colleges/unlisted');
+}
+
+// "Skip" on one unlisted row — it's a live aggregate, not a stored queue, so this just
+// remembers not to show this college/department pair again rather than deleting anything.
+export async function dismissUnlistedCollege(name: string): Promise<void> {
+  await apiRequest<null>('/api/v1/ops/colleges/unlisted/dismiss', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'COLLEGE', collegeKey: name }),
+  });
+}
+
+export async function dismissUnlistedDepartment(collegeKey: string, department: string): Promise<void> {
+  await apiRequest<null>('/api/v1/ops/colleges/unlisted/dismiss', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'DEPARTMENT', collegeKey, department }),
+  });
 }
 
 // Platform-wide app logo — lives in the main app's own DB; this dashboard is

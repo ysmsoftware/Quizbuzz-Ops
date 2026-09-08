@@ -44,8 +44,17 @@ export interface ICollegesRepository {
   updateDepartment(id: string, data: Partial<{ name: string; isActive: boolean }>): Promise<Department>;
   syncCollegeToMainApp(college: College): Promise<void>;
   syncDepartmentToMainApp(department: Department): Promise<void>;
+  /** Deletes the college and, via the FK's onDelete: Cascade, every one of its departments —
+   *  local ops DB only. Pair with deleteCollegeFromMainApp to also remove the mirror. */
+  deleteCollege(id: string): Promise<void>;
+  /** Write-through delete to Quizbuzz-new's own database — the DELETE-grant counterpart to
+   *  syncCollegeToMainApp/syncDepartmentToMainApp's INSERT/UPDATE. Departments first, since
+   *  the mirror tables carry no real FK to cascade on their own. */
+  deleteCollegeFromMainApp(collegeId: string): Promise<void>;
   listUnlistedColleges(): Promise<UnlistedCollegeRow[]>;
   listUnlistedDepartments(): Promise<UnlistedDepartmentRow[]>;
+  dismissUnlistedCollege(name: string, dismissedByName: string): Promise<void>;
+  dismissUnlistedDepartment(collegeKey: string, department: string, dismissedByName: string): Promise<void>;
 }
 
 export class CollegesRepository implements ICollegesRepository {
@@ -151,6 +160,15 @@ export class CollegesRepository implements ICollegesRepository {
     );
   }
 
+  async deleteCollege(id: string) {
+    await prisma.college.delete({ where: { id } });
+  }
+
+  async deleteCollegeFromMainApp(collegeId: string) {
+    await queryMainDb(`DELETE FROM platform_departments WHERE "collegeId" = $1`, [collegeId]);
+    await queryMainDb(`DELETE FROM platform_colleges WHERE id = $1`, [collegeId]);
+  }
+
   // "Other" submissions from contest registration — a college/department typed as free text
   // because it wasn't in the catalog. Read-only reporting query straight off the main app's
   // own `contacts` table (quizbuzz_ops_reader already has SELECT on it); no new tables or
@@ -158,31 +176,72 @@ export class CollegesRepository implements ICollegesRepository {
   // submission fell back to free text. Grouped case/whitespace-insensitively so "IIT Bombay"
   // and "iit bombay" count as one request, capped at the top 100 by volume.
   async listUnlistedColleges(): Promise<UnlistedCollegeRow[]> {
-    const rows = await queryMainDb<{ name: string; count: string }>(
+    const [rows, dismissed] = await Promise.all([
+      queryMainDb<{ name: string; count: string }>(
+        `
+        SELECT MAX(college) as name, COUNT(*)::int as count
+        FROM contacts
+        WHERE "collegeId" IS NULL AND college IS NOT NULL AND TRIM(college) != ''
+        GROUP BY LOWER(TRIM(college))
+        ORDER BY count DESC
+        LIMIT 100
       `
-      SELECT MAX(college) as name, COUNT(*)::int as count
-      FROM contacts
-      WHERE "collegeId" IS NULL AND college IS NOT NULL AND TRIM(college) != ''
-      GROUP BY LOWER(TRIM(college))
-      ORDER BY count DESC
-      LIMIT 100
-    `
-    );
-    return rows.map((r) => ({ name: r.name, count: Number(r.count) }));
+      ),
+      prisma.dismissedUnlistedRequest.findMany({ where: { kind: 'COLLEGE' }, select: { collegeKey: true } }),
+    ]);
+    const dismissedKeys = new Set(dismissed.map((d) => d.collegeKey));
+    return rows
+      .filter((r) => !dismissedKeys.has(normalizeUnlistedKey(r.name)))
+      .map((r) => ({ name: r.name, count: Number(r.count) }));
   }
 
   async listUnlistedDepartments(): Promise<UnlistedDepartmentRow[]> {
-    const rows = await queryMainDb<{ collegeId: string | null; college: string | null; department: string; count: string }>(
+    const [rows, dismissed] = await Promise.all([
+      queryMainDb<{ collegeId: string | null; college: string | null; department: string; count: string }>(
+        `
+        SELECT MAX("collegeId") as "collegeId", MAX(college) as college, MAX(department) as department, COUNT(*)::int as count
+        FROM contacts
+        WHERE "departmentId" IS NULL AND department IS NOT NULL AND TRIM(department) != ''
+        GROUP BY COALESCE("collegeId", LOWER(TRIM(college))), LOWER(TRIM(department))
+        ORDER BY count DESC
+        LIMIT 100
       `
-      SELECT MAX("collegeId") as "collegeId", MAX(college) as college, MAX(department) as department, COUNT(*)::int as count
-      FROM contacts
-      WHERE "departmentId" IS NULL AND department IS NOT NULL AND TRIM(department) != ''
-      GROUP BY COALESCE("collegeId", LOWER(TRIM(college))), LOWER(TRIM(department))
-      ORDER BY count DESC
-      LIMIT 100
-    `
-    );
-    return rows.map((r) => ({ collegeId: r.collegeId, college: r.college, department: r.department, count: Number(r.count) }));
+      ),
+      prisma.dismissedUnlistedRequest.findMany({ where: { kind: 'DEPARTMENT' }, select: { collegeKey: true, departmentKey: true } }),
+    ]);
+    const dismissedKeys = new Set(dismissed.map((d) => `${d.collegeKey}::${d.departmentKey}`));
+    return rows
+      .filter((r) => {
+        const collegeKey = normalizeUnlistedKey(r.collegeId ?? r.college ?? '');
+        return !dismissedKeys.has(`${collegeKey}::${normalizeUnlistedKey(r.department)}`);
+      })
+      .map((r) => ({ collegeId: r.collegeId, college: r.college, department: r.department, count: Number(r.count) }));
   }
+
+  async dismissUnlistedCollege(name: string, dismissedByName: string) {
+    await prisma.dismissedUnlistedRequest.upsert({
+      where: { kind_collegeKey_departmentKey: { kind: 'COLLEGE', collegeKey: normalizeUnlistedKey(name), departmentKey: '' } },
+      create: { kind: 'COLLEGE', collegeKey: normalizeUnlistedKey(name), departmentKey: '', dismissedByName },
+      update: {},
+    });
+  }
+
+  async dismissUnlistedDepartment(collegeKey: string, department: string, dismissedByName: string) {
+    // Normalized the same way as listUnlistedDepartments' filter, whether collegeKey is a
+    // real collegeId or free-text college name — the caller doesn't need to know which, or
+    // pre-normalize anything itself.
+    const normalizedCollegeKey = normalizeUnlistedKey(collegeKey);
+    await prisma.dismissedUnlistedRequest.upsert({
+      where: {
+        kind_collegeKey_departmentKey: { kind: 'DEPARTMENT', collegeKey: normalizedCollegeKey, departmentKey: normalizeUnlistedKey(department) },
+      },
+      create: { kind: 'DEPARTMENT', collegeKey: normalizedCollegeKey, departmentKey: normalizeUnlistedKey(department), dismissedByName },
+      update: {},
+    });
+  }
+}
+
+function normalizeUnlistedKey(value: string): string {
+  return value.trim().toLowerCase();
 }
 export default CollegesRepository;

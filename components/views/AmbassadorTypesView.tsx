@@ -146,14 +146,30 @@ function ApplicationFieldsBuilder({
                   />
                 )}
 
-                {field.optionsSource === 'departments' && (
-                  <input
-                    value={field.dependsOnKey ?? ''}
-                    onChange={(e) => updateField(i, { dependsOnKey: e.target.value })}
-                    placeholder="Depends on college field's key (optional, e.g. college)"
-                    className="w-full h-8 px-2 text-xs rounded-md bg-background border border-border/40 text-foreground font-mono"
-                  />
-                )}
+                {field.optionsSource === 'departments' && (() => {
+                  // Only other fields actually wired to the College catalog are valid
+                  // targets — a free-text key here silently breaks the department dropdown
+                  // the moment it doesn't match another field's key exactly (typo, rename,
+                  // or just never filled in), with no error shown anywhere. A select can
+                  // only ever point at a field that really exists.
+                  const collegeFieldOptions = fields.filter((f, fi) => fi !== i && f.optionsSource === 'colleges' && f.key.trim() !== '');
+                  return (
+                    <select
+                      value={collegeFieldOptions.some((f) => f.key === field.dependsOnKey) ? field.dependsOnKey : ''}
+                      onChange={(e) => updateField(i, { dependsOnKey: e.target.value || undefined })}
+                      className="w-full h-8 px-2 text-xs rounded-md bg-background border border-border/40 text-foreground"
+                    >
+                      <option value="">
+                        {collegeFieldOptions.length === 0 ? 'Add a College catalog field first' : '— Select the College field —'}
+                      </option>
+                      {collegeFieldOptions.map((f) => (
+                        <option key={f.key} value={f.key}>
+                          {f.label || f.key} ({f.key})
+                        </option>
+                      ))}
+                    </select>
+                  );
+                })()}
               </div>
             )}
           </div>

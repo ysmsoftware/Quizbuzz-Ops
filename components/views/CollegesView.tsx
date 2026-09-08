@@ -22,6 +22,8 @@ import {
   ChevronUp,
   ArrowUpDown,
   AlertTriangle,
+  Trash2,
+  XCircle,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
@@ -196,18 +198,23 @@ function CollegeModal({
   toast,
   onClose,
   onSave,
+  onDelete,
+  isDeleting,
 }: {
   college: College;
   canManage: boolean;
   toast: ToastFn;
   onClose: () => void;
   onSave: (input: { name?: string; state?: string; district?: string; city?: string; isActive?: boolean }) => Promise<void>;
+  onDelete: () => Promise<void>;
+  isDeleting: boolean;
 }) {
   const [name, setName] = useState(college.name);
   const [state, setState] = useState(college.state ?? '');
   const [district, setDistrict] = useState(college.district ?? '');
   const [city, setCity] = useState(college.city ?? '');
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const cityOptions = useIndiaCityOptions(state);
 
   // Re-sync local fields if the college's data refreshes from under us (e.g. after a
@@ -241,6 +248,16 @@ function CollegeModal({
     }
   };
 
+  const handleDelete = async () => {
+    try {
+      await onDelete();
+      toast('College Deleted', `"${college.name}" and its ${college.departmentCount} department(s) have been removed.`, 'success');
+    } catch (err: any) {
+      toast('Failed to Delete College', err?.message || 'Could not delete the college.', 'error');
+      setConfirmingDelete(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
@@ -250,10 +267,51 @@ function CollegeModal({
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Manage college</p>
             <h2 className="text-lg font-black text-foreground tracking-tight truncate">{college.name}</h2>
           </div>
-          <button onClick={onClose} className="p-1 rounded-md hover:bg-secondary/60 cursor-pointer shrink-0">
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {canManage && (
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                title="Delete college"
+                className="p-1.5 rounded-md text-destructive hover:bg-destructive/10 cursor-pointer"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+            <button onClick={onClose} className="p-1 rounded-md hover:bg-secondary/60 cursor-pointer">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
+
+        {confirmingDelete && (
+          <div className="mx-6 mt-4 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl flex items-start gap-3 shrink-0">
+            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div className="space-y-2 text-xs flex-1">
+              <p className="font-bold">Delete &quot;{college.name}&quot;?</p>
+              <p className="leading-relaxed opacity-90">
+                This permanently removes the college and all {college.departmentCount} of its department
+                {college.departmentCount === 1 ? '' : 's'} — from ops and from the registration/ambassador dropdowns.
+                Existing registrations already made under it are not affected. This can&apos;t be undone.
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="h-8 px-3 rounded-md bg-destructive text-destructive-foreground text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  {isDeleting ? 'Deleting…' : 'Yes, delete it'}
+                </button>
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={isDeleting}
+                  className="h-8 px-3 rounded-md hover:bg-secondary/60 text-foreground font-semibold text-xs cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="space-y-3">
@@ -447,13 +505,32 @@ function CreateCollegeModal({
 function UnlistedRequestsPanel({
   onAddCollege,
   onViewCollege,
+  toast,
 }: {
   onAddCollege: (name: string) => void;
   onViewCollege: (collegeId: string) => void;
+  toast: ToastFn;
 }) {
-  const { unlistedColleges, unlistedDepartments, isLoadingUnlisted } = useUnlistedRequests();
+  const { unlistedColleges, unlistedDepartments, isLoadingUnlisted, dismissUnlistedCollege, dismissUnlistedDepartment } =
+    useUnlistedRequests();
   const [expanded, setExpanded] = useState(false);
   const totalRequests = unlistedColleges.length + unlistedDepartments.length;
+
+  const handleSkipCollege = async (name: string) => {
+    try {
+      await dismissUnlistedCollege(name);
+    } catch (err: any) {
+      toast('Failed to Skip', err?.message || 'Could not dismiss this request.', 'error');
+    }
+  };
+
+  const handleSkipDepartment = async (collegeKey: string, department: string) => {
+    try {
+      await dismissUnlistedDepartment({ collegeKey, department });
+    } catch (err: any) {
+      toast('Failed to Skip', err?.message || 'Could not dismiss this request.', 'error');
+    }
+  };
 
   if (!isLoadingUnlisted && totalRequests === 0) return null;
 
@@ -505,12 +582,21 @@ function UnlistedRequestsPanel({
                         {c.count} registration{c.count === 1 ? '' : 's'}
                       </p>
                     </div>
-                    <button
-                      onClick={() => onAddCollege(c.name)}
-                      className="shrink-0 h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-bold cursor-pointer"
-                    >
-                      Add
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleSkipCollege(c.name)}
+                        title="Skip — don't ask about this one again"
+                        className="h-7 px-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => onAddCollege(c.name)}
+                        className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-bold cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -538,14 +624,23 @@ function UnlistedRequestsPanel({
                         {d.college || 'Unknown college'} · {d.count} registration{d.count === 1 ? '' : 's'}
                       </p>
                     </div>
-                    {d.collegeId && (
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
-                        onClick={() => onViewCollege(d.collegeId!)}
-                        className="shrink-0 h-7 px-2 rounded-md border border-border/50 text-[10px] font-semibold cursor-pointer hover:bg-secondary/60"
+                        onClick={() => handleSkipDepartment(d.collegeId ?? d.college ?? '', d.department)}
+                        title="Skip — don't ask about this one again"
+                        className="h-7 px-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
                       >
-                        View
+                        <XCircle className="h-3.5 w-3.5" />
                       </button>
-                    )}
+                      {d.collegeId && (
+                        <button
+                          onClick={() => onViewCollege(d.collegeId!)}
+                          className="h-7 px-2 rounded-md border border-border/50 text-[10px] font-semibold cursor-pointer hover:bg-secondary/60"
+                        >
+                          View
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -560,7 +655,8 @@ function UnlistedRequestsPanel({
 type SortField = 'name' | 'departmentCount' | 'updatedAt';
 
 export default function CollegesView() {
-  const { colleges, isLoadingColleges, createCollege, isCreatingCollege, updateCollege } = useColleges();
+  const { colleges, isLoadingColleges, createCollege, isCreatingCollege, updateCollege, deleteCollege, isDeletingCollege } =
+    useColleges();
   const { hasPermission } = useCurrentAdmin();
   const { toast } = useToast();
   const canManage = hasPermission('COLLEGE_MANAGE');
@@ -647,6 +743,12 @@ export default function CollegesView() {
     await updateCollege({ id: manageCollegeId, ...input });
   };
 
+  const handleDeleteCollege = async () => {
+    if (!manageCollegeId) return;
+    await deleteCollege(manageCollegeId);
+    setManageCollegeId(null);
+  };
+
   if (isLoadingColleges) {
     return (
       <div className="space-y-6 font-sans animate-pulse">
@@ -696,6 +798,7 @@ export default function CollegesView() {
             setIsCreateOpen(true);
           }}
           onViewCollege={(collegeId) => setManageCollegeId(collegeId)}
+          toast={toast}
         />
       )}
 
@@ -927,6 +1030,8 @@ export default function CollegesView() {
           toast={toast}
           onClose={() => setManageCollegeId(null)}
           onSave={handleSaveCollege}
+          onDelete={handleDeleteCollege}
+          isDeleting={isDeletingCollege}
         />
       )}
     </div>

@@ -45,8 +45,11 @@ export interface ICollegesService {
     input: DepartmentUpdateInput,
     admin: AuditActor
   ): Promise<DepartmentDetail>;
+  deleteCollege(id: string, admin: AuditActor): Promise<void>;
   listUnlistedColleges(): Promise<UnlistedCollege[]>;
   listUnlistedDepartments(): Promise<UnlistedDepartment[]>;
+  dismissUnlistedCollege(name: string, admin: AuditActor): Promise<void>;
+  dismissUnlistedDepartment(collegeKey: string, department: string, admin: AuditActor): Promise<void>;
 }
 
 export class CollegesService implements ICollegesService {
@@ -166,12 +169,39 @@ export class CollegesService implements ICollegesService {
     return toDepartmentDetail(updated);
   }
 
+  async deleteCollege(id: string, admin: AuditActor) {
+    const college = await this.requireCollegeById(id);
+    // Fetched before deleting purely for the audit trail — the FK cascade removes these
+    // locally regardless of whether this count is read first.
+    const departments = await this.repo.listDepartments(id);
+
+    await this.repo.deleteCollege(id);
+
+    await writeAuditLogEntry(admin, 'college.deleted', AuditTargetType.COLLEGE, college.id, college.name, {
+      departmentsRemoved: departments.length,
+    });
+
+    this.repo.deleteCollegeFromMainApp(id).catch((err) =>
+      console.error(`Failed to delete college '${id}' from main app:`, err)
+    );
+  }
+
   async listUnlistedColleges() {
     return this.repo.listUnlistedColleges();
   }
 
   async listUnlistedDepartments() {
     return this.repo.listUnlistedDepartments();
+  }
+
+  async dismissUnlistedCollege(name: string, admin: AuditActor) {
+    await this.repo.dismissUnlistedCollege(name, admin.name);
+    await writeAuditLogEntry(admin, 'unlisted_college.dismissed', AuditTargetType.COLLEGE, name, name);
+  }
+
+  async dismissUnlistedDepartment(collegeKey: string, department: string, admin: AuditActor) {
+    await this.repo.dismissUnlistedDepartment(collegeKey, department, admin.name);
+    await writeAuditLogEntry(admin, 'unlisted_department.dismissed', AuditTargetType.COLLEGE, collegeKey, department);
   }
 }
 export default CollegesService;

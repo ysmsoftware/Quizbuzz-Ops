@@ -14,3 +14,15 @@ export async function PATCH(
     return handleRouteError(err);
   }
 }
+
+export async function DELETE(
+  req: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await context.params;
+    return await collegesController.deleteCollege(id);
+  } catch (err) {
+    return handleRouteError(err);
+  }
+}

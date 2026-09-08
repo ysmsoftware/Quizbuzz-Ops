@@ -5,6 +5,7 @@ import {
   collegeUpdateSchema,
   departmentCreateSchema,
   departmentUpdateSchema,
+  dismissUnlistedSchema,
 } from './colleges.validator';
 import { ICollegesService, CollegesService } from './colleges.service';
 import { okResponse, errorResponse } from '../../http/envelope';
@@ -58,6 +59,12 @@ export class CollegesController {
     return okResponse(result, 'Department updated.');
   }
 
+  async deleteCollege(id: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
+    await this.service.deleteCollege(id, toActor(admin));
+    return okResponse(null, 'College deleted.');
+  }
+
   async listUnlistedRequests() {
     await getSessionAdmin();
     const [colleges, departments] = await Promise.all([
@@ -65,6 +72,17 @@ export class CollegesController {
       this.service.listUnlistedDepartments(),
     ]);
     return okResponse({ colleges, departments }, 'Unlisted requests retrieved.');
+  }
+
+  async dismissUnlisted(req: Request) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
+    const input = await parseRequest(req, dismissUnlistedSchema);
+    if (input.type === 'COLLEGE') {
+      await this.service.dismissUnlistedCollege(input.collegeKey, toActor(admin));
+    } else {
+      await this.service.dismissUnlistedDepartment(input.collegeKey, input.department!, toActor(admin));
+    }
+    return okResponse(null, 'Dismissed.');
   }
 }
 export default CollegesController;

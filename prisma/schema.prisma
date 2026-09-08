@@ -406,6 +406,27 @@ model College {
   @@map("colleges")
 }
 
+// A "Skip" on one row of the Unlisted Requests panel (colleges.repository.ts's
+// listUnlistedColleges/listUnlistedDepartments) — those are a live aggregate over the main
+// app's own contacts table, not a stored queue, so there's no row there to delete. This is
+// the only way to make a submission stop reappearing without adding it to the catalog.
+// collegeKey/departmentKey are normalized (lower/trim) to match the same grouping the SQL
+// aggregate already uses, so a dismissal survives case/whitespace differences across
+// submissions. departmentKey is "" (not null — Postgres treats NULL as distinct in unique
+// constraints, which would let the same college get dismissed more than once) for a
+// COLLEGE-kind dismissal.
+model DismissedUnlistedRequest {
+  id              String   @id @default(cuid())
+  kind            String // "COLLEGE" | "DEPARTMENT"
+  collegeKey      String // COLLEGE: normalized college name. DEPARTMENT: collegeId, or normalized college name when the college itself isn't in the catalog either.
+  departmentKey   String   @default("")
+  dismissedByName String
+  dismissedAt     DateTime @default(now())
+
+  @@unique([kind, collegeKey, departmentKey])
+  @@map("dismissed_unlisted_requests")
+}
+
 model Department {
   id            String   @id
   collegeId     String

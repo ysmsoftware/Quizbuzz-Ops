@@ -26,7 +26,19 @@ export const departmentUpdateSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+export const dismissUnlistedSchema = z
+  .object({
+    type: z.enum(['COLLEGE', 'DEPARTMENT']),
+    collegeKey: z.string().min(1),
+    department: z.string().min(1).optional(),
+  })
+  .refine((data) => data.type === 'COLLEGE' || !!data.department, {
+    message: 'department is required when type is DEPARTMENT',
+    path: ['department'],
+  });
+
 export type CollegeCreateInput = z.infer<typeof collegeCreateSchema>;
 export type CollegeUpdateInput = z.infer<typeof collegeUpdateSchema>;
 export type DepartmentCreateInput = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdateInput = z.infer<typeof departmentUpdateSchema>;
+export type DismissUnlistedInput = z.infer<typeof dismissUnlistedSchema>;

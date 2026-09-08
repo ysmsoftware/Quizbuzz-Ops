@@ -5,10 +5,13 @@ import {
   getColleges,
   createCollege,
   updateCollege,
+  deleteCollege,
   getCollegeDepartments,
   createDepartment,
   updateDepartment,
   getUnlistedRequests,
+  dismissUnlistedCollege,
+  dismissUnlistedDepartment,
 } from '@/lib/api/ops';
 
 export function useColleges() {
@@ -44,6 +47,11 @@ export function useColleges() {
     onSuccess: invalidate,
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteCollege(id),
+    onSuccess: invalidate,
+  });
+
   return {
     colleges: collegesQuery.data ?? [],
     isLoadingColleges: collegesQuery.isLoading,
@@ -52,6 +60,8 @@ export function useColleges() {
     createCollegeError: createMutation.error as Error | null,
     updateCollege: updateMutation.mutateAsync,
     isUpdatingCollege: updateMutation.isPending,
+    deleteCollege: deleteMutation.mutateAsync,
+    isDeletingCollege: deleteMutation.isPending,
   };
 }
 
@@ -94,14 +104,33 @@ export function useCollegeDepartments(collegeId: string) {
 }
 
 export function useUnlistedRequests() {
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['ops', 'colleges', 'unlisted'],
     queryFn: getUnlistedRequests,
+  });
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['ops', 'colleges', 'unlisted'] });
+    queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+  };
+
+  const dismissCollegeMutation = useMutation({
+    mutationFn: (name: string) => dismissUnlistedCollege(name),
+    onSuccess: invalidate,
+  });
+
+  const dismissDepartmentMutation = useMutation({
+    mutationFn: ({ collegeKey, department }: { collegeKey: string; department: string }) =>
+      dismissUnlistedDepartment(collegeKey, department),
+    onSuccess: invalidate,
   });
 
   return {
     unlistedColleges: query.data?.colleges ?? [],
     unlistedDepartments: query.data?.departments ?? [],
     isLoadingUnlisted: query.isLoading,
+    dismissUnlistedCollege: dismissCollegeMutation.mutateAsync,
+    dismissUnlistedDepartment: dismissDepartmentMutation.mutateAsync,
   };
 }

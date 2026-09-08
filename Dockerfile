@@ -52,6 +52,10 @@ COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
+# TEMPORARY — one-off bulk import data for scripts/import-colleges-from-csv.ts. Remove this
+# line AND delete Colleges_Structured.csv from the repo root in the same commit once the
+# production import has been run; don't let this COPY outlive the file it's copying.
+COPY --from=builder /app/Colleges_Structured.csv ./Colleges_Structured.csv
 
 # Install Prisma CLI + deps for `prisma migrate deploy` and standalone worker
 # process. Must run BEFORE the generated-client copy below, into an
@@ -63,7 +67,11 @@ COPY --from=builder /app/tsconfig.json ./tsconfig.json
 # step can't silently drift to whatever Prisma happens to publish on a given
 # build day — see DECISIONS.md for the incident this fixed.
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
-RUN npm install --no-save prisma@^7.8.0 dotenv tsx typescript && npm cache clean --force
+# csv-parse added alongside prisma/dotenv/tsx/typescript for the same reason: it's a
+# devDependency only used by scripts/import-colleges-from-csv.ts, never imported by the app
+# itself, so Next's standalone output tracing (which only follows what pages/API routes
+# actually import) prunes it — same as it would prisma/tsx/etc without this explicit install.
+RUN npm install --no-save prisma@^7.8.0 dotenv tsx typescript csv-parse && npm cache clean --force
 
 # Overlay the already-generated Prisma Client (schema-specific output from
 # `npx prisma generate` in the builder stage) on top of the fresh install

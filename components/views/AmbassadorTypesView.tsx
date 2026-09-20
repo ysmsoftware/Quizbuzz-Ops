@@ -20,6 +20,7 @@ import {
   Pencil,
   X,
   GripVertical,
+  AlertTriangle,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
@@ -415,13 +416,14 @@ function TypeFormModal({
 }
 
 export default function AmbassadorTypesView() {
-  const { types, isLoadingTypes, createType, isCreating, updateType } = useAmbassadorTypes();
+  const { types, isLoadingTypes, createType, isCreating, updateType, deleteType, isDeleting } = useAmbassadorTypes();
   const { hasPermission } = useCurrentAdmin();
   const { toast } = useToast();
 
   const canManage = hasPermission('FEATURE_FLAG_MANAGE'); // same SUPER_ADMIN gate as Feature Flags
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [modalState, setModalState] = useState<{ open: boolean; editing?: AmbassadorType }>({ open: false });
+  const [deleting, setDeleting] = useState<AmbassadorType | null>(null);
 
   if (isLoadingTypes) {
     return (
@@ -453,6 +455,18 @@ export default function AmbassadorTypesView() {
       setModalState({ open: false });
     } catch (err: any) {
       toast('Failed to Update Type', err?.message || 'Could not update the ambassador type.', 'error');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleting) return;
+    try {
+      await deleteType(deleting.key);
+      toast('Ambassador Type Deleted', `"${deleting.label}" has been permanently deleted.`, 'success');
+      if (expandedKey === deleting.key) setExpandedKey(null);
+      setDeleting(null);
+    } catch (err: any) {
+      toast('Failed to Delete Type', err?.message || 'Could not delete the ambassador type.', 'error');
     }
   };
 
@@ -539,13 +553,22 @@ export default function AmbassadorTypesView() {
                   </div>
                 </div>
                 {canManage && (
-                  <button
-                    onClick={() => setModalState({ open: true, editing: type })}
-                    className="shrink-0 flex items-center gap-1.5 h-8 px-3 rounded-md border border-border/50 text-xs font-semibold hover:bg-secondary/60 cursor-pointer"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </button>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <button
+                      onClick={() => setModalState({ open: true, editing: type })}
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-md border border-border/50 text-xs font-semibold hover:bg-secondary/60 cursor-pointer"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setDeleting(type)}
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-md border border-destructive/30 text-destructive text-xs font-semibold hover:bg-destructive/10 cursor-pointer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </button>
+                  </div>
                 )}
               </div>
               {isExpanded && <OrgAccessPanel typeKey={type.key} canManage={canManage} toast={toast} />}
@@ -553,6 +576,45 @@ export default function AmbassadorTypesView() {
           );
         })}
       </div>
+
+      {deleting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={() => !isDeleting && setDeleting(null)} />
+          <div className="relative bg-card border border-border/60 rounded-xl p-6 shadow-2xl max-w-md w-full space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-red-500/10 text-red-500 rounded-lg shrink-0">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div className="space-y-1.5 min-w-0">
+                <h2 className="text-base font-black text-foreground tracking-tight leading-none">
+                  Delete &quot;{deleting.label}&quot;?
+                </h2>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  This permanently deletes the type and every organization&apos;s access to it. It can&apos;t be
+                  undone. Ambassadors and campaigns already using it are not removed, but the type will no
+                  longer be offered.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                disabled={isDeleting}
+                onClick={() => setDeleting(null)}
+                className="h-9 px-4 rounded-md hover:bg-secondary/60 text-foreground font-semibold text-xs cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={isDeleting}
+                onClick={handleDelete}
+                className="h-9 px-4 rounded-md bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting…' : 'Yes, Delete Permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalState.open && (
         <TypeFormModal

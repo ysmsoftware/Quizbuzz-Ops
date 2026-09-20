@@ -26,3 +26,15 @@ export async function PATCH(
     return handleRouteError(err);
   }
 }
+
+export async function DELETE(
+  req: Request,
+  context: { params: Promise<{ key: string }> }
+) {
+  try {
+    const { key } = await context.params;
+    return await ambassadorTypesController.deleteType(key);
+  } catch (err) {
+    return handleRouteError(err);
+  }
+}

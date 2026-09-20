@@ -26,6 +26,9 @@ export interface IAmbassadorTypesRepository {
       isActive: boolean;
     }>
   ): Promise<AmbassadorType>;
+  /** Hard-deletes the type and its per-org access rows (no FK cascade on that relation) in one
+   *  transaction — local ops DB only. Pair with deleteTypeFromMainApp to also remove the mirror. */
+  deleteType(id: string): Promise<void>;
   listOrgAccess(ambassadorTypeId: string): Promise<OrganizationAmbassadorTypeAccess[]>;
   getOrgAccess(ambassadorTypeId: string, organizationId: string): Promise<OrganizationAmbassadorTypeAccess | null>;
   upsertOrgAccess(input: {
@@ -38,6 +41,9 @@ export interface IAmbassadorTypesRepository {
   }): Promise<OrganizationAmbassadorTypeAccess>;
   syncTypeToMainApp(type: AmbassadorType): Promise<void>;
   syncOrgAccessToMainApp(typeKey: string, organizationId: string, isEnabled: boolean): Promise<void>;
+  /** Write-through delete to Quizbuzz-new's own database — access rows first, the mirror tables
+   *  carry no real FK between them. Needs the DELETE grant in prisma/grants/004. */
+  deleteTypeFromMainApp(typeKey: string): Promise<void>;
 }
 
 export class AmbassadorTypesRepository implements IAmbassadorTypesRepository {
@@ -88,6 +94,13 @@ export class AmbassadorTypesRepository implements IAmbassadorTypesRepository {
     }>
   ) {
     return prisma.ambassadorType.update({ where: { id }, data });
+  }
+
+  async deleteType(id: string) {
+    await prisma.$transaction([
+      prisma.organizationAmbassadorTypeAccess.deleteMany({ where: { ambassadorTypeId: id } }),
+      prisma.ambassadorType.delete({ where: { id } }),
+    ]);
   }
 
   async listOrgAccess(ambassadorTypeId: string) {
@@ -169,6 +182,11 @@ export class AmbassadorTypesRepository implements IAmbassadorTypesRepository {
     `,
       [organizationId, typeKey, isEnabled]
     );
+  }
+
+  async deleteTypeFromMainApp(typeKey: string) {
+    await queryMainDb(`DELETE FROM organization_ambassador_type_access WHERE "typeKey" = $1`, [typeKey]);
+    await queryMainDb(`DELETE FROM platform_ambassador_types WHERE key = $1`, [typeKey]);
   }
 }
 export default AmbassadorTypesRepository;

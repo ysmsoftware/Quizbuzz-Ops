@@ -118,6 +118,10 @@ export async function updateAmbassadorType(
   });
 }
 
+export async function deleteAmbassadorType(key: string): Promise<void> {
+  await apiRequest(`/api/v1/ops/ambassador-types/${key}`, { method: 'DELETE' });
+}
+
 export async function getAmbassadorTypeOrgAccess(key: string): Promise<AmbassadorTypeOrgAccess[]> {
   return apiRequest<AmbassadorTypeOrgAccess[]>(`/api/v1/ops/ambassador-types/${key}/organizations`);
 }

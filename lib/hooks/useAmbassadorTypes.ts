@@ -5,6 +5,7 @@ import {
   getAmbassadorTypes,
   createAmbassadorType,
   updateAmbassadorType,
+  deleteAmbassadorType,
 } from '@/lib/api/ops';
 import { AmbassadorApplicationFieldDef } from '@/lib/types';
 
@@ -47,6 +48,11 @@ export function useAmbassadorTypes() {
     onSuccess: invalidate,
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (key: string) => deleteAmbassadorType(key),
+    onSuccess: invalidate,
+  });
+
   return {
     types: typesQuery.data ?? [],
     isLoadingTypes: typesQuery.isLoading,
@@ -55,5 +61,7 @@ export function useAmbassadorTypes() {
     createError: createMutation.error as Error | null,
     updateType: updateMutation.mutateAsync,
     isUpdating: updateMutation.isPending,
+    deleteType: deleteMutation.mutateAsync,
+    isDeleting: deleteMutation.isPending,
   };
 }

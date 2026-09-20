@@ -46,6 +46,12 @@ export class AmbassadorTypesController {
     return okResponse(result, 'Ambassador type updated.');
   }
 
+  async deleteType(key: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
+    await this.service.deleteType(key, toActor(admin));
+    return okResponse(null, 'Ambassador type deleted.');
+  }
+
   async listOrgAccess(key: string) {
     await getSessionAdmin();
     const result = await this.service.listOrgAccess(key);

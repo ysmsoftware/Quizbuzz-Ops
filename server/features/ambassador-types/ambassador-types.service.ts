@@ -41,6 +41,7 @@ export interface IAmbassadorTypesService {
   getTypeByKey(key: string): Promise<AmbassadorTypeDetail | null>;
   createType(input: AmbassadorTypeCreateInput, admin: AuditActor): Promise<AmbassadorTypeDetail>;
   updateType(key: string, input: AmbassadorTypeUpdateInput, admin: AuditActor): Promise<AmbassadorTypeDetail>;
+  deleteType(key: string, admin: AuditActor): Promise<void>;
   listOrgAccess(key: string): Promise<OrganizationAmbassadorTypeAccessDetail[]>;
   setOrgAccess(
     key: string,
@@ -123,6 +124,24 @@ export class AmbassadorTypesService implements IAmbassadorTypesService {
     );
 
     return toTypeDetail(updated);
+  }
+
+  // Permanent — the confirm dialog in AmbassadorTypesView is the only guard. Existing
+  // ambassadors/campaigns in the main app reference the key as a plain string (no FK), so they
+  // are left as-is.
+  async deleteType(key: string, admin: AuditActor) {
+    const type = await this.requireTypeByKey(key);
+    const orgAccess = await this.repo.listOrgAccess(type.id);
+
+    await this.repo.deleteType(type.id);
+
+    await writeAuditLogEntry(admin, 'ambassador_type.deleted', AuditTargetType.AMBASSADOR_TYPE, type.key, type.label, {
+      orgAccessRowsRemoved: orgAccess.length,
+    });
+
+    this.repo.deleteTypeFromMainApp(type.key).catch((err) =>
+      console.error(`Failed to delete ambassador type '${type.key}' from main app:`, err)
+    );
   }
 
   async listOrgAccess(key: string) {

@@ -224,6 +224,9 @@ export default function PaymentDetailsView() {
                   {payments.map((p: PaymentDetail) => {
                     const isExpanded = expandedId === p.id;
                     const orderReplaced = p.attempts > 1;
+                    // Orders created before the main app started keeping history (or an
+                    // environment without the payment_orders grant) aren't listed.
+                    const historyIncomplete = p.orders === null || p.orders.length < p.attempts;
                     const toggle = () => setExpandedId((cur) => (cur === p.id ? null : p.id));
 
                     return (
@@ -258,7 +261,7 @@ export default function PaymentDetailsView() {
                           <td className="py-2.5 px-4 text-center">
                             <span
                               className={`font-mono ${orderReplaced ? 'text-amber-600 font-bold' : 'text-muted-foreground'}`}
-                              title={orderReplaced ? 'Order ID was replaced by a retry — earlier order IDs are not stored' : undefined}
+                              title={orderReplaced ? `${p.attempts} Razorpay orders created for this registration` : undefined}
                             >
                               {p.attempts}
                             </span>
@@ -288,14 +291,59 @@ export default function PaymentDetailsView() {
                                   <span>PAYMENT_ID: {p.id}</span>
                                 </div>
 
-                                {orderReplaced && (
+                                {historyIncomplete && orderReplaced && (
                                   <div className="flex gap-2 p-3 rounded border border-amber-500/30 bg-amber-500/10 text-amber-200 text-[11px] font-sans">
                                     <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
                                     <span>
-                                      The Razorpay order ID on this row was replaced {p.attempts - 1} time(s) by a retry. Earlier
-                                      order IDs are not stored here — search the receipts below in Razorpay → Orders to see
-                                      every order created for this participant, and check whether any of them was captured.
+                                      {p.attempts} Razorpay orders were created for this registration but only{' '}
+                                      {p.orders?.length ?? 0} are in our order history (older ones predate it). Search the receipts
+                                      below in Razorpay → Orders to see all of them and check whether any was captured.
                                     </span>
+                                  </div>
+                                )}
+
+                                {p.orders && p.orders.length > 0 && (
+                                  <div className="space-y-1.5">
+                                    <span className="text-slate-500 uppercase block text-[9px] font-sans font-bold">
+                                      Razorpay orders ({p.orders.length}) — oldest first
+                                    </span>
+                                    <div className="overflow-x-auto rounded border border-slate-800">
+                                      <table className="w-full text-[10px]">
+                                        <thead className="bg-slate-900 text-slate-500">
+                                          <tr>
+                                            <th className="text-left px-2 py-1.5 font-semibold">Order</th>
+                                            <th className="text-left px-2 py-1.5 font-semibold">Status</th>
+                                            <th className="text-left px-2 py-1.5 font-semibold">Last payment attempt</th>
+                                            <th className="text-left px-2 py-1.5 font-semibold">Reason</th>
+                                            <th className="text-left px-2 py-1.5 font-semibold">Created</th>
+                                            <th className="text-left px-2 py-1.5 font-semibold">Updated</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-800">
+                                          {p.orders.map((o) => (
+                                            <tr key={o.razorpayOrderId}>
+                                              <td className="px-2 py-1.5">
+                                                <CopyText value={o.razorpayOrderId} />
+                                                {o.razorpayOrderId === p.razorpayOrderId && <span className="ml-1 text-indigo-400">(current)</span>}
+                                              </td>
+                                              <td className="px-2 py-1.5">
+                                                <span className={`px-1.5 py-0.5 rounded font-bold ${STATUS_STYLES[o.status] || ''}`}>{o.status}</span>
+                                              </td>
+                                              <td className="px-2 py-1.5">
+                                                <CopyText value={o.razorpayPaymentId} />
+                                                {o.method && <span className="text-slate-500 ml-1">{o.method}</span>}
+                                              </td>
+                                              <td className="px-2 py-1.5 text-rose-300 font-sans">
+                                                {o.status === 'SUCCESS' ? '—' : o.failureReason || '—'}
+                                                {o.errorReason && o.status !== 'SUCCESS' && <span className="text-slate-500"> ({o.errorReason})</span>}
+                                              </td>
+                                              <td className="px-2 py-1.5 whitespace-nowrap">{format(new Date(o.createdAt), 'dd MMM, HH:mm:ss')}</td>
+                                              <td className="px-2 py-1.5 whitespace-nowrap">{format(new Date(o.updatedAt), 'dd MMM, HH:mm:ss')}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
                                   </div>
                                 )}
 

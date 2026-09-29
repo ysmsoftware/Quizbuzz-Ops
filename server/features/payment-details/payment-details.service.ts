@@ -1,5 +1,6 @@
 import { IPaymentDetailsRepository, PaymentDetailsRepository } from './payment-details.repository';
-import { PaymentDetailsListQuery, PaymentDetailsListResult } from './payment-details.types';
+import { PaymentDetailsListQuery, PaymentDetailsListResult, PaymentOrderResponse } from './payment-details.types';
+import { logger } from '../../http/logger';
 
 export interface IPaymentDetailsService {
   listPayments(params: PaymentDetailsListQuery): Promise<PaymentDetailsListResult>;
@@ -17,6 +18,32 @@ export class PaymentDetailsService implements IPaymentDetailsService {
 
   async listPayments(params: PaymentDetailsListQuery): Promise<PaymentDetailsListResult> {
     const { rows, total } = await this.repo.listPayments(params);
+
+    // Order history is best-effort: if the read grant on payment_orders hasn't been
+    // applied on this environment yet, the page still works without it.
+    let ordersByPayment: Map<string, PaymentOrderResponse[]> | null = new Map();
+    try {
+      for (const o of await this.repo.listOrders(rows.map((r) => r.id))) {
+        const list = ordersByPayment.get(o.paymentId) ?? [];
+        list.push({
+          razorpayOrderId: o.razorpayOrderId,
+          status: o.status,
+          razorpayPaymentId: o.razorpayPaymentId,
+          method: o.method,
+          failureReason: o.failureReason,
+          errorCode: o.errorCode,
+          errorReason: o.errorReason,
+          createdAt: new Date(o.createdAt).toISOString(),
+          updatedAt: new Date(o.updatedAt).toISOString(),
+        });
+        ordersByPayment.set(o.paymentId, list);
+      }
+    } catch (err) {
+      logger.warn('[payment-details] Could not read payment_orders — apply prisma/grants/005_quizbuzz_ops_payment_orders.sql', {
+        err: (err as Error).message,
+      });
+      ordersByPayment = null;
+    }
 
     return {
       data: rows.map((r) => ({
@@ -41,6 +68,7 @@ export class PaymentDetailsService implements IPaymentDetailsService {
         attempts: r.attempts,
         webhookConfirmed: r.webhookConfirmed,
         razorpayReceipts: razorpayReceipts(r.participantId),
+        orders: ordersByPayment ? ordersByPayment.get(r.id) ?? [] : null,
         metadata: r.metadata,
         paidAt: r.paidAt ? new Date(r.paidAt).toISOString() : null,
         createdAt: new Date(r.createdAt).toISOString(),

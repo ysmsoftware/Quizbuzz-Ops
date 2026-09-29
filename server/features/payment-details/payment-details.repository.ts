@@ -3,6 +3,8 @@ import { PaymentDetailsListQuery } from './payment-details.types';
 
 export interface IPaymentDetailsRepository {
   listPayments(params: PaymentDetailsListQuery): Promise<{ rows: any[]; total: number }>;
+  /** Every Razorpay order per payment (main app's payment_orders), oldest first. */
+  listOrders(paymentIds: string[]): Promise<any[]>;
 }
 
 /**
@@ -82,6 +84,19 @@ export class PaymentDetailsRepository implements IPaymentDetailsRepository {
     ]);
 
     return { rows: dataResult, total: countResult[0]?.count || 0 };
+  }
+
+  // Needs prisma/grants/005_quizbuzz_ops_payment_orders.sql on the main DB.
+  async listOrders(paymentIds: string[]) {
+    if (paymentIds.length === 0) return [];
+    return queryMainDb(
+      `SELECT "paymentId", "razorpayOrderId", status, "razorpayPaymentId", method,
+              "failureReason", "errorCode", "errorReason", "createdAt", "updatedAt"
+       FROM payment_orders
+       WHERE "paymentId" = ANY($1)
+       ORDER BY "createdAt" ASC`,
+      [paymentIds]
+    );
   }
 }
 export default PaymentDetailsRepository;

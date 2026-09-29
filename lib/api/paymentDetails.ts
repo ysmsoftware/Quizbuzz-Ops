@@ -39,7 +39,7 @@ export interface PaymentDetail {
   attempts: number;
   webhookConfirmed: boolean;
   razorpayReceipts: { original: string; retry: string };
-  /** Every Razorpay order for this payment, oldest first. null = history not readable on this environment. */
+  /** Every Razorpay order for this payment, newest first. null = history not readable on this environment. */
   orders: PaymentOrder[] | null;
   metadata: unknown;
   paidAt: string | null;

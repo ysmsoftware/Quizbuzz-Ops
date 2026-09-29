@@ -34,9 +34,15 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+type NavGroup = 'Overview' | 'Customers' | 'Revenue' | 'Platform Config' | 'System';
+
+// Sidebar section order (same idea as the main app's OVERVIEW / CONTESTS / AUDIENCE headings).
+const NAV_GROUP_ORDER: NavGroup[] = ['Overview', 'Customers', 'Revenue', 'Platform Config', 'System'];
+
 interface NavItem {
   id: string;
   label: string;
+  group: NavGroup;
   phase: string;
   href: string;
   icon: any;
@@ -48,28 +54,32 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'overview', label: 'Overview', phase: 'phase 1', href: '/dashboard', icon: LayoutDashboard },
-  { id: 'organizations', label: 'Organizations', phase: 'phase 1', href: '/dashboard/organizations', icon: Building2 },
-  { id: 'plans', label: 'Subscription Plans', phase: 'phase 2', href: '/dashboard/plans', icon: Sparkles },
-  { id: 'billing', label: 'Billing & Revenue', phase: 'phase 2', href: '/dashboard/billing', icon: Receipt },
-  { id: 'payments', label: 'Payments', phase: 'phase 2', href: '/dashboard/payments', icon: CreditCard },
-  { id: 'messaging', label: 'Messaging', phase: 'phase 2', href: '/dashboard/messaging', icon: MessagesSquare },
-  { id: 'calculator', label: 'Contest Calculator', phase: 'phase 4', href: '/dashboard/calculator', icon: Calculator },
-  { id: 'bookings', label: 'Bookings', phase: 'phase 4', href: '/dashboard/bookings', icon: CalendarClock },
-  { id: 'audit', label: 'Audit Log', phase: 'phase 3', href: '/dashboard/audit-log', icon: Database },
-  { id: 'flags', label: 'Feature Flags', phase: 'phase 6', href: '/dashboard/flags', icon: Sliders },
-  { id: 'ambassador-types', label: 'Ambassador Types', phase: 'phase 6', href: '/dashboard/ambassador-types', icon: UserSquare2 },
-  { id: 'colleges', label: 'Colleges & Departments', phase: 'phase 6', href: '/dashboard/colleges', icon: GraduationCap },
-  { id: 'app-logo', label: 'Application Logo', phase: 'phase 6', href: '/dashboard/app-logo', icon: ImageIcon },
-  { id: 'ops-metrics', label: 'Ops Metrics', phase: 'phase 7', href: '/dashboard/metrics', icon: Activity },
-  { id: 'payouts', label: 'Payout Accounts', phase: 'phase 2', href: '/dashboard/payouts', icon: Landmark, hidden: true },
-  { id: 'infra', label: 'Infra & Cost', phase: 'phase 5', href: '/dashboard/infra', icon: Cpu, hidden: true },
+  { id: 'overview', group: 'Overview', label: 'Overview', phase: 'phase 1', href: '/dashboard', icon: LayoutDashboard },
+  { id: 'organizations', group: 'Customers', label: 'Organizations', phase: 'phase 1', href: '/dashboard/organizations', icon: Building2 },
+  { id: 'plans', group: 'Revenue', label: 'Subscription Plans', phase: 'phase 2', href: '/dashboard/plans', icon: Sparkles },
+  { id: 'billing', group: 'Revenue', label: 'Billing & Revenue', phase: 'phase 2', href: '/dashboard/billing', icon: Receipt },
+  { id: 'payments', group: 'Revenue', label: 'Payments', phase: 'phase 2', href: '/dashboard/payments', icon: CreditCard },
+  { id: 'messaging', group: 'Customers', label: 'Messaging', phase: 'phase 2', href: '/dashboard/messaging', icon: MessagesSquare },
+  { id: 'calculator', group: 'Revenue', label: 'Contest Calculator', phase: 'phase 4', href: '/dashboard/calculator', icon: Calculator },
+  { id: 'bookings', group: 'Customers', label: 'Bookings', phase: 'phase 4', href: '/dashboard/bookings', icon: CalendarClock },
+  { id: 'audit', group: 'System', label: 'Audit Log', phase: 'phase 3', href: '/dashboard/audit-log', icon: Database },
+  { id: 'flags', group: 'Platform Config', label: 'Feature Flags', phase: 'phase 6', href: '/dashboard/flags', icon: Sliders },
+  { id: 'ambassador-types', group: 'Platform Config', label: 'Ambassador Types', phase: 'phase 6', href: '/dashboard/ambassador-types', icon: UserSquare2 },
+  { id: 'colleges', group: 'Platform Config', label: 'Colleges & Departments', phase: 'phase 6', href: '/dashboard/colleges', icon: GraduationCap },
+  { id: 'app-logo', group: 'Platform Config', label: 'Application Logo', phase: 'phase 6', href: '/dashboard/app-logo', icon: ImageIcon },
+  { id: 'ops-metrics', group: 'Overview', label: 'Ops Metrics', phase: 'phase 7', href: '/dashboard/metrics', icon: Activity },
+  { id: 'payouts', group: 'Revenue', label: 'Payout Accounts', phase: 'phase 2', href: '/dashboard/payouts', icon: Landmark, hidden: true },
+  { id: 'infra', group: 'System', label: 'Infra & Cost', phase: 'phase 5', href: '/dashboard/infra', icon: Cpu, hidden: true },
 ];
 
 // Items actually rendered in the sidebar — `hidden` items stay defined above
 // (route, icon, phase label untouched) but are skipped here until they're
 // ready to ship. Nothing about the underlying page/route is removed.
 const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.hidden);
+
+const NAV_SECTIONS = NAV_GROUP_ORDER
+  .map((group) => ({ group, items: VISIBLE_NAV_ITEMS.filter((item) => item.group === group) }))
+  .filter((section) => section.items.length > 0);
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { admin, isLoading, isFetching, logout } = useCurrentAdmin();
@@ -243,7 +253,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="fixed inset-y-0 left-0 w-64 bg-background/95 backdrop-blur-xl border-r border-border/40 shadow-2xl p-4 flex flex-col justify-between"
             >
               {/* Header */}
-              <div className="space-y-6">
+              <div className="space-y-6 flex-1 min-h-0 overflow-y-auto pb-4">
                 <div className="flex items-center justify-between border-b border-border/40 pb-4">
                   <div className="space-y-0.5">
                     <h1 className="text-xl font-bold tracking-tight text-foreground font-sans">
@@ -262,8 +272,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
 
                 {/* Nav Links */}
-                <nav className="space-y-1">
-                  {VISIBLE_NAV_ITEMS.map((item) => {
+                <nav className="space-y-4">
+                  {NAV_SECTIONS.map((section) => (
+                  <div key={section.group} className="space-y-1">
+                  <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">{section.group}</p>
+                  {section.items.map((item) => {
                     const Icon = item.icon;
                     const isActive = isNavItemActive(item);
 
@@ -287,6 +300,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       </button>
                     );
                   })}
+                  </div>
+                  ))}
                 </nav>
               </div>
 
@@ -330,7 +345,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }`}
       >
         {/* Top Branding Header area */}
-        <div className="space-y-6 pt-6 px-4">
+        <div className="space-y-6 pt-6 px-4 pb-4 flex-1 min-h-0 overflow-y-auto">
           <div
             id="sidebar-logo-header"
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -362,8 +377,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           {/* Navigation Links */}
-          <nav className="space-y-1">
-            {VISIBLE_NAV_ITEMS.map((item) => {
+          <nav className="space-y-4">
+            {NAV_SECTIONS.map((section) => (
+            <div key={section.group} className="space-y-1">
+            {isSidebarCollapsed ? (
+              <div className="mx-3 mb-2 border-t border-border/40" aria-hidden="true" />
+            ) : (
+              <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 truncate">{section.group}</p>
+            )}
+            {section.items.map((item) => {
               const Icon = item.icon;
               const isActive = isNavItemActive(item);
 
@@ -404,6 +426,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </button>
               );
             })}
+            </div>
+            ))}
           </nav>
         </div>
 

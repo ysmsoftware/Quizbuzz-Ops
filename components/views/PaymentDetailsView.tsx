@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { usePaymentDetails } from '@/lib/hooks/usePaymentDetails';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import DateRangePicker, { DateRangeValue } from '@/components/ui/DateRangePicker';
 import { MainAppPaymentStatus, PaymentDetail } from '@/lib/api/paymentDetails';
 
 const PAGE_SIZE = 50;
@@ -63,7 +64,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-// Local date (yyyy-mm-dd from <input type="date">) → ISO bound, so "29 Sep" means 29 Sep in the admin's timezone.
+// Local date (yyyy-MM-dd from the range picker) → ISO bound, so "29 Sep" means 29 Sep in the admin's timezone.
 const toIso = (date: string, endOfDay: boolean) =>
   date ? new Date(`${date}T${endOfDay ? '23:59:59.999' : '00:00:00'}`).toISOString() : undefined;
 
@@ -76,8 +77,7 @@ export default function PaymentDetailsView() {
   const [searchInput, setSearchInput] = useState('');
   const [status, setStatus] = useState<'all' | MainAppPaymentStatus>('all');
   const [retriedOnly, setRetriedOnly] = useState(false);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateRange, setDateRange] = useState<DateRangeValue | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const search = useDebouncedValue(searchInput.trim(), 400);
@@ -94,21 +94,20 @@ export default function PaymentDetailsView() {
     status,
     search: search || undefined,
     retriedOnly,
-    dateFrom: toIso(dateFrom, false),
-    dateTo: toIso(dateTo, true),
+    dateFrom: toIso(dateRange?.start ?? '', false),
+    dateTo: toIso(dateRange?.end ?? '', true),
   });
 
   const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
   const rangeStart = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
   const rangeEnd = Math.min(page * pagination.limit, pagination.total);
 
-  const hasActiveFilters = searchInput || status !== 'all' || retriedOnly || dateFrom || dateTo;
+  const hasActiveFilters = searchInput || status !== 'all' || retriedOnly || dateRange;
   const clearFilters = () => {
     setSearchInput('');
     setStatus('all');
     setRetriedOnly(false);
-    setDateFrom('');
-    setDateTo('');
+    setDateRange(null);
     setPage(1);
   };
 
@@ -164,21 +163,7 @@ export default function PaymentDetailsView() {
               <RotateCcw className="h-3 w-3" /> Retried orders only
             </label>
 
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => withPageReset(setDateFrom)(e.target.value)}
-              aria-label="Created from"
-              className="h-9 px-2 text-[11px] rounded-lg border border-border/40 bg-secondary/20 text-muted-foreground"
-            />
-            <span className="text-[11px] text-muted-foreground">to</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => withPageReset(setDateTo)(e.target.value)}
-              aria-label="Created to"
-              className="h-9 px-2 text-[11px] rounded-lg border border-border/40 bg-secondary/20 text-muted-foreground"
-            />
+            <DateRangePicker value={dateRange} onChange={withPageReset(setDateRange)} />
 
             {hasActiveFilters && (
               <button
@@ -305,7 +290,7 @@ export default function PaymentDetailsView() {
                                 {p.orders && p.orders.length > 0 && (
                                   <div className="space-y-1.5">
                                     <span className="text-slate-500 uppercase block text-[9px] font-sans font-bold">
-                                      Razorpay orders ({p.orders.length}) — oldest first
+                                      Razorpay orders ({p.orders.length}) — newest first
                                     </span>
                                     <div className="overflow-x-auto rounded border border-slate-800">
                                       <table className="w-full text-[10px]">

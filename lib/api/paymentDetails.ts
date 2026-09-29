@@ -4,6 +4,18 @@ import { apiRequest } from '@/lib/api/utils';
 
 export type MainAppPaymentStatus = 'CREATED' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
 
+export interface PaymentOrder {
+  razorpayOrderId: string;
+  status: MainAppPaymentStatus;
+  razorpayPaymentId: string | null;
+  method: string | null;
+  failureReason: string | null;
+  errorCode: string | null;
+  errorReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Mirrors server/features/payment-details/payment-details.types.ts. */
 export interface PaymentDetail {
   id: string;
@@ -27,6 +39,8 @@ export interface PaymentDetail {
   attempts: number;
   webhookConfirmed: boolean;
   razorpayReceipts: { original: string; retry: string };
+  /** Every Razorpay order for this payment, oldest first. null = history not readable on this environment. */
+  orders: PaymentOrder[] | null;
   metadata: unknown;
   paidAt: string | null;
   createdAt: string;

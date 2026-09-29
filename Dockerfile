@@ -57,27 +57,21 @@ COPY --from=builder /app/tsconfig.json ./tsconfig.json
 # production import has been run; don't let this COPY outlive the file it's copying.
 COPY --from=builder /app/Colleges_Structured.csv ./Colleges_Structured.csv
 
-# Install Prisma CLI + deps for `prisma migrate deploy` and standalone worker
-# process. Must run BEFORE the generated-client copy below, into an
-# otherwise-empty node_modules/@prisma — if @prisma/config is already
-# present when this runs, npm treats it as already-satisfied and skips
-# installing its own transitive deps (effect, c12, deepmerge-ts, empathic),
-# which crashes `prisma migrate deploy` at runtime with "Cannot find module
-# 'effect'". Version pinned to match package.json's own prisma range so this
-# step can't silently drift to whatever Prisma happens to publish on a given
-# build day — see DECISIONS.md for the incident this fixed.
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
-# csv-parse added alongside prisma/dotenv/tsx/typescript for the same reason: it's a
-# devDependency only used by scripts/import-colleges-from-csv.ts, never imported by the app
-# itself, so Next's standalone output tracing (which only follows what pages/API routes
-# actually import) prunes it — same as it would prisma/tsx/etc without this explicit install.
-RUN npm install --no-save prisma@^7.8.0 dotenv tsx typescript csv-parse && npm cache clean --force
 
-# Overlay the already-generated Prisma Client (schema-specific output from
-# `npx prisma generate` in the builder stage) on top of the fresh install
-# above — must come after, so the correctly-generated client always wins.
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+# Full node_modules (incl. the Prisma Client generated in the builder stage),
+# copied over the standalone output's traced subset. Only the web server
+# (`node server.js`) is covered by Next's standalone tracing — which keeps just
+# the files pages/API routes import, e.g. 1 of ioredis's ~90 files. Everything
+# else run from this image needs real packages: the ops-worker container
+# (`tsx scripts/worker.ts` → bullmq/ioredis/nodemailer), `prisma migrate deploy`,
+# and scripts/*. The old approach — `npm install --no-save <a few pkgs>` on top
+# of the traced subset — silently skipped any package whose traced folder was
+# already present, so the worker crashed at boot with "Cannot find module
+# 'ioredis/built/utils'" and never sent a single message.
+# ponytail: ships devDependencies too (tsx/prisma/typescript are needed at
+# runtime anyway); a dedicated worker image is the upgrade if size matters.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 USER nextjs
 

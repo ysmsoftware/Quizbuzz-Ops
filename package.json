@@ -33,6 +33,7 @@
     "nodemailer": "^9.0.5",
     "pg": "^8.22.0",
     "react": "19.2.8",
+    "react-day-picker": "9.13.2",
     "react-dom": "19.2.8",
     "react-hook-form": "^7.80.0",
     "recharts": "^3.9.1",

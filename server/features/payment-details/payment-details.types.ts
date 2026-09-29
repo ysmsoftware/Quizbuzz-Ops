@@ -28,7 +28,7 @@ export interface PaymentDetailResponse {
   // Orders page surfaces every order ever created for this participant —
   // including ones whose ID was overwritten here by updateForRetry.
   razorpayReceipts: { original: string; retry: string };
-  // Every Razorpay order for this payment, oldest first (null = history unavailable).
+  // Every Razorpay order for this payment, newest first (null = history unavailable).
   orders: PaymentOrderResponse[] | null;
   metadata: any;
   paidAt: string | null;

@@ -30,6 +30,7 @@ import {
   GraduationCap,
   Activity,
   ImageIcon,
+  CreditCard,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -51,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'organizations', label: 'Organizations', phase: 'phase 1', href: '/dashboard/organizations', icon: Building2 },
   { id: 'plans', label: 'Subscription Plans', phase: 'phase 2', href: '/dashboard/plans', icon: Sparkles },
   { id: 'billing', label: 'Billing & Revenue', phase: 'phase 2', href: '/dashboard/billing', icon: Receipt },
+  { id: 'payments', label: 'Payments', phase: 'phase 2', href: '/dashboard/payments', icon: CreditCard },
   { id: 'messaging', label: 'Messaging', phase: 'phase 2', href: '/dashboard/messaging', icon: MessagesSquare },
   { id: 'calculator', label: 'Contest Calculator', phase: 'phase 4', href: '/dashboard/calculator', icon: Calculator },
   { id: 'bookings', label: 'Bookings', phase: 'phase 4', href: '/dashboard/bookings', icon: CalendarClock },

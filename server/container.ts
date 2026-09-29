@@ -16,6 +16,10 @@ import { MainAppAuditLogRepository } from './features/audit-log-main-app/audit-l
 import { MainAppAuditLogService } from './features/audit-log-main-app/audit-log-main-app.service';
 import { MainAppAuditLogController } from './features/audit-log-main-app/audit-log-main-app.controller';
 
+import { PaymentDetailsRepository } from './features/payment-details/payment-details.repository';
+import { PaymentDetailsService } from './features/payment-details/payment-details.service';
+import { PaymentDetailsController } from './features/payment-details/payment-details.controller';
+
 import { OpsMetricsRepository } from './features/ops-metrics/ops-metrics.repository';
 import { OpsMetricsService } from './features/ops-metrics/ops-metrics.service';
 import { OpsMetricsController } from './features/ops-metrics/ops-metrics.controller';
@@ -75,6 +79,7 @@ export const collegesRepository = new CollegesRepository();
 export const appSettingsRepository = new AppSettingsRepository();
 export const auditLogRepository = new AuditLogRepository();
 export const mainAppAuditLogRepository = new MainAppAuditLogRepository();
+export const paymentDetailsRepository = new PaymentDetailsRepository();
 export const opsMetricsRepository = new OpsMetricsRepository();
 export const jobCheckpointsRepository = new JobCheckpointsRepository();
 export const billingRepository = new BillingRepository();
@@ -95,6 +100,7 @@ export const collegesService = new CollegesService(collegesRepository);
 export const appSettingsService = new AppSettingsService(appSettingsRepository);
 export const auditLogService = new AuditLogService(auditLogRepository);
 export const mainAppAuditLogService = new MainAppAuditLogService(mainAppAuditLogRepository);
+export const paymentDetailsService = new PaymentDetailsService(paymentDetailsRepository);
 export const opsMetricsService = new OpsMetricsService(opsMetricsRepository);
 export const jobCheckpointsService = new JobCheckpointsService(jobCheckpointsRepository);
 export const billingService = new BillingService(billingRepository);
@@ -116,6 +122,7 @@ export const collegesController = new CollegesController(collegesService);
 export const appSettingsController = new AppSettingsController(appSettingsService);
 export const auditLogController = new AuditLogController(auditLogService);
 export const mainAppAuditLogController = new MainAppAuditLogController(mainAppAuditLogService);
+export const paymentDetailsController = new PaymentDetailsController(paymentDetailsService);
 export const opsMetricsController = new OpsMetricsController(opsMetricsService);
 export const jobCheckpointsController = new JobCheckpointsController(jobCheckpointsService);
 export const featureFlagsController = new FeatureFlagsController(featureFlagsService);

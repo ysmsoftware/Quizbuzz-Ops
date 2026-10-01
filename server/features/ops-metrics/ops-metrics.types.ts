@@ -14,6 +14,8 @@ export interface InstanceHeartbeat {
     externalMb: number;
     heapLimitMb: number;
     heapUsedPct: number;
+    /** Hard container memory limit (cgroup) — the OOM-kill line RSS must stay under. null = unlimited; absent = older main-app build. */
+    containerLimitMb?: number | null;
   };
   ws?: {
     activeConnections: number;

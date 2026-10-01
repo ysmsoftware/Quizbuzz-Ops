@@ -115,7 +115,10 @@ function InstanceRow({ instance, nowMs }: { instance: OpsInstanceHeartbeat; nowM
           <span className="font-mono text-[11px] text-muted-foreground w-9 text-right">{instance.memory.heapUsedPct}%</span>
         </div>
       </td>
-      <td className="py-3 px-3 text-xs font-mono text-muted-foreground">{instance.memory.rssMb} MB</td>
+      <td className="py-3 px-3 text-xs font-mono text-muted-foreground">
+        {instance.memory.rssMb}
+        {instance.memory.containerLimitMb ? ` / ${instance.memory.containerLimitMb}` : ''} MB
+      </td>
       <td className="py-3 px-3 text-xs font-mono text-muted-foreground">{instance.memory.heapUsedMb} / {instance.memory.heapLimitMb} MB</td>
       <td className="py-3 px-3 text-[11px] text-muted-foreground whitespace-nowrap">{safeAgo(instance.reportedAt)}</td>
     </tr>
@@ -296,7 +299,7 @@ export default function OpsMetricsView() {
                 <th className="py-2.5 px-3">Uptime</th>
                 <th className="py-2.5 px-3">WS Connections</th>
                 <th className="py-2.5 px-3">Heap Used</th>
-                <th className="py-2.5 px-3">RSS</th>
+                <th className="py-2.5 px-3">RSS / Container</th>
                 <th className="py-2.5 px-3">Heap / Limit</th>
                 <th className="py-2.5 px-3">Last Report</th>
               </tr>

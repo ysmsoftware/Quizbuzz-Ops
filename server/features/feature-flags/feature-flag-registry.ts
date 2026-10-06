@@ -171,6 +171,18 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     // main-app side; see the AccessModel doc comment above.
     accessModel: 'OPT_IN',
   },
+  {
+    key: 'window_contests',
+    label: 'Window Contests',
+    description:
+      'Lets an organization create contests that stay open for a time window, where each participant starts on their own and gets the full duration (online-assessment style).',
+    // OPT_IN: global=true only makes it grantable — an org still needs its own
+    // override to get it. Mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
 ] as const satisfies readonly FeatureFlagRegistryEntry[];
 
 // Fails the build (not just a runtime surprise) if a copy-paste ever

@@ -183,6 +183,16 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     supportsOrgOverride: true,
     accessModel: 'OPT_IN',
   },
+  {
+    key: 'question_pools',
+    label: 'Question Sets & Pools',
+    description:
+      'Lets an organization serve each participant one of several question sets, or a random per-difficulty draw from a larger question pool, instead of the same questions for everyone.',
+    defaultEnabled: true, // OPT_IN: only grantable globally; each org needs its own override
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
 ] as const satisfies readonly FeatureFlagRegistryEntry[];
 
 // Fails the build (not just a runtime surprise) if a copy-paste ever

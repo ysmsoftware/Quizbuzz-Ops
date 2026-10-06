@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { generateUlid } from '../../utils/ulid';
 import { FEATURE_FLAG_REGISTRY } from './feature-flag-registry';
+import { queryMainDb } from '../../db/main-db-pool';
 
 export interface FeatureFlagSyncResult {
   created: string[];
@@ -83,6 +84,20 @@ export async function syncFeatureFlagRegistry(prisma: PrismaClient): Promise<Fea
       });
       result.deprecated.push(flag.key);
     }
+  }
+
+  // Make sure every registry flag has its global row on Quizbuzz-new's side too.
+  // Without it a new flag is "on" here but missing there — and an OPT_IN flag
+  // with no global row reads as off for every org, overrides included. DO NOTHING:
+  // an existing mirror row is live state written by the toggle endpoint.
+  const opsFlags = await prisma.featureFlag.findMany({ where: { key: { in: [...registryKeys] } } });
+  for (const flag of opsFlags) {
+    await queryMainDb(
+      `INSERT INTO platform_feature_flags (key, "isEnabled", "updatedAt")
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (key) DO NOTHING`,
+      [flag.key, flag.isEnabled]
+    );
   }
 
   return result;

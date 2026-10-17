@@ -184,11 +184,45 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     accessModel: 'OPT_IN',
   },
   {
+    key: 'participant_portal',
+    label: 'Participant Portal',
+    description:
+      'Gives an organization a member portal (/portal): members the org adds log in with an email OTP and see their upcoming, available and completed tests.',
+    // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side. Turning the
+    // global off is the kill switch for every org at once.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
+  {
+    key: 'institution_mode',
+    label: 'Institution Mode (Learner Groups)',
+    description:
+      'Lets an organization organize learners into groups (e.g. Department → Year → Batch), promote them with history kept, mark alumni, and assign tests to whole groups. Needs Participant Portal too.',
+    // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
+  {
     key: 'question_pools',
     label: 'Question Sets & Pools',
     description:
       'Lets an organization serve each participant one of several question sets, or a random per-difficulty draw from a larger question pool, instead of the same questions for everyone.',
     defaultEnabled: true, // OPT_IN: only grantable globally; each org needs its own override
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
+  {
+    key: 'gradebook',
+    label: 'Gradebook',
+    description:
+      'Gives an organization a gradebook: exam categories and weights, a learner × test grid with weighted totals, per-learner reports and CSV export. Needs Participant Portal too.',
+    // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    defaultEnabled: true,
     severity: FeatureFlagSeverity.STANDARD,
     supportsOrgOverride: true,
     accessModel: 'OPT_IN',

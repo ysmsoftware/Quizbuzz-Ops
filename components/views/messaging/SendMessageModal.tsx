@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Send, X, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -12,6 +12,7 @@ import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { previewMessage } from '@/lib/api/messaging';
 import OrgPicker, { OrgPickerOption } from './OrgPicker';
 import MessagePreviewPanel from './MessagePreviewPanel';
+import { useResetOnChange } from '@/lib/hooks/useResetOnChange';
 
 interface SendMessageModalProps {
   isOpen: boolean;
@@ -38,6 +39,7 @@ function useOrgDefaults(orgId: string | undefined) {
   const { organization, payments, isLoadingDetails } = useOrganizationDetail(orgId || '');
   const { subscription } = useSubscription(orgId || '');
   const { plans } = usePlans();
+  const [now] = useState(() => Date.now());
 
   return useMemo(() => {
     if (!orgId || !organization) return { values: {} as Record<string, string>, isLoading: isLoadingDetails };
@@ -48,7 +50,7 @@ function useOrgDefaults(orgId: string | undefined) {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
 
     const daysRemaining = subscription?.currentPeriodEnd
-      ? Math.max(1, Math.ceil((new Date(subscription.currentPeriodEnd).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
+      ? Math.max(1, Math.ceil((new Date(subscription.currentPeriodEnd).getTime() - now) / (24 * 60 * 60 * 1000)))
       : undefined;
 
     const candidates: Record<string, string | undefined> = {
@@ -72,7 +74,7 @@ function useOrgDefaults(orgId: string | undefined) {
     });
 
     return { values, isLoading: isLoadingDetails };
-  }, [orgId, organization, payments, subscription, plans, isLoadingDetails]);
+  }, [orgId, organization, payments, subscription, plans, isLoadingDetails, now]);
 }
 
 /**
@@ -95,15 +97,13 @@ export default function SendMessageModal({ isOpen, onClose, templates, isSending
   const { values: defaultParams } = useOrgDefaults(org?.id);
 
   // Prefill the recipient with the org owner's email once an org is picked, but leave it editable.
-  useEffect(() => {
+  useResetOnChange(org?.id ?? '', () => {
     if (org) setRecipient(org.ownerEmail);
-  }, [org]);
+  });
 
   // Clear manual overrides whenever the template changes — a previous
   // template's variable values shouldn't leak into a different template.
-  useEffect(() => {
-    setParams({});
-  }, [templateId]);
+  useResetOnChange(templateId, () => setParams({}));
 
   const resetAndClose = () => {
     setOrg(null);

@@ -28,6 +28,8 @@ const envSchema = z.object({
   // Must match the main app's own OPS_SETTINGS_SECRET env var exactly.
   OPS_SETTINGS_SECRET: z.string().default('ops_settings_shared_key_change_me'),
   OTP_EXPIRY_MINUTES: z.coerce.number().default(5),
+  /** Wrong guesses allowed per emailed code before it is burned. */
+  OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),
@@ -58,6 +60,27 @@ const envSchema = z.object({
   PAYOUT_STUCK_TRANSFER_GRACE_MINUTES: z.coerce.number().default(3),
 });
 
+// The dev placeholders above are public (they're in this file). A production boot with any of
+// them — or a missing value falling back to one — would let anyone forge sessions or call the
+// main app's ops endpoints. OPS_JWT_REFRESH_SECRET is not checked: refresh tokens are random
+// strings, that secret is never read.
+const SECRETS_NEEDING_REAL_VALUES = ['OPS_JWT_ACCESS_SECRET', 'OPS_METRICS_SECRET', 'OPS_SETTINGS_SECRET'] as const;
+const PUBLIC_DEFAULT_SECRETS = new Set([
+  'ops_jwt_access_secret_super_secure_key_12345',
+  'ops_metrics_shared_key_change_me',
+  'ops_settings_shared_key_change_me',
+]);
+
+function assertProductionSecrets(data: z.infer<typeof envSchema>) {
+  if (process.env.NODE_ENV !== 'production' || process.env.NEXT_PHASE === 'phase-production-build') return;
+  const bad = SECRETS_NEEDING_REAL_VALUES.filter(
+    (k) => !process.env[k] || PUBLIC_DEFAULT_SECRETS.has(data[k]) || data[k].length < 16
+  );
+  if (bad.length) {
+    throw new Error(`Refusing to start in production: set real values (16+ chars, not the dev defaults) for ${bad.join(', ')}`);
+  }
+}
+
 const parseEnv = () => {
   const result = envSchema.safeParse(process.env);
   if (!result.success) {
@@ -74,6 +97,7 @@ const parseEnv = () => {
     console.error('❌ Invalid environment variables:', result.error.format());
     throw new Error('Invalid environment variables configured');
   }
+  assertProductionSecrets(result.data);
   return result.data;
 };
 

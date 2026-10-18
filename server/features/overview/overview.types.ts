@@ -1,3 +1,5 @@
+import type { InstitutionPlatformStats } from '../institution/institution.types';
+
 export interface PlatformOverviewStats {
   organizations: {
     total: number;
@@ -11,12 +13,16 @@ export interface PlatformOverviewStats {
   };
   participants: {
     total: number;
+    /** Per ParticipantStatus (REGISTERED, ASSIGNED, SUBMITTED, ABSENT, …). */
+    byStatus: Record<string, number>;
   };
   revenue: {
     allTime: number;
     thisMonth: number;
     currency: string;
   };
+  /** Institution-mode adoption (null if the main DB couldn't be read for it). */
+  institution: InstitutionPlatformStats | null;
   computedAt: string;
 }
 
@@ -31,6 +37,10 @@ export interface UpcomingContest {
   organizationId: string;
   organizationName: string;
   startTime: string;
+  /** WINDOW contests run from startTime to endTime; SCHEDULED ones end at startTime + duration. */
+  endTime: string;
+  status: string;
+  timingMode: 'SCHEDULED' | 'WINDOW';
   participantCount: number;
 }
 
@@ -40,4 +50,7 @@ export interface RecentOrg {
   slug: string;
   createdAt: string;
   ownerEmail: string;
+  /** Main-app plan slug; null = no plan recorded (free default). */
+  planSlug: string | null;
+  logoUrl: string | null;
 }

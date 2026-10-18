@@ -55,7 +55,7 @@ export async function GET() {
     });
 
     return okResponse(formattedPlans, 'Subscription plans retrieved.');
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching billing portal plans:', error);
     return errorResponse('Failed to fetch subscription plans', 'INTERNAL_SERVER_ERROR', null, 500);
   }

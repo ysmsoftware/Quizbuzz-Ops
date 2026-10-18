@@ -14,5 +14,11 @@ export class MainAppAuditLogController {
     const result = await this.service.listAuditLogs(query);
     return okResponse(result, 'Main application audit log retrieved.');
   }
+
+  async listActions() {
+    await getSessionAdmin();
+    return okResponse(await this.service.listActions(), 'Main application audit actions retrieved.');
+  }
 }
+
 export default MainAppAuditLogController;

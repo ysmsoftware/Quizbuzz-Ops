@@ -4,13 +4,12 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOps } from '@/lib/hooks/useOps';
 import { usePlatformStats } from '@/lib/hooks/usePlatformStats';
-import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { 
-  Server, 
+  
   Cpu, 
   Database, 
   TrendingUp, 
-  DollarSign, 
+  
   Layers, 
   Calendar, 
   AlertTriangle, 
@@ -27,7 +26,6 @@ export default function InfraMonitoringView() {
   const router = useRouter();
   const { infraStatus, isLoadingInfra, scalingConfig, isLoadingScaling } = useOps();
   const { stats, isLoading: isLoadingStats } = usePlatformStats();
-  const { admin } = useCurrentAdmin();
   const [isCostBreakdownExpanded, setIsCostBreakdownExpanded] = useState(false);
 
   if (isLoadingInfra || isLoadingScaling || isLoadingStats || !infraStatus || !scalingConfig) {

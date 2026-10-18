@@ -2,19 +2,25 @@ import { IOrganizationsRepository, OrganizationsRepository } from './organizatio
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
 import { AuditTargetType } from '@prisma/client';
+import { orgLogoFallback } from '../../../lib/format';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../../http/errors';
+import { env } from '../../config/env';
+import { RESERVED_ORG_SLUGS, slugify } from './org-slug';
+import type { CreateOrgInput, UpdateOrgInput, OrgParticipantsQueryInput } from './organizations.validator';
+import type { OrgListParams } from './organizations.repository';
 import { OrgListMember, OrgProfileDetail, OrgMemberDetail, OrgContestDetail, OrgParticipantDetail, OrgPaymentDetail, SupportNoteDetail } from './organizations.types';
 
 export interface IOrganizationsService {
-  getOrganizationsList(params: {
-    page: number;
-    limit: number;
-    search?: string;
-    status: 'all' | 'active' | 'suspended' | 'deleted';
-  }): Promise<{ data: OrgListMember[]; total: number; page: number; limit: number }>;
+  getOrganizationsList(params: OrgListParams): Promise<{ data: OrgListMember[]; total: number; page: number; limit: number }>;
+  createOrganization(actor: AuditActor, input: CreateOrgInput): Promise<{ id: string; slug: string; createdAccount: boolean }>;
+  updateOrganization(orgId: string, actor: AuditActor, input: UpdateOrgInput): Promise<void>;
+  softDelete(orgId: string, actor: AuditActor, reason: string): Promise<void>;
+  restore(orgId: string, actor: AuditActor, reason?: string): Promise<void>;
   getOrganizationDetail(orgId: string): Promise<OrgProfileDetail | null>;
+  getNames(ids: string[]): Promise<Record<string, string>>;
   getMembers(orgId: string): Promise<OrgMemberDetail[]>;
   getContests(orgId: string): Promise<OrgContestDetail[]>;
-  getParticipants(orgId: string): Promise<OrgParticipantDetail[]>;
+  getParticipants(orgId: string, query: OrgParticipantsQueryInput): Promise<{ data: OrgParticipantDetail[]; total: number; page: number; limit: number }>;
   getPayments(orgId: string): Promise<OrgPaymentDetail[]>;
   getNotes(orgId: string): Promise<SupportNoteDetail[]>;
   addNote(orgId: string, actor: AuditActor, body: string, tags: string[]): Promise<SupportNoteDetail>;
@@ -33,12 +39,7 @@ export interface IOrganizationsService {
 export class OrganizationsService implements IOrganizationsService {
   constructor(private repo: IOrganizationsRepository = new OrganizationsRepository()) {}
 
-  async getOrganizationsList(params: {
-    page: number;
-    limit: number;
-    search?: string;
-    status: 'all' | 'active' | 'suspended' | 'deleted';
-  }): Promise<{ data: OrgListMember[]; total: number; page: number; limit: number }> {
+  async getOrganizationsList(params: OrgListParams): Promise<{ data: OrgListMember[]; total: number; page: number; limit: number }> {
     const { rows, total } = await this.repo.getOrganizationsList(params);
     const orgIds = rows.map((r) => r.id);
 
@@ -56,11 +57,14 @@ export class OrganizationsService implements IOrganizationsService {
             slug: sub.plan.slug,
             name: sub.plan.name,
             status: sub.status,
+            hasSubscription: true,
           }
         : {
+            // Not a real subscription: the free default, flagged so the UI can say so.
             slug: 'starter',
             name: 'Starter (Free)',
-            status: 'ACTIVE',
+            status: 'NONE',
+            hasSubscription: false,
           };
 
       return {
@@ -69,6 +73,8 @@ export class OrganizationsService implements IOrganizationsService {
         slug: r.slug,
         ownerName: r.ownerName,
         ownerEmail: r.ownerEmail,
+        logoUrl: r.logoUrl || orgLogoFallback(r.name),
+        features: r.features ?? [],
         memberCount: r.memberCount,
         contestCount: r.contestCount,
         participantCount: r.participantCount,
@@ -87,7 +93,8 @@ export class OrganizationsService implements IOrganizationsService {
   }
 
   async getOrganizationDetail(orgId: string): Promise<OrgProfileDetail | null> {
-    const rawOrg = await this.repo.getOrganizationDetail(orgId);
+    // Deleted orgs stay viewable here (read-only dossier + Restore); every other method treats them as gone.
+    const rawOrg = await this.repo.getOrganizationDetail(orgId, { includeDeleted: true });
     if (!rawOrg) return null;
 
     const sub = await this.repo.getSubscriptionForOrg(orgId);
@@ -97,11 +104,13 @@ export class OrganizationsService implements IOrganizationsService {
           slug: sub.plan.slug,
           name: sub.plan.name,
           status: sub.status,
+          hasSubscription: true,
         }
       : {
           slug: 'starter',
           name: 'Starter (Free)',
-          status: 'ACTIVE',
+          status: 'NONE',
+          hasSubscription: false,
         };
 
     let suspensionInfo = null;
@@ -122,7 +131,8 @@ export class OrganizationsService implements IOrganizationsService {
       id: rawOrg.id,
       name: rawOrg.name,
       slug: rawOrg.slug,
-      logoUrl: rawOrg.logoUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(rawOrg.name)}&backgroundColor=0d9488`,
+      logoUrl: rawOrg.logoUrl || orgLogoFallback(rawOrg.name),
+      hasCustomLogo: !!rawOrg.logoUrl,
       isActive: rawOrg.isActive,
       isDeleted: rawOrg.isDeleted,
       createdAt: new Date(rawOrg.createdAt).toISOString(),
@@ -136,6 +146,10 @@ export class OrganizationsService implements IOrganizationsService {
       plan: planInfo,
       suspension: suspensionInfo,
     };
+  }
+
+  async getNames(ids: string[]) {
+    return this.repo.getOrganizationNames([...new Set(ids)]);
   }
 
   async getMembers(orgId: string): Promise<OrgMemberDetail[]> {
@@ -171,8 +185,9 @@ export class OrganizationsService implements IOrganizationsService {
     };
   }
 
-  async getParticipants(orgId: string): Promise<OrgParticipantDetail[]> {
-    return this.repo.getOrganizationParticipants(orgId);
+  async getParticipants(orgId: string, query: OrgParticipantsQueryInput) {
+    const { rows, total } = await this.repo.getOrganizationParticipants(orgId, query);
+    return { data: rows, total, page: query.page, limit: query.limit };
   }
 
   async getPayments(orgId: string): Promise<OrgPaymentDetail[]> {
@@ -194,7 +209,7 @@ export class OrganizationsService implements IOrganizationsService {
 
   async addNote(orgId: string, actor: AuditActor, body: string, tags: string[]): Promise<SupportNoteDetail> {
     const rawOrg = await this.repo.getOrganizationDetail(orgId);
-    if (!rawOrg) throw new Error('Organization not found');
+    if (!rawOrg) throw new NotFoundError('Organization not found');
 
     const note = await this.repo.createOrganizationNote(orgId, actor.id!, body, tags);
 
@@ -218,10 +233,108 @@ export class OrganizationsService implements IOrganizationsService {
     };
   }
 
+  private async uniqueSlug(name: string): Promise<string> {
+    const base = slugify(name) || 'organization';
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const candidate = attempt === 0 ? base : `${base}-${attempt}`;
+      if (RESERVED_ORG_SLUGS.has(candidate)) continue;
+      if (!(await this.repo.isSlugTaken(candidate))) return candidate;
+    }
+    throw new ConflictError('Could not generate a unique slug; please enter one');
+  }
+
+  async createOrganization(actor: AuditActor, input: CreateOrgInput) {
+    const slug = input.slug ?? (await this.uniqueSlug(input.name));
+    if (RESERVED_ORG_SLUGS.has(slug)) throw new ValidationError({ slug: { _errors: [`"${slug}" is reserved`] } });
+    if (await this.repo.isSlugTaken(slug)) throw new ConflictError(`The slug "${slug}" is already taken`);
+
+    const [firstName, ...rest] = input.ownerName.split(/\s+/);
+    let created;
+    try {
+      created = await this.repo.createOrganizationWithOwner({
+        name: input.name,
+        slug,
+        ownerFirstName: firstName,
+        ownerLastName: rest.join(' '),
+        ownerEmail: input.ownerEmail,
+      });
+    } catch (err: any) {
+      if (err?.code === '23505') throw new ConflictError('An organization or account with these details already exists');
+      throw new AppError(err?.message || 'Could not create organization', 'ORG_CREATE_FAILED', 400);
+    }
+
+    await writeAuditLogEntry(actor, 'org.created', AuditTargetType.ORGANIZATION, created.organizationId, input.name, {
+      slug,
+      ownerEmail: input.ownerEmail,
+      createdOwnerAccount: created.createdAdmin,
+      planId: input.planId ?? null,
+    });
+
+    const frontend = env.MAIN_APP_FRONTEND_URL.replace(/\/$/, '');
+    await orgOwnerNotifier.notify(created.organizationId, 'ORG_CREATED', {
+      organizationName: input.name,
+      ownerEmail: input.ownerEmail,
+      newAccount: created.createdAdmin,
+      loginUrl: `${frontend}/login`,
+      forgotPasswordUrl: `${frontend}/forgot-password`,
+    });
+
+    return { id: created.organizationId, slug, createdAccount: created.createdAdmin };
+  }
+
+  async updateOrganization(orgId: string, actor: AuditActor, input: UpdateOrgInput) {
+    const org = await this.repo.getOrganizationDetail(orgId);
+    if (!org) throw new NotFoundError('Organization not found');
+
+    const fields: { name?: string; logoUrl?: string | null } = {};
+    if (input.name !== undefined) fields.name = input.name;
+    if (input.logoUrl !== undefined) fields.logoUrl = input.logoUrl === '' ? null : input.logoUrl;
+
+    await this.repo.updateMainDbOrganization(orgId, fields);
+
+    await writeAuditLogEntry(actor, 'org.updated', AuditTargetType.ORGANIZATION, orgId, fields.name ?? org.name, {
+      before: { name: org.name, logoUrl: org.logoUrl ?? null },
+      after: fields,
+    });
+  }
+
+  /**
+   * Soft delete: the organization disappears from every list, its admins can no longer sign in
+   * or act, and its public pages go dark — but no row is removed, so it can be restored.
+   * Unlike suspend, the owner is NOT emailed (operator decision).
+   */
+  async softDelete(orgId: string, actor: AuditActor, reason: string) {
+    const org = await this.repo.getOrganizationDetail(orgId, { includeDeleted: true });
+    if (!org) throw new NotFoundError('Organization not found');
+    if (org.isDeleted) throw new ConflictError('Organization is already deleted');
+
+    await this.repo.setMainDbOrganizationDeleted(orgId, true, false);
+
+    await writeAuditLogEntry(actor, 'org.deleted', AuditTargetType.ORGANIZATION, orgId, org.name, {
+      reason,
+      wasSuspended: !org.isActive,
+    });
+  }
+
+  /** Undo a soft delete. The org returns to Suspended if it had an open suspension, else Active. No email. */
+  async restore(orgId: string, actor: AuditActor, reason?: string) {
+    const org = await this.repo.getOrganizationDetail(orgId, { includeDeleted: true });
+    if (!org) throw new NotFoundError('Organization not found');
+    if (!org.isDeleted) throw new ConflictError('Organization is not deleted');
+
+    const stillSuspended = await this.repo.hasOpenSuspension(orgId);
+    await this.repo.setMainDbOrganizationDeleted(orgId, false, !stillSuspended);
+
+    await writeAuditLogEntry(actor, 'org.restored', AuditTargetType.ORGANIZATION, orgId, org.name, {
+      reason: reason ?? null,
+      restoredTo: stillSuspended ? 'SUSPENDED' : 'ACTIVE',
+    });
+  }
+
   async suspend(orgId: string, actor: AuditActor, reason: string): Promise<void> {
     const rawOrg = await this.repo.getOrganizationDetail(orgId);
-    if (!rawOrg) throw new Error('Organization not found');
-    if (!rawOrg.isActive) throw new Error('Organization is already suspended');
+    if (!rawOrg) throw new NotFoundError('Organization not found');
+    if (!rawOrg.isActive) throw new ConflictError('Organization is already suspended');
 
     await this.repo.updateMainDbOrganizationStatus(orgId, false);
     await this.repo.createOrganizationSuspension(orgId, reason, actor.id!);
@@ -240,8 +353,8 @@ export class OrganizationsService implements IOrganizationsService {
 
   async reactivate(orgId: string, actor: AuditActor, reason?: string): Promise<void> {
     const rawOrg = await this.repo.getOrganizationDetail(orgId);
-    if (!rawOrg) throw new Error('Organization not found');
-    if (rawOrg.isActive) throw new Error('Organization is already active');
+    if (!rawOrg) throw new NotFoundError('Organization not found');
+    if (rawOrg.isActive) throw new ConflictError('Organization is already active');
 
     await this.repo.updateMainDbOrganizationStatus(orgId, true);
     await this.repo.closeOrganizationSuspension(orgId, actor.id!, reason);

@@ -1,4 +1,5 @@
 import { queryMainDb } from '../../db/main-db-pool';
+import { SqlWhere, pageOffset } from '../../db/sql';
 import { PaymentDetailsListQuery } from './payment-details.types';
 
 export interface IPaymentDetailsRepository {
@@ -18,39 +19,34 @@ export class PaymentDetailsRepository implements IPaymentDetailsRepository {
   async listPayments(params: PaymentDetailsListQuery) {
     const { page, limit, status, search, organizationId, retriedOnly, dateFrom, dateTo } = params;
 
-    const conditions: string[] = ['pay."isDeleted" = false'];
-    const sqlParams: any[] = [];
-    const addParam = (value: any) => {
-      sqlParams.push(value);
-      return `$${sqlParams.length}`;
-    };
-
-    if (status !== 'all') conditions.push(`pay.status = ${addParam(status)}::"PaymentStatus"`);
-    if (organizationId) conditions.push(`pay."organizationId" = ${addParam(organizationId)}`);
-    if (retriedOnly === '1') conditions.push('pay.attempts > 1');
-    if (dateFrom) conditions.push(`pay."createdAt" >= ${addParam(new Date(dateFrom))}`);
-    if (dateTo) conditions.push(`pay."createdAt" <= ${addParam(new Date(dateTo))}`);
+    const where = new SqlWhere('pay."isDeleted" = false');
+    if (status !== 'all') where.and('pay.status = ?::"PaymentStatus"', status);
+    if (organizationId) where.and('pay."organizationId" = ?', organizationId);
+    if (retriedOnly === '1') where.and('pay.attempts > 1');
+    if (dateFrom) where.and('pay."createdAt" >= ?', new Date(dateFrom));
+    if (dateTo) where.and('pay."createdAt" <= ?', new Date(dateTo));
 
     if (search) {
-      const like = addParam(`%${search}%`);
-      const fields = [
-        'cnt.email',
-        `cnt."firstName" || ' ' || COALESCE(cnt."lastName", '')`,
-        'pay.id',
-        'pay."participantId"',
-        'pay."razorpayOrderId"',
-        'pay."razorpayPaymentId"',
-        'p."registrationRef"',
-        'c.title',
-        'o.name',
-      ].map((f) => `${f} ILIKE ${like}`);
       // Phones are typed every which way ("+91 93735 50044", "9373550044") —
       // compare digits only so either form matches.
       const digits = search.replace(/\D/g, '');
-      if (digits.length >= 4) {
-        fields.push(`regexp_replace(COALESCE(cnt.phone, ''), '\\D', '', 'g') LIKE ${addParam(`%${digits}%`)}`);
-      }
-      conditions.push(`(${fields.join(' OR ')})`);
+      where.search(
+        [
+          'cnt.email',
+          `cnt."firstName" || ' ' || COALESCE(cnt."lastName", '')`,
+          'pay.id',
+          'pay."participantId"',
+          'pay."razorpayOrderId"',
+          'pay."razorpayPaymentId"',
+          'p."registrationRef"',
+          'c.title',
+          'o.name',
+        ],
+        search,
+        digits.length >= 4
+          ? [`regexp_replace(COALESCE(cnt.phone, ''), '\\D', '', 'g') LIKE ${where.bind(`%${digits}%`)}`]
+          : []
+      );
     }
 
     const fromClause = `
@@ -59,7 +55,7 @@ export class PaymentDetailsRepository implements IPaymentDetailsRepository {
       LEFT JOIN contests c ON pay."contestId" = c.id
       LEFT JOIN contacts cnt ON pay."contactId" = cnt.id
       LEFT JOIN participants p ON pay."participantId" = p.id
-      WHERE ${conditions.join(' AND ')}
+      ${where.sql}
     `;
 
     const countQuery = `SELECT COUNT(*)::int as count ${fromClause}`;
@@ -75,12 +71,12 @@ export class PaymentDetailsRepository implements IPaymentDetailsRepository {
         pay."paidAt", pay."createdAt", pay."updatedAt"
       ${fromClause}
       ORDER BY pay."createdAt" DESC
-      LIMIT ${limit} OFFSET ${(page - 1) * limit}
+      LIMIT ${limit} OFFSET ${pageOffset(page, limit)}
     `;
 
     const [countResult, dataResult] = await Promise.all([
-      queryMainDb(countQuery, sqlParams),
-      queryMainDb(dataQuery, sqlParams),
+      queryMainDb(countQuery, where.params),
+      queryMainDb(dataQuery, where.params),
     ]);
 
     return { rows: dataResult, total: countResult[0]?.count || 0 };

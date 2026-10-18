@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getAuditLogs, GetAuditLogsParams } from '@/lib/api/auditLog';
+import { getAuditLogs, getAuditActions, GetAuditLogsParams } from '@/lib/api/auditLog';
+import { OPS_AUDIT_GROUPS, mergeActionGroups } from '@/lib/constants/audit-actions';
 
 /**
  * Backs the Security Audit Ledger page. `filters` should be a stable object
@@ -29,4 +30,10 @@ export function useAuditLogs(filters: GetAuditLogsParams = {}) {
     isError: auditLogsQuery.isError,
     refetch: auditLogsQuery.refetch,
   };
+}
+
+/** Operation/Action dropdown options: the catalogue plus any action the ledger has actually seen. */
+export function useOpsAuditActionGroups() {
+  const { data } = useQuery({ queryKey: ['auditLogs', 'actions'], queryFn: getAuditActions, staleTime: 5 * 60_000 });
+  return mergeActionGroups(OPS_AUDIT_GROUPS, data);
 }

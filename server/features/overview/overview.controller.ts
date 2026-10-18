@@ -18,7 +18,7 @@ export class OverviewController {
     const query = parseQueryParams(
       req,
       z.object({
-        weeks: z.coerce.number().optional(),
+        weeks: z.coerce.number().int().min(1).max(52).optional(),
       })
     );
     const growth = await this.service.getOrgGrowth(query.weeks);
@@ -30,7 +30,7 @@ export class OverviewController {
     const query = parseQueryParams(
       req,
       z.object({
-        days: z.coerce.number().optional(),
+        days: z.coerce.number().int().min(1).max(90).optional(),
       })
     );
     const upcoming = await this.service.getUpcomingContests(query.days);
@@ -42,7 +42,7 @@ export class OverviewController {
     const query = parseQueryParams(
       req,
       z.object({
-        limit: z.coerce.number().optional(),
+        limit: z.coerce.number().int().min(1).max(50).optional(),
       })
     );
     const recent = await this.service.getRecentOrgs(query.limit);

@@ -1,7 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useMainAppAuditLogs } from '@/lib/hooks/useMainAppAuditLogs';
+import React, { useState } from 'react';
+import { useMainAppAuditLogs, useMainAppAuditActionGroups } from '@/lib/hooks/useMainAppAuditLogs';
+import { subActionLabel } from '@/lib/constants/audit-actions';
+import { dayRangeToIso } from '@/lib/dates';
+import DateRangePicker, { DateRangeValue } from '@/components/ui/DateRangePicker';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { format } from 'date-fns';
 import {
@@ -9,8 +12,6 @@ import {
   Search,
   Filter,
   ChevronUp,
-  ChevronLeft,
-  ChevronRight,
   Eye,
   Terminal,
   Clock,
@@ -21,34 +22,10 @@ import {
   Timer,
 } from 'lucide-react';
 import { MainAppAuditLogEntry } from '@/lib/types';
+import Pagination from '@/components/ui/Pagination';
+import { useResetOnChange } from '@/lib/hooks/useResetOnChange';
 
 const PAGE_SIZE = 50;
-
-// Curated from every logAudit() call site instrumented in Quizbuzz-new/backend
-// so far (src/common/audit-log.ts callers) — same rationale as
-// OpsAuditLogTable's ACTION_GROUPS: an explicit list so the dropdown doesn't
-// lose options that aren't on the current page. Extend this list as more
-// call sites get instrumented.
-const ACTION_GROUPS: { domain: string; label: string; actions: string[] }[] = [
-  { domain: 'auth', label: 'Auth', actions: ['auth.admin_login', 'auth.admin_logout', 'auth.admin_email_verified', 'auth.participant_login'] },
-  { domain: 'organization', label: 'Organization', actions: ['organization.created', 'organization.member_invited', 'organization.member_role_changed', 'organization.member_removed'] },
-  { domain: 'contest', label: 'Contest', actions: ['contest.created', 'contest.published', 'contest.cancelled', 'contest.results_declared'] },
-  { domain: 'participant', label: 'Participant', actions: ['participant.disqualified'] },
-  { domain: 'payment', label: 'Payment', actions: ['payment.captured'] },
-  { domain: 'payout', label: 'Payout', actions: ['payout.route_transfer_processed'] },
-  { domain: 'submission', label: 'Submission', actions: ['submission.submitted', 'submission.evaluated', 'submission.invalidated'] },
-  { domain: 'certificate', label: 'Certificate', actions: ['certificate.issue_triggered', 'certificate.generated', 'certificate.failed'] },
-  { domain: 'question', label: 'Question', actions: ['question.bulk_imported'] },
-  { domain: 'message', label: 'Message', actions: ['message.sent', 'message.retried', 'message.failed'] },
-  { domain: 'system', label: 'System', actions: ['system.contest_reconciliation_fired', 'system.job_retries_exhausted'] },
-];
-
-function subActionLabel(domain: string, action: string): string {
-  return action
-    .slice(domain.length + 1)
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 export interface MainAppAuditLogTableProps {
   /** Set by AuditLogView — jumps to a fresh "Job Timeline" tab mount, pre-filtered to this requestId. */
@@ -64,6 +41,7 @@ export default function MainAppAuditLogTable({ onViewJobTimeline }: MainAppAudit
   const [requestIdFilter, setRequestIdFilter] = useState('');
   const [operationFilter, setOperationFilter] = useState<string>('ALL');
   const [actionFilter, setActionFilter] = useState<string>('ALL');
+  const [dateRange, setDateRange] = useState<DateRangeValue | null>(null);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   const debouncedActorName = useDebouncedValue(actorNameInput, 400);
@@ -71,11 +49,10 @@ export default function MainAppAuditLogTable({ onViewJobTimeline }: MainAppAudit
   const debouncedTargetId = useDebouncedValue(targetIdFilter, 400);
   const debouncedRequestId = useDebouncedValue(requestIdFilter, 400);
 
-  const selectedGroup = ACTION_GROUPS.find((g) => g.domain === operationFilter);
+  const actionGroups = useMainAppAuditActionGroups();
+  const selectedGroup = actionGroups.find((g) => g.domain === operationFilter);
 
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedActorName, debouncedOrgId, debouncedTargetId, debouncedRequestId, operationFilter, actionFilter]);
+  useResetOnChange(`${debouncedActorName}|${debouncedOrgId}|${debouncedTargetId}|${debouncedRequestId}|${operationFilter}|${actionFilter}|${dateRange?.start}|${dateRange?.end}`, () => setPage(1));
 
   const handleOperationChange = (domain: string) => {
     setOperationFilter(domain);
@@ -89,13 +66,10 @@ export default function MainAppAuditLogTable({ onViewJobTimeline }: MainAppAudit
     targetId: debouncedTargetId || undefined,
     actorName: debouncedActorName || undefined,
     requestId: debouncedRequestId || undefined,
+    ...dayRangeToIso(dateRange),
     action: actionFilter !== 'ALL' ? actionFilter : undefined,
     actionPrefix: actionFilter === 'ALL' && operationFilter !== 'ALL' ? operationFilter : undefined,
   });
-
-  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
-  const rangeStart = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
-  const rangeEnd = Math.min(page * pagination.limit, pagination.total);
 
   const formatActionName = (action: string) => action.replace('.', ': ').replace(/_/g, ' ').toUpperCase();
 
@@ -116,7 +90,7 @@ export default function MainAppAuditLogTable({ onViewJobTimeline }: MainAppAudit
     setRequestIdFilter('');
   };
 
-  const hasActiveFilters = orgIdFilter || targetIdFilter || actorNameInput || requestIdFilter || operationFilter !== 'ALL' || actionFilter !== 'ALL';
+  const hasActiveFilters = orgIdFilter || targetIdFilter || actorNameInput || requestIdFilter || operationFilter !== 'ALL' || actionFilter !== 'ALL' || dateRange;
   const clearFilters = () => {
     setOrgIdFilter('');
     setTargetIdFilter('');
@@ -124,6 +98,7 @@ export default function MainAppAuditLogTable({ onViewJobTimeline }: MainAppAudit
     setRequestIdFilter('');
     setOperationFilter('ALL');
     setActionFilter('ALL');
+    setDateRange(null);
   };
 
   return (
@@ -196,7 +171,7 @@ export default function MainAppAuditLogTable({ onViewJobTimeline }: MainAppAudit
               className="text-[11px] font-sans bg-transparent focus:outline-none text-muted-foreground max-w-[140px]"
             >
               <option value="ALL">All Operations</option>
-              {ACTION_GROUPS.map((g) => (
+              {actionGroups.map((g) => (
                 <option key={g.domain} value={g.domain}>{g.label}</option>
               ))}
             </select>
@@ -215,6 +190,8 @@ export default function MainAppAuditLogTable({ onViewJobTimeline }: MainAppAudit
               ))}
             </select>
           </div>
+
+          <DateRangePicker value={dateRange} onChange={setDateRange} />
 
           {hasActiveFilters && (
             <button
@@ -396,38 +373,8 @@ export default function MainAppAuditLogTable({ onViewJobTimeline }: MainAppAudit
         )}
       </div>
 
-      {!isLoading && !isError && logs.length > 0 && (
-        <div className="p-4 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-[11px] text-muted-foreground font-mono">
-            Showing <span className="text-foreground font-semibold">{rangeStart}-{rangeEnd}</span> of{' '}
-            <span className="text-foreground font-semibold">{pagination.total.toLocaleString()}</span> logs
-          </p>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1 || isFetching}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              <span>Prev</span>
-            </button>
-
-            <span className="text-[11px] font-mono text-muted-foreground px-2">
-              Page <span className="text-foreground font-semibold">{page}</span> of{' '}
-              <span className="text-foreground font-semibold">{totalPages}</span>
-            </span>
-
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || isFetching}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
-            >
-              <span>Next</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
+      {!isLoading && !isError && (
+        <Pagination currentPage={page} totalItems={pagination.total} pageSize={pagination.limit} itemLabel="logs" onPageChange={setPage} isLoading={isFetching} />
       )}
     </div>
   );

@@ -7,53 +7,25 @@ import {
   Search,
   Filter,
   ChevronUp,
-  ChevronLeft,
-  ChevronRight,
   Eye,
   Terminal,
   Loader2,
-  Copy,
-  Check,
   AlertTriangle,
+  Check,
   RotateCcw,
 } from 'lucide-react';
 import { usePaymentDetails } from '@/lib/hooks/usePaymentDetails';
-import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import { useTableQuery } from '@/lib/hooks/useTableQuery';
+import CopyText from '@/components/ui/CopyText';
+import StatusBadge from '@/components/ui/StatusBadge';
+import Pagination from '@/components/ui/Pagination';
+import { statusOptions } from '@/lib/constants/status';
+import { dayRangeToIso } from '@/lib/dates';
 import DateRangePicker, { DateRangeValue } from '@/components/ui/DateRangePicker';
 import { MainAppPaymentStatus, PaymentDetail } from '@/lib/api/paymentDetails';
+import { formatInr  } from '@/lib/format';
 
 const PAGE_SIZE = 50;
-const STATUSES: ('all' | MainAppPaymentStatus)[] = ['all', 'SUCCESS', 'FAILED', 'PENDING', 'CREATED', 'CANCELLED', 'REFUNDED'];
-
-const STATUS_STYLES: Record<string, string> = {
-  SUCCESS: 'bg-emerald-500/10 text-emerald-600',
-  FAILED: 'bg-rose-500/10 text-rose-600',
-  PENDING: 'bg-amber-500/10 text-amber-600',
-  CREATED: 'bg-slate-500/10 text-slate-500',
-  CANCELLED: 'bg-slate-500/10 text-slate-500',
-  REFUNDED: 'bg-indigo-500/10 text-indigo-500',
-};
-
-function CopyText({ value, className = '' }: { value: string | null; className?: string }) {
-  const [copied, setCopied] = useState(false);
-  if (!value) return <span className="text-muted-foreground/60">—</span>;
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        navigator.clipboard?.writeText(value).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        });
-      }}
-      className={`inline-flex items-center gap-1 font-mono hover:text-primary cursor-pointer text-left ${className}`}
-      title="Copy"
-    >
-      <span className="break-all">{value}</span>
-      {copied ? <Check className="h-3 w-3 shrink-0 text-emerald-500" /> : <Copy className="h-3 w-3 shrink-0 opacity-50" />}
-    </button>
-  );
-}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -64,50 +36,35 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-// Local date (yyyy-MM-dd from the range picker) → ISO bound, so "29 Sep" means 29 Sep in the admin's timezone.
-const toIso = (date: string, endOfDay: boolean) =>
-  date ? new Date(`${date}T${endOfDay ? '23:59:59.999' : '00:00:00'}`).toISOString() : undefined;
-
 /**
  * Contest-fee payments from the main app's DB, with every Razorpay field we store —
  * for cross-checking a participant's payment against the Razorpay dashboard.
  */
 export default function PaymentDetailsView() {
-  const [page, setPage] = useState(1);
-  const [searchInput, setSearchInput] = useState('');
-  const [status, setStatus] = useState<'all' | MainAppPaymentStatus>('all');
-  const [retriedOnly, setRetriedOnly] = useState(false);
-  const [dateRange, setDateRange] = useState<DateRangeValue | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  const search = useDebouncedValue(searchInput.trim(), 400);
-
-  // Any filter change jumps back to page 1.
-  const withPageReset = <T,>(set: (v: T) => void) => (v: T) => {
-    set(v);
-    setPage(1);
-  };
+  const [dateRange, setDateRange] = useState<DateRangeValue | null>(null);
+  const query = useTableQuery(
+    { search: '', status: 'all', retriedOnly: false },
+    { debounce: ['search'] }
+  );
+  const { page, setPage } = query;
 
   const { payments, pagination, isLoading, isFetching, isError } = usePaymentDetails({
     page,
     limit: PAGE_SIZE,
-    status,
-    search: search || undefined,
-    retriedOnly,
-    dateFrom: toIso(dateRange?.start ?? '', false),
-    dateTo: toIso(dateRange?.end ?? '', true),
+    status: (query.params.status ?? 'all') as 'all' | MainAppPaymentStatus,
+    search: query.params.search?.trim() || undefined,
+    retriedOnly: !!query.params.retriedOnly,
+    ...dayRangeToIso(dateRange),
   });
 
-  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
-  const rangeStart = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
-  const rangeEnd = Math.min(page * pagination.limit, pagination.total);
-
-  const hasActiveFilters = searchInput || status !== 'all' || retriedOnly || dateRange;
+  const hasActiveFilters = query.hasActiveFilters || !!dateRange;
   const clearFilters = () => {
-    setSearchInput('');
-    setStatus('all');
-    setRetriedOnly(false);
+    query.reset();
     setDateRange(null);
+  };
+  const changeDateRange = (range: DateRangeValue | null) => {
+    setDateRange(range);
     setPage(1);
   };
 
@@ -138,8 +95,8 @@ export default function PaymentDetailsView() {
               <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
-                value={searchInput}
-                onChange={(e) => withPageReset(setSearchInput)(e.target.value)}
+                value={query.filters.search}
+                onChange={(e) => query.setFilter('search', e.target.value)}
                 placeholder="Email, phone, name, order / payment ID…"
                 className="pl-9 h-9 w-64 sm:w-80 text-xs rounded-lg border border-border/40 bg-secondary/20 focus:outline-none focus:border-primary transition-all"
               />
@@ -148,22 +105,22 @@ export default function PaymentDetailsView() {
             <div className="flex items-center gap-1 bg-secondary/10 border border-border/40 rounded-lg px-2 h-9">
               <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
               <select
-                value={status}
-                onChange={(e) => withPageReset(setStatus)(e.target.value as typeof status)}
+                value={query.filters.status}
+                onChange={(e) => query.setFilter('status', e.target.value)}
                 className="text-[11px] bg-transparent focus:outline-none text-muted-foreground"
               >
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>{s === 'all' ? 'All statuses' : s}</option>
+                {statusOptions('payment', 'All statuses').map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             </div>
 
             <label className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border/40 bg-secondary/10 text-[11px] text-muted-foreground cursor-pointer">
-              <input type="checkbox" checked={retriedOnly} onChange={(e) => withPageReset(setRetriedOnly)(e.target.checked)} />
+              <input type="checkbox" checked={query.filters.retriedOnly} onChange={(e) => query.setFilter('retriedOnly', e.target.checked)} />
               <RotateCcw className="h-3 w-3" /> Retried orders only
             </label>
 
-            <DateRangePicker value={dateRange} onChange={withPageReset(setDateRange)} />
+            <DateRangePicker value={dateRange} onChange={changeDateRange} />
 
             {hasActiveFilters && (
               <button
@@ -232,11 +189,9 @@ export default function PaymentDetailsView() {
                             <span className="text-foreground block truncate">{p.contestTitle || '—'}</span>
                             <span className="text-[10px] text-muted-foreground block truncate">{p.organizationName}</span>
                           </td>
-                          <td className="py-2.5 px-4 font-mono whitespace-nowrap">₹{p.amount.toFixed(2)}</td>
+                          <td className="py-2.5 px-4 font-mono whitespace-nowrap">{formatInr(p.amount, { fixed: 2 })}</td>
                           <td className="py-2.5 px-4 max-w-[220px]">
-                            <span className={`inline-flex px-2 py-0.5 rounded font-mono text-[10px] font-bold ${STATUS_STYLES[p.status] || ''}`}>
-                              {p.status}
-                            </span>
+                            <StatusBadge kind="payment" value={p.status} />
                             {p.failureReason && (
                               <span className="text-[10px] text-rose-500 block mt-1">{p.failureReason}</span>
                             )}
@@ -312,7 +267,7 @@ export default function PaymentDetailsView() {
                                                 {o.razorpayOrderId === p.razorpayOrderId && <span className="ml-1 text-indigo-400">(current)</span>}
                                               </td>
                                               <td className="px-2 py-1.5">
-                                                <span className={`px-1.5 py-0.5 rounded font-bold ${STATUS_STYLES[o.status] || ''}`}>{o.status}</span>
+                                                <StatusBadge kind="payment" value={o.status} />
                                               </td>
                                               <td className="px-2 py-1.5">
                                                 <CopyText value={o.razorpayPaymentId} />
@@ -344,7 +299,7 @@ export default function PaymentDetailsView() {
                                   <Field label="Contact">{p.email || '—'} · {p.phone || '—'}</Field>
                                   <Field label="Organization">{p.organizationName} <span className="text-slate-500">({p.organizationId})</span></Field>
                                   <Field label="Contest">{p.contestTitle || '—'} <span className="text-slate-500">({p.contestId})</span></Field>
-                                  <Field label="Amount">₹{p.amount.toFixed(2)} {p.currency}</Field>
+                                  <Field label="Amount">{formatInr(p.amount, { fixed: 2 })} {p.currency}</Field>
                                   <Field label="Created">{format(new Date(p.createdAt), 'dd MMM yyyy, HH:mm:ss')}</Field>
                                   <Field label="Last updated">{format(new Date(p.updatedAt), 'dd MMM yyyy, HH:mm:ss')}</Field>
                                   <Field label="Paid at">{p.paidAt ? format(new Date(p.paidAt), 'dd MMM yyyy, HH:mm:ss') : '—'}</Field>
@@ -369,33 +324,8 @@ export default function PaymentDetailsView() {
           )}
         </div>
 
-        {!isLoading && !isError && payments.length > 0 && (
-          <div className="p-4 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-[11px] text-muted-foreground font-mono">
-              Showing <span className="text-foreground font-semibold">{rangeStart}-{rangeEnd}</span> of{' '}
-              <span className="text-foreground font-semibold">{pagination.total.toLocaleString()}</span> payments
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage((pg) => Math.max(1, pg - 1))}
-                disabled={page <= 1 || isFetching}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" /> <span>Prev</span>
-              </button>
-              <span className="text-[11px] font-mono text-muted-foreground px-2">
-                Page <span className="text-foreground font-semibold">{page}</span> of{' '}
-                <span className="text-foreground font-semibold">{totalPages}</span>
-              </span>
-              <button
-                onClick={() => setPage((pg) => Math.min(totalPages, pg + 1))}
-                disabled={page >= totalPages || isFetching}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
-              >
-                <span>Next</span> <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+        {!isLoading && !isError && (
+          <Pagination currentPage={page} totalItems={pagination.total} pageSize={pagination.limit} itemLabel="payments" onPageChange={setPage} isLoading={isFetching} />
         )}
       </div>
     </div>

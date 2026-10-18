@@ -1,6 +1,6 @@
 import { prisma } from '@/server/db/ops-prisma';
 import { redis } from '@/server/lib/redis';
-import { verifyJwt } from '@/server/utils/jwt';
+import { verifyJwt, type BillingHandoffPayload } from '@/server/utils/jwt';
 import { env } from '@/server/config/env';
 import { generateUlid } from '@/server/utils/ulid';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
@@ -15,6 +15,7 @@ import {
   isValidBillingCycle,
   type BillingCycleChoice,
 } from '@/lib/pricing/subscriptionPricing';
+import { errorMessage } from '@/lib/errors';
 
 // Short-lived per org+plan+cycle lock so a double-click, two open tabs, or a
 // retried request can't race two concurrent calls past the active-subscription
@@ -43,14 +44,18 @@ export async function POST(req: Request) {
     }
 
     const secret = env.BILLING_HANDOFF_SECRET;
-    let payload: any;
+    let payload: BillingHandoffPayload;
     try {
       payload = verifyJwt(token, secret);
-    } catch (e: any) {
-      return errorResponse(`Invalid or expired token: ${e.message}`, 'UNAUTHENTICATED', null, 401);
+    } catch (e) {
+      return errorResponse(`Invalid or expired token: ${errorMessage(e)}`, 'UNAUTHENTICATED', null, 401);
     }
 
     const { organizationId, adminId, adminEmail, adminName, planSlug } = payload;
+
+    if (!organizationId || !planSlug) {
+      return errorResponse('Invalid handoff payload', 'VALIDATION_ERROR', null, 400);
+    }
 
     if (!(await isFeatureEnabled('razorpay_gateway_active', organizationId))) {
       return errorResponse(
@@ -93,8 +98,8 @@ export async function POST(req: Request) {
         },
         billingCycle
       );
-    } catch (e: any) {
-      return errorResponse(e.message, 'VALIDATION_ERROR', null, 400);
+    } catch (e) {
+      return errorResponse(errorMessage(e), 'VALIDATION_ERROR', null, 400);
     }
 
     const periodMonths = periodMonthsForCycle(billingCycle);
@@ -308,7 +313,7 @@ export async function POST(req: Request) {
       },
       'Payment order created.'
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error creating subscription payment order:', error);
     return errorResponse('Internal server error creating payment order', 'INTERNAL_SERVER_ERROR', null, 500);
   } finally {

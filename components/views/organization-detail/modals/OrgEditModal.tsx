@@ -3,7 +3,6 @@
 import React from 'react';
 import { Edit3, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { SubscriptionPlan } from '@/lib/types';
 
 interface OrgEditModalProps {
   isOpen: boolean;
@@ -11,16 +10,13 @@ interface OrgEditModalProps {
   editFields: {
     name: string;
     logoUrl: string;
-    planId: string;
   };
   setEditFields: React.Dispatch<
     React.SetStateAction<{
       name: string;
       logoUrl: string;
-      planId: string;
     }>
   >;
-  plans: SubscriptionPlan[];
   isUpdating: boolean;
   onSubmit: (e: React.FormEvent) => void;
 }
@@ -30,7 +26,6 @@ export default function OrgEditModal({
   onClose,
   editFields,
   setEditFields,
-  plans,
   isUpdating,
   onSubmit,
 }: OrgEditModalProps) {
@@ -68,25 +63,14 @@ export default function OrgEditModal({
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Logo Image URL</label>
             <input
               type="url"
-              required
+              placeholder="https://… (leave empty to remove the logo)"
               value={editFields.logoUrl}
               onChange={(e) => setEditFields(prev => ({ ...prev, logoUrl: e.target.value }))}
               className="w-full px-3 py-2 text-xs bg-secondary/20 focus:bg-card border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground font-mono"
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">SaaS Pricing Subscription Plan</label>
-            <select
-              value={editFields.planId}
-              onChange={(e) => setEditFields(prev => ({ ...prev, planId: e.target.value }))}
-              className="w-full px-3 py-2 text-xs bg-secondary/20 border border-border/50 rounded-lg outline-none text-foreground"
-            >
-              {plans.map(p => (
-                <option key={p.id} value={p.id}>{p.name} (₹{p.priceINR}/mo)</option>
-              ))}
-            </select>
-          </div>
+          <p className="text-[10px] text-muted-foreground">The URL slug is fixed. Change the plan from the Subscription tab.</p>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-border/30">
             <button

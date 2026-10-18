@@ -3,10 +3,15 @@ import { AuditLogListQuery, AuditLogListResult } from './audit-log.types';
 
 export interface IAuditLogService {
   listAuditLogs(params: AuditLogListQuery): Promise<AuditLogListResult>;
+  listActions(): Promise<string[]>;
 }
 
 export class AuditLogService implements IAuditLogService {
   constructor(private repo: IAuditLogRepository = new AuditLogRepository()) {}
+
+  listActions() {
+    return this.repo.listActions();
+  }
 
   async listAuditLogs(params: AuditLogListQuery): Promise<AuditLogListResult> {
     const { rows, total } = await this.repo.listAuditLogs(params);

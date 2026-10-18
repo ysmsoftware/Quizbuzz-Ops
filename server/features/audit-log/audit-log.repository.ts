@@ -4,11 +4,12 @@ import { AuditLogListQuery } from './audit-log.types';
 
 export interface IAuditLogRepository {
   listAuditLogs(params: AuditLogListQuery): Promise<{ rows: any[]; total: number }>;
+  listActions(): Promise<string[]>;
 }
 
 export class AuditLogRepository implements IAuditLogRepository {
   async listAuditLogs(params: AuditLogListQuery) {
-    const { page, limit, action, actionPrefix, targetType, targetId, requestId, actorId, actorName, targetLabel, dateFrom, dateTo } = params;
+    const { page, limit, action, actionPrefix, targetType, targetId, requestId, organizationId, actorId, actorName, targetLabel, dateFrom, dateTo } = params;
 
     const where: Prisma.PlatformAuditLogWhereInput = {
       // Exact match wins when both are present; actionPrefix only kicks in
@@ -21,6 +22,12 @@ export class AuditLogRepository implements IAuditLogRepository {
       ...(targetType && { targetType }),
       ...(targetId && { targetId }),
       ...(requestId && { requestId }),
+      ...(organizationId && {
+        OR: [
+          { targetType: 'ORGANIZATION' as const, targetId: organizationId },
+          { metadata: { path: ['organizationId'], equals: organizationId } },
+        ],
+      }),
       ...(actorId && { actorId }),
       // actorLabel/targetLabel are denormalized display strings (admin name,
       // organization name), so "contains" is the only way to search them —
@@ -46,6 +53,12 @@ export class AuditLogRepository implements IAuditLogRepository {
     ]);
 
     return { rows, total };
+  }
+
+  /** Every action that has ever been written — feeds the filter dropdowns. */
+  async listActions() {
+    const rows = await prisma.platformAuditLog.findMany({ distinct: ['action'], select: { action: true }, orderBy: { action: 'asc' } });
+    return rows.map((r) => r.action);
   }
 }
 export default AuditLogRepository;

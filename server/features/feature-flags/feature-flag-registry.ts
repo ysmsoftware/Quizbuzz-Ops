@@ -52,10 +52,12 @@ import { FeatureFlagSeverity } from '@prisma/client';
  * one of these — there is no third option, and picking the wrong one is a
  * real, previously-shipped bug (see the HOW TO ADD A NEW FLAG note above).
  *
- * GLOBAL  — "on for everyone unless this one org is an exception."
- *   global=true  + no override        -> ON  (the common case)
- *   global=true  + override=false     -> OFF for that one org
- *   global=false + anything           -> OFF (global is the default here too)
+ * GLOBAL  — "follows the global switch unless this one org has an override."
+ *   no override                       -> the global value (ON for everyone when global is on)
+ *   override=false                    -> OFF for that one org
+ *   override=true                     -> ON for that org, even when global is off
+ *   (An active override wins outright — this is what the main app's
+ *   computeEffectiveFlagState really does; see server/.../flag-state.ts.)
  *   Use for infrastructure/vendor-integration flags where the sane default
  *   is "just work" — Razorpay, proctoring, certificate delivery, analytics.
  *   An org override exists only to carve out an exception.
@@ -98,6 +100,12 @@ export interface FeatureFlagRegistryEntry {
   defaultEnabled: boolean;
   severity: FeatureFlagSeverity;
   supportsOrgOverride: boolean;
+  /**
+   * Other flags that must ALSO be on for this one to do anything (the main app checks them
+   * together, e.g. LEARNER_GROUP_FLAGS / GRADEBOOK_FLAGS in backend/src/common/feature-flags.ts).
+   * Used by the dashboard to warn when a grant would have no effect.
+   */
+  requires?: readonly string[];
   /** See FeatureFlagAccessModel above. Purely documentation/display here —
    *  the real enforcement lives in Quizbuzz-new/backend's OPT_IN_ONLY_FLAGS. */
   accessModel: FeatureFlagAccessModel;
@@ -187,7 +195,7 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     key: 'participant_portal',
     label: 'Participant Portal',
     description:
-      'Gives an organization a member portal (/portal): members the org adds log in with an email OTP and see their upcoming, available and completed tests.',
+      'Gives an organization a learner portal (/portal): learners the org grants access to log in with an email OTP and see their upcoming, available, completed and missed tests.',
     // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side. Turning the
     // global off is the kill switch for every org at once.
     defaultEnabled: true,
@@ -199,11 +207,12 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     key: 'institution_mode',
     label: 'Institution Mode (Learner Groups)',
     description:
-      'Lets an organization organize learners into groups (e.g. Department → Year → Batch), promote them with history kept, mark alumni, and assign tests to whole groups. Needs Participant Portal too.',
+      'Lets an organization organize learners into groups (e.g. Department → Year → Batch), promote them with history kept, mark alumni, and assign tests to whole groups.',
     // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
     defaultEnabled: true,
     severity: FeatureFlagSeverity.STANDARD,
     supportsOrgOverride: true,
+    requires: ['participant_portal'],
     accessModel: 'OPT_IN',
   },
   {
@@ -220,11 +229,12 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     key: 'gradebook',
     label: 'Gradebook',
     description:
-      'Gives an organization a gradebook: exam categories and weights, a learner × test grid with weighted totals, per-learner reports and CSV export. Needs Participant Portal too.',
+      'Gives an organization a gradebook: exam categories and weights, a learner × test grid with weighted totals, per-learner reports and CSV export.',
     // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
     defaultEnabled: true,
     severity: FeatureFlagSeverity.STANDARD,
     supportsOrgOverride: true,
+    requires: ['participant_portal'],
     accessModel: 'OPT_IN',
   },
 ] as const satisfies readonly FeatureFlagRegistryEntry[];
@@ -236,4 +246,24 @@ const duplicateKeys = FEATURE_FLAG_REGISTRY.map((f) => f.key).filter(
 );
 if (duplicateKeys.length > 0) {
   throw new Error(`FEATURE_FLAG_REGISTRY has duplicate key(s): ${duplicateKeys.join(', ')}`);
+}
+
+// Every `requires` must point at a real flag (and not at itself).
+for (const flag of FEATURE_FLAG_REGISTRY) {
+  for (const dep of (flag as FeatureFlagRegistryEntry).requires ?? []) {
+    if (dep === flag.key || !FEATURE_FLAG_REGISTRY.some((f) => f.key === dep)) {
+      throw new Error(`FEATURE_FLAG_REGISTRY: '${flag.key}' requires unknown flag '${dep}'`);
+    }
+  }
+}
+
+export function requiresOf(flagKey: string): readonly string[] {
+  return (FEATURE_FLAG_REGISTRY.find((f) => f.key === flagKey) as FeatureFlagRegistryEntry | undefined)?.requires ?? [];
+}
+
+/** Flags that list `flagKey` in their `requires` — turning `flagKey` off silently disables these too. */
+export function dependentsOf(flagKey: string): string[] {
+  return (FEATURE_FLAG_REGISTRY as readonly FeatureFlagRegistryEntry[])
+    .filter((f) => f.requires?.includes(flagKey))
+    .map((f) => f.key);
 }

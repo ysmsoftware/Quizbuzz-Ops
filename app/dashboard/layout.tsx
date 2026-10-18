@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/Toast';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import CommandPalette from '@/components/ui/CommandPalette';
-import { useOps } from '@/lib/hooks/useOps';
+import { useFeatureFlags } from '@/lib/hooks/useFeatureFlags';
 import {
   LayoutDashboard,
   Building2,
@@ -31,8 +30,10 @@ import {
   Activity,
   ImageIcon,
   CreditCard,
+  type LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { errorMessage } from '@/lib/errors';
 
 type NavGroup = 'Overview' | 'Customers' | 'Revenue' | 'Platform Config' | 'System';
 
@@ -45,7 +46,7 @@ interface NavItem {
   group: NavGroup;
   phase: string;
   href: string;
-  icon: any;
+  icon: LucideIcon;
   // When true, the item is intentionally kept in this list (routing, icons,
   // phase metadata all stay intact) but omitted from the rendered sidebar.
   // Used for features that are built but deliberately not surfaced yet
@@ -86,8 +87,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const { featureFlags, toggleFlag } = useOps();
+  const { featureFlags, toggleFlag } = useFeatureFlags();
 
   const isMaintenanceActive = featureFlags?.find((f) => f.key === 'maintenance_mode')?.isEnabled || false;
   const isSupport = admin?.role === 'SUPPORT';
@@ -95,46 +95,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-
-  const [impersonatedOrgId, setImpersonatedOrgId] = useState<string | null>(null);
-  const [impersonatedOrgName, setImpersonatedOrgName] = useState<string | null>(null);
-
-  // Read impersonation status from localStorage on mount (hydration safe)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setImpersonatedOrgId(localStorage.getItem('quizbuzz_impersonated_org_id'));
-      setImpersonatedOrgName(localStorage.getItem('quizbuzz_impersonated_org_name'));
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleImpersonate = (e: Event) => {
-      const customEvent = e as CustomEvent<{ orgId: string | null; orgName: string | null }>;
-      const targetId = customEvent.detail.orgId;
-      const targetName = customEvent.detail.orgName;
-
-      setImpersonatedOrgId(targetId);
-      setImpersonatedOrgName(targetName);
-
-      if (targetId) {
-        localStorage.setItem('quizbuzz_impersonated_org_id', targetId);
-        localStorage.setItem('quizbuzz_impersonated_org_name', targetName || '');
-        toast('Impersonation Active', `You are now viewing the system as ${targetName}.`, 'info');
-      } else {
-        localStorage.removeItem('quizbuzz_impersonated_org_id');
-        localStorage.removeItem('quizbuzz_impersonated_org_name');
-        toast('Impersonation Ended', 'Returned to your primary operator credentials.', 'success');
-      }
-
-      // Invalidate queries to automatically reload filtered statistics
-      queryClient.invalidateQueries();
-    };
-
-    window.addEventListener('quizbuzz_impersonate', handleImpersonate);
-    return () => {
-      window.removeEventListener('quizbuzz_impersonate', handleImpersonate);
-    };
-  }, [queryClient, toast]);
 
   // Handle keyboard shortcut for command palette (Cmd+K / Ctrl+K)
   useEffect(() => {
@@ -148,11 +108,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  // false during SSR/hydration, true once mounted on the client.
+  const isMounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
   // Auth guard: wait for the session query to fully settle after mount
   // before deciding the user is logged out. `isLoading` alone is NOT
@@ -175,10 +136,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!isMounted || isLoading) return null;
   if (!admin && !authSettled) return null; // still validating a cached-but-unconfirmed session
   if (!admin) return null;
-
-  const handleSelectOrgFromSearch = (orgId: string) => {
-    router.push(`/dashboard/organizations?orgId=${orgId}`);
-  };
 
   const isNavItemActive = (item: NavItem) =>
     item.href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(item.href);
@@ -211,8 +168,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               try {
                 await toggleFlag({ key: 'maintenance_mode', isEnabled: false });
                 toast('Maintenance Mode Deactivated', 'Platform operations are now restored to active status.', 'success');
-              } catch (e: any) {
-                toast('Deactivation Failed', e.message || 'Error deactivating maintenance mode.', 'error');
+              } catch (e) {
+                toast('Deactivation Failed', errorMessage(e) || 'Error deactivating maintenance mode.', 'error');
               }
             }}
             className="ml-4 px-3 py-1 bg-white hover:bg-white/95 text-red-600 hover:text-red-700 rounded-md font-bold text-[10px] uppercase transition-all shadow-sm cursor-pointer shrink-0 disabled:opacity-50"

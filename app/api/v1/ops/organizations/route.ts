@@ -10,3 +10,11 @@ export async function GET(req: Request) {
     return handleRouteError(err);
   }
 }
+
+export async function POST(req: Request) {
+  try {
+    return await organizationsController.create(req);
+  } catch (err) {
+    return handleRouteError(err);
+  }
+}

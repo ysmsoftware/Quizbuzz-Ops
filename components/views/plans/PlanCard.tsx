@@ -4,9 +4,11 @@ import React from 'react';
 import { SubscriptionPlan } from '@/lib/types';
 import { 
   Edit3, EyeOff, Check, X, Users, Trophy, HelpCircle, 
-  ShieldCheck, Download, Globe, Lock, Layers, Building2 
+  ShieldCheck, Download, Globe, Lock, Layers, Building2,
+  type LucideIcon,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { formatInr } from '@/lib/format';
 
 interface PlanCardProps {
   plan: SubscriptionPlan;
@@ -87,7 +89,7 @@ export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: P
                 {plan.allowsMonthly && plan.monthlyPrice !== null && (
                   <div>
                     <span className="text-2xl font-extrabold tracking-tight text-foreground">
-                      ₹{plan.monthlyPrice.toLocaleString('en-IN')}
+                      {formatInr(plan.monthlyPrice)}
                     </span>
                     <span className="text-xs text-muted-foreground font-medium ml-1">/ month</span>
                   </div>
@@ -95,7 +97,7 @@ export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: P
                 {plan.allowsAnnual && plan.annualPrice !== null && (
                   <div>
                     <span className={plan.allowsMonthly ? 'text-sm font-bold text-foreground' : 'text-2xl font-extrabold tracking-tight text-foreground'}>
-                      ₹{plan.annualPrice.toLocaleString('en-IN')}
+                      {formatInr(plan.annualPrice)}
                     </span>
                     <span className="text-xs text-muted-foreground font-medium ml-1">/ year</span>
                   </div>
@@ -154,7 +156,7 @@ export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: P
   );
 }
 
-function FeatureItem({ icon: Icon, label, enabled }: { icon: any; label: string; enabled: boolean }) {
+function FeatureItem({ icon: Icon, label, enabled }: { icon: LucideIcon; label: string; enabled: boolean }) {
   return (
     <li className="flex items-center justify-between py-0.5">
       <span className="flex items-center space-x-2 text-muted-foreground">

@@ -14,13 +14,16 @@ import {
   Terminal,
   X,
 } from 'lucide-react';
-import { useMessages, useOrganizationNames } from '@/lib/hooks/useMessaging';
+import { useMessages } from '@/lib/hooks/useMessaging';
+import { useOrganizationNames } from '@/lib/hooks/useOrganizations';
 import { useToast } from '@/components/ui/Toast';
 import { OpsMessageChannel, OpsMessageStatus, OpsMessageTemplate } from '@/lib/types';
-import TablePagination from './organization-detail/TablePagination';
+import Pagination from '@/components/ui/Pagination';
+import { useTableQuery } from '@/lib/hooks/useTableQuery';
 import MessageStatusBadge from './messaging/MessageStatusBadge';
 import SendMessageModal from './messaging/SendMessageModal';
 import OrgPicker, { OrgPickerOption } from './messaging/OrgPicker';
+import { errorMessage } from '@/lib/errors';
 
 const STATUS_OPTIONS: OpsMessageStatus[] = ['QUEUED', 'PROCESSING', 'SENT', 'DELIVERED', 'FAILED'];
 const CHANNEL_OPTIONS: OpsMessageChannel[] = ['EMAIL', 'WHATSAPP'];
@@ -32,12 +35,12 @@ export default function MessagingView() {
 
   const deepLinkedOrgId = searchParams.get('organizationId') || '';
 
-  const [search, setSearch] = useState('');
   const [orgFilter, setOrgFilter] = useState<OrgPickerOption | null>(null);
-  const [statusFilter, setStatusFilter] = useState<OpsMessageStatus | ''>('');
-  const [channelFilter, setChannelFilter] = useState<OpsMessageChannel | ''>('');
-  const [templateFilter, setTemplateFilter] = useState<OpsMessageTemplate | ''>('');
-  const [page, setPage] = useState(1);
+  const query = useTableQuery(
+    { search: '', status: '', channel: '', template: '' },
+    { debounce: ['search'] }
+  );
+  const { page, setPage } = query;
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
 
@@ -62,10 +65,10 @@ export default function MessagingView() {
     page,
     limit: 20,
     organizationId: effectiveOrgId,
-    status: statusFilter || undefined,
-    channel: channelFilter || undefined,
-    template: templateFilter || undefined,
-    search: search || undefined,
+    status: query.params.status as OpsMessageStatus | undefined,
+    channel: query.params.channel as OpsMessageChannel | undefined,
+    template: query.params.template as OpsMessageTemplate | undefined,
+    search: query.params.search,
   });
 
   const orgNamesById = useOrganizationNames(messages.map((m) => m.organizationId));
@@ -80,12 +83,8 @@ export default function MessagingView() {
   }, [templates]);
 
   const resetFilters = () => {
-    setSearch('');
+    query.reset();
     setOrgFilter(null);
-    setStatusFilter('');
-    setChannelFilter('');
-    setTemplateFilter('');
-    setPage(1);
     if (deepLinkedOrgId) router.replace('/dashboard/messaging');
   };
 
@@ -93,8 +92,8 @@ export default function MessagingView() {
     try {
       await retryMessage(id);
       toast('Message Re-queued', 'The message has been queued for another delivery attempt.', 'success');
-    } catch (err: any) {
-      toast('Retry Failed', err.message || 'Could not re-queue this message.', 'error');
+    } catch (err) {
+      toast('Retry Failed', errorMessage(err) || 'Could not re-queue this message.', 'error');
     }
   };
 
@@ -103,8 +102,8 @@ export default function MessagingView() {
     try {
       const result = await retryFailed(effectiveOrgId);
       toast('Bulk Retry Queued', `Queued ${result.count} failed message${result.count === 1 ? '' : 's'} for retry.`, 'success');
-    } catch (err: any) {
-      toast('Bulk Retry Failed', err.message || 'Could not retry failed messages.', 'error');
+    } catch (err) {
+      toast('Bulk Retry Failed', errorMessage(err) || 'Could not retry failed messages.', 'error');
     }
   };
 
@@ -113,8 +112,8 @@ export default function MessagingView() {
       await sendMessage(payload);
       toast('Message Queued', 'The message has been queued for delivery.', 'success');
       setIsComposeOpen(false);
-    } catch (err: any) {
-      toast('Send Failed', err.message || 'Could not queue this message.', 'error');
+    } catch (err) {
+      toast('Send Failed', errorMessage(err) || 'Could not queue this message.', 'error');
     }
   };
 
@@ -156,8 +155,8 @@ export default function MessagingView() {
               <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                value={query.filters.search}
+                onChange={(e) => query.setFilter('search', e.target.value)}
                 placeholder="Search recipient or subject..."
                 className="pl-9 h-9 w-full text-xs rounded-lg border border-border/40 bg-secondary/20 focus:outline-none focus:border-primary transition-all font-sans"
               />
@@ -173,8 +172,8 @@ export default function MessagingView() {
 
             {/* Status filter */}
             <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value as OpsMessageStatus | ''); setPage(1); }}
+              value={query.filters.status}
+              onChange={(e) => query.setFilter('status', e.target.value)}
               className="h-9 px-2.5 text-[11px] font-medium bg-secondary/20 border border-border/40 rounded-lg outline-none text-foreground cursor-pointer"
             >
               <option value="">All Statuses</option>
@@ -183,8 +182,8 @@ export default function MessagingView() {
 
             {/* Channel filter */}
             <select
-              value={channelFilter}
-              onChange={(e) => { setChannelFilter(e.target.value as OpsMessageChannel | ''); setPage(1); }}
+              value={query.filters.channel}
+              onChange={(e) => query.setFilter('channel', e.target.value)}
               className="h-9 px-2.5 text-[11px] font-medium bg-secondary/20 border border-border/40 rounded-lg outline-none text-foreground cursor-pointer"
             >
               <option value="">All Channels</option>
@@ -193,15 +192,15 @@ export default function MessagingView() {
 
             {/* Template filter */}
             <select
-              value={templateFilter}
-              onChange={(e) => { setTemplateFilter(e.target.value as OpsMessageTemplate | ''); setPage(1); }}
+              value={query.filters.template}
+              onChange={(e) => query.setFilter('template', e.target.value)}
               className="h-9 px-2.5 text-[11px] font-medium bg-secondary/20 border border-border/40 rounded-lg outline-none text-foreground cursor-pointer max-w-[160px]"
             >
               <option value="">All Templates</option>
               {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
 
-            {(search || orgFilter || statusFilter || channelFilter || templateFilter || deepLinkedOrgId) && (
+            {(query.hasActiveFilters || orgFilter || deepLinkedOrgId) && (
               <button
                 onClick={resetFilters}
                 className="flex items-center gap-1 h-9 px-2.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground rounded-lg hover:bg-secondary/40 transition-colors cursor-pointer"
@@ -368,7 +367,7 @@ export default function MessagingView() {
           )}
         </div>
 
-        <TablePagination
+        <Pagination
           currentPage={page}
           totalItems={pagination.total}
           pageSize={pagination.limit}

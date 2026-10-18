@@ -9,7 +9,7 @@ export async function GET(
 ) {
   try {
     const { orgId } = await context.params;
-    return await organizationsController.getParticipants(orgId);
+    return await organizationsController.getParticipants(req, orgId);
   } catch (err) {
     return handleRouteError(err);
   }

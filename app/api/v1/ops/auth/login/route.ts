@@ -6,7 +6,8 @@ export const runtime = 'nodejs';
 
 export const POST = withApiLogger('auth.login', async (req) => {
   try {
-    return await platformAuthController.login(req);
+    const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip');
+    return await platformAuthController.login(req, ipAddress);
   } catch (err) {
     return handleRouteError(err);
   }

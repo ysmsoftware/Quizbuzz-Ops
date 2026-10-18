@@ -20,7 +20,7 @@ import {
   ShieldAlert,
   Search,
   Filter,
-  RotateCcw,
+  
   CheckCircle2,
   AlertTriangle,
   Building2,
@@ -31,8 +31,8 @@ import {
   ArrowUpRight,
   Link,
   RefreshCw,
-  Clock,
-  Ban,
+  
+  
   Receipt,
 } from 'lucide-react';
 import {
@@ -46,6 +46,16 @@ import {
   Pie,
   Cell,
 } from 'recharts';
+import { formatInr, formatNumber } from '@/lib/format';
+import StatusBadge from '@/components/ui/StatusBadge';
+import Pagination from '@/components/ui/Pagination';
+import { useTableQuery } from '@/lib/hooks/useTableQuery';
+import { statusMeta, statusOptions, TONE_HEX } from '@/lib/constants/status';
+import type { BillingPaymentsListQueryParams } from '@/server/features/billing/billing.types';
+import type { PayoutAccountsListQueryParams, RouteTransfersListQueryParams } from '@/server/features/payouts/payouts.types';
+import { errorMessage } from '@/lib/errors';
+
+const PAGE_SIZE = 20;
 
 interface BillingViewProps {
   initialTab?: 'payments' | 'payouts' | 'transfers' | 'investigate';
@@ -63,39 +73,32 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
   const { data: summary, isLoading: isLoadingSummary } = useBillingSummary();
 
   // --- 1. Payments Ledger State & Query ---
-  const [paymentsPage, setPaymentsPage] = useState(1);
-  const [paymentsStatus, setPaymentsStatus] = useState<string>('all');
-  const [paymentsSearch, setPaymentsSearch] = useState('');
+  const payments = useTableQuery({ status: 'all', search: '' }, { debounce: ['search'] });
 
   const { data: paymentsData, isLoading: isLoadingPayments } = useBillingPayments({
-    page: paymentsPage,
-    limit: 20,
-    status: paymentsStatus as any,
-    search: paymentsSearch,
+    page: payments.page,
+    limit: PAGE_SIZE,
+    status: payments.params.status as BillingPaymentsListQueryParams['status'] | undefined,
+    search: payments.params.search,
   });
 
   // --- 2. Payout Accounts Queue State & Query ---
-  const [payoutsPage, setPayoutsPage] = useState(1);
-  const [payoutsStatus, setPayoutsStatus] = useState<string>('all');
-  const [payoutsSearch, setPayoutsSearch] = useState('');
+  const payouts = useTableQuery({ status: 'all', search: '' }, { debounce: ['search'] });
 
   const { data: payoutsData, isLoading: isLoadingPayouts } = usePayoutAccounts({
-    page: payoutsPage,
-    limit: 20,
-    status: payoutsStatus as any,
-    search: payoutsSearch,
+    page: payouts.page,
+    limit: PAGE_SIZE,
+    status: payouts.params.status as PayoutAccountsListQueryParams['status'] | undefined,
+    search: payouts.params.search,
   });
 
   // --- 3. Route Transfers State & Query ---
-  const [transfersPage, setTransfersPage] = useState(1);
-  const [transfersStatus, setTransfersStatus] = useState<string>('all');
-  const [transfersReason, setTransfersReason] = useState('');
+  const transfers = useTableQuery({ status: 'all' });
 
   const { data: transfersData, isLoading: isLoadingTransfers } = useRouteTransfers({
-    page: transfersPage,
-    limit: 20,
-    status: transfersStatus as any,
-    reason: transfersReason || undefined,
+    page: transfers.page,
+    limit: PAGE_SIZE,
+    status: transfers.params.status as RouteTransfersListQueryParams['status'] | undefined,
   });
 
   // --- 4. Platform Transfer Summary & Queue Health Queries ---
@@ -137,8 +140,8 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
       setSelectedOrgId(null);
       setLinkedAccountId('');
       setAttachError('');
-    } catch (err: any) {
-      setAttachError(err.message || 'Failed to attach linked account');
+    } catch (err) {
+      setAttachError(errorMessage(err) || 'Failed to attach linked account');
     }
   };
 
@@ -161,19 +164,13 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
       setSelectedOrgId(null);
       setStatusReason('');
       setStatusError('');
-    } catch (err: any) {
-      setStatusError(err.message || 'Failed to update status');
+    } catch (err) {
+      setStatusError(errorMessage(err) || 'Failed to update status');
     }
   };
 
   // Donut Chart Colors & Data
-  const STATUS_COLORS: Record<string, string> = {
-    SUCCESS: '#10b981', // Emerald
-    PAID: '#10b981',
-    REFUNDED: '#3b82f6', // Blue
-    FAILED: '#ef4444', // Red
-    PENDING: '#f59e0b', // Amber
-  };
+  const statusColor = (status: string) => TONE_HEX[statusMeta('payment', status).tone];
 
   const statusPieData = summary?.paymentsByStatus
     ? Object.entries(summary.paymentsByStatus).map(([status, value]) => ({
@@ -224,10 +221,10 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
             </span>
             <div className="text-2xl font-bold font-mono tracking-tight text-foreground flex items-baseline">
               <IndianRupee className="h-5 w-5 mr-0.5" />
-              {isLoadingSummary ? '...' : (summary?.totalRevenueAllTime || 0).toLocaleString('en-IN')}
+              {isLoadingSummary ? '...' : formatNumber(summary?.totalRevenueAllTime || 0)}
             </div>
             <span className="text-[10px] text-muted-foreground block">
-              ₹{(summary?.totalRevenueThisMonth || 0).toLocaleString('en-IN')} collected this month
+              {formatInr((summary?.totalRevenueThisMonth || 0))} collected this month
             </span>
           </div>
           <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-xl">
@@ -243,7 +240,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
             </span>
             <div className="text-2xl font-bold font-mono tracking-tight text-foreground flex items-baseline">
               <IndianRupee className="h-5 w-5 mr-0.5" />
-              {isLoadingSummary ? '...' : (summary?.mrr || 0).toLocaleString('en-IN')}
+              {isLoadingSummary ? '...' : formatNumber(summary?.mrr || 0)}
             </div>
             <span className="text-[10px] text-muted-foreground block">
               {summary?.activeSubscriptionCount || 0} active tenant subscriptions
@@ -348,7 +345,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                   </span>
                 </h4>
                 <p className="text-[11px] text-muted-foreground">
-                  Real-time Redis state for main app's route-transfer-queue
+                  Real-time Redis state for main app&apos;s route-transfer-queue
                 </p>
               </div>
             </div>
@@ -476,7 +473,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                           dataKey="value"
                         >
                           {statusPieData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || '#94a3b8'} />
+                            <Cell key={`cell-${index}`} fill={statusColor(entry.name)} />
                           ))}
                         </Pie>
                         <Tooltip
@@ -497,7 +494,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                     <div key={entry.name} className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                       <span
                         className="h-2.5 w-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: STATUS_COLORS[entry.name] || '#94a3b8' }}
+                        style={{ backgroundColor: statusColor(entry.name) }}
                       />
                       <span className="truncate">{entry.name}</span>
                       <span className="font-mono ml-auto font-bold text-foreground/80">{entry.value}</span>
@@ -521,11 +518,8 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                   <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                   <input
                     type="text"
-                    value={paymentsSearch}
-                    onChange={(e) => {
-                      setPaymentsSearch(e.target.value);
-                      setPaymentsPage(1);
-                    }}
+                    value={payments.filters.search}
+                    onChange={(e) => payments.setFilter('search', e.target.value)}
                     placeholder="Search payee / org / contest..."
                     className="pl-9 h-9 w-48 sm:w-60 text-xs rounded-lg border border-border/40 bg-secondary/20 focus:outline-none focus:border-primary"
                   />
@@ -534,18 +528,13 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                 <div className="flex items-center gap-1 bg-secondary/10 border border-border/40 rounded-lg px-2 h-9">
                   <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
                   <select
-                    value={paymentsStatus}
-                    onChange={(e) => {
-                      setPaymentsStatus(e.target.value);
-                      setPaymentsPage(1);
-                    }}
+                    value={payments.filters.status}
+                    onChange={(e) => payments.setFilter('status', e.target.value)}
                     className="text-[11px] font-sans bg-transparent focus:outline-none text-muted-foreground"
                   >
-                    <option value="all">All Status</option>
-                    <option value="SUCCESS">SUCCESS</option>
-                    <option value="FAILED">FAILED</option>
-                    <option value="PENDING">PENDING</option>
-                    <option value="REFUNDED">REFUNDED</option>
+                    {statusOptions('payment', 'All status').map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -597,26 +586,14 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                             <span className="text-foreground/80 font-medium">{p.payeeName}</span>
                           </div>
                         </td>
-                        <td className="py-3 px-5 font-mono font-bold text-foreground">₹{p.amount}</td>
+                        <td className="py-3 px-5 font-mono font-bold text-foreground">{formatInr(p.amount)}</td>
                         <td className="py-3 px-5">
                           <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-500/15 text-indigo-500">
                             {p.provider}
                           </span>
                         </td>
                         <td className="py-3 px-5">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              p.status === 'SUCCESS' || p.status === 'PAID'
-                                ? 'bg-emerald-500/15 text-emerald-600'
-                                : p.status === 'REFUNDED'
-                                ? 'bg-blue-500/15 text-blue-600'
-                                : p.status === 'FAILED'
-                                ? 'bg-rose-500/15 text-rose-600'
-                                : 'bg-amber-500/15 text-amber-600'
-                            }`}
-                          >
-                            <span>{p.status}</span>
-                          </span>
+                          <StatusBadge kind="payment" value={p.status} />
                         </td>
                         <td className="py-3 px-5 text-right font-mono text-muted-foreground text-[11px]">
                           {p.paidAt ? format(new Date(p.paidAt), 'dd MMM yyyy, hh:mm a') : format(new Date(p.createdAt), 'dd MMM yyyy')}
@@ -627,6 +604,13 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                 </table>
               )}
             </div>
+            <Pagination
+              currentPage={payments.page}
+              totalItems={paymentsData?.total ?? 0}
+              pageSize={PAGE_SIZE}
+              itemLabel="payments"
+              onPageChange={payments.setPage}
+            />
           </div>
         </div>
       )}
@@ -647,11 +631,8 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                 <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <input
                   type="text"
-                  value={payoutsSearch}
-                  onChange={(e) => {
-                    setPayoutsSearch(e.target.value);
-                    setPayoutsPage(1);
-                  }}
+                  value={payouts.filters.search}
+                  onChange={(e) => payouts.setFilter('search', e.target.value)}
                   placeholder="Search org / account..."
                   className="pl-9 h-9 w-48 sm:w-56 text-xs rounded-lg border border-border/40 bg-secondary/20 focus:outline-none focus:border-primary"
                 />
@@ -660,11 +641,8 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
               <div className="flex items-center gap-1 bg-secondary/10 border border-border/40 rounded-lg px-2 h-9">
                 <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
                 <select
-                  value={payoutsStatus}
-                  onChange={(e) => {
-                    setPayoutsStatus(e.target.value);
-                    setPayoutsPage(1);
-                  }}
+                  value={payouts.filters.status}
+                  onChange={(e) => payouts.setFilter('status', e.target.value)}
                   className="text-[11px] font-sans bg-transparent focus:outline-none text-muted-foreground"
                 >
                   <option value="all">All Payout Statuses</option>
@@ -714,19 +692,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                       </td>
 
                       <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            pa.status === 'ACTIVE'
-                              ? 'bg-emerald-500/15 text-emerald-600'
-                              : pa.status === 'PENDING'
-                              ? 'bg-amber-500/15 text-amber-600'
-                              : pa.status === 'VERIFICATION_FAILED'
-                              ? 'bg-rose-500/15 text-rose-600'
-                              : 'bg-slate-500/15 text-slate-500'
-                          }`}
-                        >
-                          {pa.status}
-                        </span>
+                        <StatusBadge kind="payout" value={pa.status} />
                       </td>
 
                       <td className="py-3 px-4 font-mono">
@@ -782,7 +748,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                               onClick={() => {
                                 setSelectedOrgId(pa.organizationId);
                                 setSelectedOrgName(pa.organizationName);
-                                setNewStatus(pa.status as any);
+                                setNewStatus(pa.status as typeof newStatus);
                                 setStatusReason('');
                                 setStatusError('');
                                 setIsStatusModalOpen(true);
@@ -804,6 +770,13 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
               </table>
             )}
           </div>
+          <Pagination
+            currentPage={payouts.page}
+            totalItems={payoutsData?.total ?? 0}
+            pageSize={PAGE_SIZE}
+            itemLabel="payout accounts"
+            onPageChange={payouts.setPage}
+          />
         </div>
       )}
 
@@ -820,7 +793,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                 </span>
                 <div className="text-xl font-bold font-mono tracking-tight text-foreground flex items-baseline">
                   <IndianRupee className="h-4 w-4 mr-0.5" />
-                  {isLoadingTransferSummary ? '...' : (transferSummary?.totalGrossAmount || 0).toLocaleString('en-IN')}
+                  {isLoadingTransferSummary ? '...' : formatNumber(transferSummary?.totalGrossAmount || 0)}
                 </div>
                 <span className="text-[10px] text-muted-foreground block">
                   {transferSummary?.processedCount || 0} processed transfers
@@ -839,7 +812,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                 </span>
                 <div className="text-xl font-bold font-mono tracking-tight text-indigo-500 flex items-baseline">
                   <IndianRupee className="h-4 w-4 mr-0.5" />
-                  {isLoadingTransferSummary ? '...' : (transferSummary?.totalCommissionAmount || 0).toLocaleString('en-IN')}
+                  {isLoadingTransferSummary ? '...' : formatNumber(transferSummary?.totalCommissionAmount || 0)}
                 </div>
                 <span className="text-[10px] text-muted-foreground block">
                   Platform cut collected
@@ -860,10 +833,10 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                   <IndianRupee className="h-4 w-4 mr-0.5" />
                   {isLoadingTransferSummary
                     ? '...'
-                    : ((transferSummary?.totalGatewayFeeAmount || 0) + (transferSummary?.totalGstAmount || 0)).toLocaleString('en-IN')}
+                    : formatNumber((transferSummary?.totalGatewayFeeAmount || 0) + (transferSummary?.totalGstAmount || 0))}
                 </div>
                 <span className="text-[10px] text-muted-foreground block">
-                  Fee: ₹{(transferSummary?.totalGatewayFeeAmount || 0).toLocaleString('en-IN')} | GST: ₹{(transferSummary?.totalGstAmount || 0).toLocaleString('en-IN')}
+                  Fee: {formatInr(transferSummary?.totalGatewayFeeAmount)} | GST: {formatInr(transferSummary?.totalGstAmount)}
                 </span>
               </div>
               <div className="p-2.5 bg-amber-500/10 text-amber-600 rounded-lg">
@@ -879,7 +852,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                 </span>
                 <div className="text-xl font-bold font-mono tracking-tight text-emerald-600 flex items-baseline">
                   <IndianRupee className="h-4 w-4 mr-0.5" />
-                  {isLoadingTransferSummary ? '...' : (transferSummary?.totalTransferredAmount || 0).toLocaleString('en-IN')}
+                  {isLoadingTransferSummary ? '...' : formatNumber(transferSummary?.totalTransferredAmount || 0)}
                 </div>
                 <span className="text-[10px] text-muted-foreground block">
                   Settled to Razorpay linked accounts
@@ -902,18 +875,13 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
 
               <div className="flex items-center gap-2">
                 <select
-                  value={transfersStatus}
-                  onChange={(e) => {
-                    setTransfersStatus(e.target.value);
-                    setTransfersPage(1);
-                  }}
+                  value={transfers.filters.status}
+                  onChange={(e) => transfers.setFilter('status', e.target.value)}
                   className="text-xs font-sans bg-secondary/20 border border-border/40 rounded-lg px-2.5 py-1.5 focus:outline-none text-muted-foreground"
                 >
-                  <option value="all">All Statuses</option>
-                  <option value="PROCESSED">PROCESSED</option>
-                  <option value="PENDING">PENDING</option>
-                  <option value="FAILED">FAILED</option>
-                  <option value="REVERSED">REVERSED</option>
+                  {statusOptions('transfer', 'All statuses').map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -951,23 +919,13 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                         <td className="py-3 px-4 text-muted-foreground font-medium max-w-[140px] truncate">
                           {t.contestTitle}
                         </td>
-                        <td className="py-3 px-4 font-mono font-bold text-foreground">₹{t.grossAmount}</td>
-                        <td className="py-3 px-4 font-mono text-muted-foreground">₹{t.platformFeeAmount}</td>
-                        <td className="py-3 px-4 font-mono text-muted-foreground">₹{t.gatewayFeeAmount}</td>
-                        <td className="py-3 px-4 font-mono text-muted-foreground">₹{t.gstAmount}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-emerald-600">₹{t.transferAmount}</td>
+                        <td className="py-3 px-4 font-mono font-bold text-foreground">{formatInr(t.grossAmount)}</td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">{formatInr(t.platformFeeAmount)}</td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">{formatInr(t.gatewayFeeAmount)}</td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">{formatInr(t.gstAmount)}</td>
+                        <td className="py-3 px-4 font-mono font-bold text-emerald-600">{formatInr(t.transferAmount)}</td>
                       <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
-                            t.status === 'PROCESSED'
-                              ? 'bg-emerald-500/15 text-emerald-600'
-                              : t.status === 'PENDING'
-                              ? 'bg-amber-500/15 text-amber-600'
-                              : 'bg-rose-500/15 text-rose-600'
-                          }`}
-                        >
-                          {t.status}
-                        </span>
+                        <StatusBadge kind="transfer" value={t.status} />
                         {t.failureReason && (
                           <span className="block text-[9px] text-rose-500 font-mono mt-0.5 truncate max-w-[130px]">
                             {t.failureReason}
@@ -983,6 +941,13 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
               </table>
             )}
           </div>
+          <Pagination
+            currentPage={transfers.page}
+            totalItems={transfersData?.total ?? 0}
+            pageSize={PAGE_SIZE}
+            itemLabel="route transfers"
+            onPageChange={transfers.setPage}
+          />
         </div>
       </div>
       )}
@@ -1057,7 +1022,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
                 <label className="text-xs font-semibold text-foreground">Target Status</label>
                 <select
                   value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value as any)}
+                  onChange={(e) => setNewStatus(e.target.value as typeof newStatus)}
                   className="w-full text-xs font-sans p-2.5 rounded-lg border border-border/40 bg-secondary/10 focus:outline-none focus:border-primary"
                 >
                   <option value="ACTIVE">ACTIVE — Normal Payout Operation</option>

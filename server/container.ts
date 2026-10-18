@@ -71,6 +71,10 @@ import { BookingsRepository } from './features/bookings/bookings.repository';
 import { BookingsService } from './features/bookings/bookings.service';
 import { BookingsController } from './features/bookings/bookings.controller';
 
+import { InstitutionRepository } from './features/institution/institution.repository';
+import { InstitutionService } from './features/institution/institution.service';
+import { InstitutionController } from './features/institution/institution.controller';
+
 import { OrgOwnerNotifier } from './notifications/org-owner-notifier';
 
 // ─── Repositories ──────────────────────────────────────────
@@ -86,6 +90,7 @@ export const billingRepository = new BillingRepository();
 export const bookingsRepository = new BookingsRepository();
 export const entitlementsRepository = new EntitlementsRepository();
 export const featureFlagsRepository = new FeatureFlagsRepository();
+export const institutionRepository = new InstitutionRepository();
 export const messagingRepository = new MessagingRepository();
 export const organizationsRepository = new OrganizationsRepository();
 export const overviewRepository = new OverviewRepository();
@@ -106,10 +111,13 @@ export const jobCheckpointsService = new JobCheckpointsService(jobCheckpointsRep
 export const billingService = new BillingService(billingRepository);
 export const bookingsService = new BookingsService(bookingsRepository);
 export const entitlementsService = new EntitlementsService(entitlementsRepository);
-export const featureFlagsService = new FeatureFlagsService(featureFlagsRepository);
+export const featureFlagsService = new FeatureFlagsService(featureFlagsRepository, (ids) =>
+  organizationsRepository.getOrganizationNames(ids)
+);
+export const institutionService = new InstitutionService(institutionRepository);
 export const messagingService = new MessagingService(messagingRepository);
 export const organizationsService = new OrganizationsService(organizationsRepository);
-export const overviewService = new OverviewService(overviewRepository);
+export const overviewService = new OverviewService(overviewRepository, () => institutionRepository.getPlatformStats());
 export const payoutsService = new PayoutsService(payoutsRepository);
 export const orgOwnerNotifier = new OrgOwnerNotifier(organizationsRepository, messagingService);
 export const subscriptionsService = new SubscriptionsService(subscriptionsRepository, entitlementsService);
@@ -128,8 +136,13 @@ export const jobCheckpointsController = new JobCheckpointsController(jobCheckpoi
 export const featureFlagsController = new FeatureFlagsController(featureFlagsService);
 export const billingController = new BillingController(billingService);
 export const bookingsController = new BookingsController(bookingsService);
+export const institutionController = new InstitutionController(institutionService);
 export const messagingController = new MessagingController(messagingService);
-export const organizationsController = new OrganizationsController(organizationsService);
+export const organizationsController = new OrganizationsController(
+  organizationsService,
+  subscriptionsService,
+  async (slug) => (await plansRepository.getPlanBySlug(slug))?.id ?? null
+);
 export const overviewController = new OverviewController(overviewService);
 export const payoutsController = new PayoutsController(payoutsService);
 export const plansController = new PlansController(plansService);

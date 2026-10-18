@@ -3,10 +3,15 @@ import { MainAppAuditLogListQuery, MainAppAuditLogListResult } from './audit-log
 
 export interface IMainAppAuditLogService {
   listAuditLogs(params: MainAppAuditLogListQuery): Promise<MainAppAuditLogListResult>;
+  listActions(): Promise<string[]>;
 }
 
 export class MainAppAuditLogService implements IMainAppAuditLogService {
   constructor(private repo: IMainAppAuditLogRepository = new MainAppAuditLogRepository()) {}
+
+  listActions() {
+    return this.repo.listActions();
+  }
 
   async listAuditLogs(params: MainAppAuditLogListQuery): Promise<MainAppAuditLogListResult> {
     const { rows, total } = await this.repo.listAuditLogs(params);

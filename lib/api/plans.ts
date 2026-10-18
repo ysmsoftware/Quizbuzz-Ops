@@ -2,6 +2,7 @@
 
 import { SubscriptionPlan } from '@/lib/types';
 import { apiRequest } from '@/lib/api/utils';
+import type { SubscriptionPlanDetail } from '@/server/features/plans/plans.types';
 
 function toStartingPrice(monthlyPrice: number | null, annualPrice: number | null): number {
   if (monthlyPrice != null) return monthlyPrice;
@@ -9,7 +10,7 @@ function toStartingPrice(monthlyPrice: number | null, annualPrice: number | null
   return 0;
 }
 
-function mapPlan(p: any): SubscriptionPlan {
+function mapPlan(p: SubscriptionPlanDetail): SubscriptionPlan {
   const monthlyPrice = p.monthlyPrice != null ? Number(p.monthlyPrice) : null;
   const annualPrice = p.annualPrice != null ? Number(p.annualPrice) : null;
 
@@ -45,15 +46,15 @@ function mapPlan(p: any): SubscriptionPlan {
 }
 
 export async function getPlans(includeInactive = true): Promise<SubscriptionPlan[]> {
-  const result = await apiRequest<any[]>(`/api/v1/ops/plans?includeInactive=${includeInactive}`);
+  const result = await apiRequest<SubscriptionPlanDetail[]>(`/api/v1/ops/plans?includeInactive=${includeInactive}`);
   return result.map(mapPlan);
 }
 
 export async function getPlanById(planId: string): Promise<SubscriptionPlan | null> {
   try {
-    const p = await apiRequest<any>(`/api/v1/ops/plans/${planId}`);
+    const p = await apiRequest<SubscriptionPlanDetail>(`/api/v1/ops/plans/${planId}`);
     return mapPlan(p);
-  } catch (err) {
+  } catch {
     return null;
   }
 }
@@ -61,7 +62,7 @@ export async function getPlanById(planId: string): Promise<SubscriptionPlan | nu
 export async function createSubscriptionPlan(
   plan: Omit<SubscriptionPlan, 'id' | 'createdAt' | 'updatedAt' | 'priceINR'>
 ): Promise<SubscriptionPlan> {
-  const result = await apiRequest<any>('/api/v1/ops/plans', {
+  const result = await apiRequest<SubscriptionPlanDetail>('/api/v1/ops/plans', {
     method: 'POST',
     body: JSON.stringify({
       name: plan.name,
@@ -88,7 +89,7 @@ export async function createSubscriptionPlan(
 }
 
 export async function updateSubscriptionPlan(planId: string, updates: Partial<SubscriptionPlan>): Promise<SubscriptionPlan> {
-  const payload: any = {};
+  const payload: Record<string, unknown> = {};
   if (updates.name !== undefined) payload.name = updates.name;
   if (updates.description !== undefined) payload.description = updates.description;
   if (updates.allowsMonthly !== undefined) payload.allowsMonthly = updates.allowsMonthly;
@@ -109,7 +110,7 @@ export async function updateSubscriptionPlan(planId: string, updates: Partial<Su
     if (updates.features.customDomain !== undefined) payload.featureCustomDomain = updates.features.customDomain;
   }
 
-  const result = await apiRequest<any>(`/api/v1/ops/plans/${planId}`, {
+  const result = await apiRequest<SubscriptionPlanDetail>(`/api/v1/ops/plans/${planId}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });

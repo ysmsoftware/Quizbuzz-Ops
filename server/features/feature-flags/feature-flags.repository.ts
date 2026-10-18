@@ -22,6 +22,21 @@ export interface IFeatureFlagsRepository {
   syncFlagToMainApp(key: string, isEnabled: boolean): Promise<void>;
   syncOrgOverrideToMainApp(key: string, organizationId: string, isEnabled: boolean, expiresAt?: Date | null): Promise<void>;
   syncOrgOverrideRemovalToMainApp(key: string, organizationId: string): Promise<void>;
+  /** key → global value, as stored in the main app's DB (what its SDK reads). */
+  getMainGlobalFlags(): Promise<Map<string, boolean>>;
+  getMainOverrides(key: string): Promise<MainOverrideRow[]>;
+  /** This org's live (not removed) overrides across all flags, in Ops. */
+  listActiveOverridesForOrg(organizationId: string): Promise<FeatureFlagOrgOverride[]>;
+  /** The same org's overrides as the main app holds them. */
+  getMainOverridesForOrg(organizationId: string): Promise<Array<MainOverrideRow & { key: string }>>;
+  /** flagKey → organizations with an active, enabled, non-expired override. */
+  countGrantedByFlag(): Promise<Map<string, number>>;
+}
+
+export interface MainOverrideRow {
+  organizationId: string;
+  isEnabled: boolean;
+  expiresAt: Date | null;
 }
 
 export class FeatureFlagsRepository implements IFeatureFlagsRepository {
@@ -101,6 +116,39 @@ export class FeatureFlagsRepository implements IFeatureFlagsRepository {
     `,
       [key, organizationId, isEnabled, expiresAt ?? null]
     );
+  }
+
+  async getMainGlobalFlags() {
+    const rows = await queryMainDb<{ key: string; isEnabled: boolean }>(`SELECT key, "isEnabled" FROM platform_feature_flags`);
+    return new Map(rows.map((r) => [r.key, r.isEnabled]));
+  }
+
+  async getMainOverrides(key: string) {
+    return queryMainDb<MainOverrideRow>(
+      `SELECT "organizationId", "isEnabled", "expiresAt" FROM organization_feature_flag_overrides WHERE key = $1`,
+      [key]
+    );
+  }
+
+  async listActiveOverridesForOrg(organizationId: string) {
+    return prisma.featureFlagOrgOverride.findMany({ where: { organizationId, removedAt: null } });
+  }
+
+  async getMainOverridesForOrg(organizationId: string) {
+    return queryMainDb<MainOverrideRow & { key: string }>(
+      `SELECT key, "organizationId", "isEnabled", "expiresAt" FROM organization_feature_flag_overrides WHERE "organizationId" = $1`,
+      [organizationId]
+    );
+  }
+
+  async countGrantedByFlag() {
+    const now = new Date();
+    const rows = await prisma.featureFlagOrgOverride.groupBy({
+      by: ['flagKey'],
+      where: { removedAt: null, isEnabled: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((r) => [r.flagKey, r._count._all]));
   }
 
   async syncOrgOverrideRemovalToMainApp(key: string, organizationId: string) {

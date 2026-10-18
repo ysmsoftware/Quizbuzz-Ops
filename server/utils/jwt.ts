@@ -67,3 +67,12 @@ export function verifyJwt(token: string, secret: string): any {
 
   return payload;
 }
+
+/** Claims in the checkout handoff token the main app signs (see onboarding.service.ts there). */
+export interface BillingHandoffPayload {
+  organizationId?: string;
+  adminId?: string;
+  adminEmail?: string;
+  adminName?: string;
+  planSlug?: string;
+}

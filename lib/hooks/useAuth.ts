@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getCurrentSession, login, logout, getCurrentSessionSync, verifyOtpCode } from '@/lib/api/auth';
-import { AdminRole, AdminSession } from '@/lib/types';
+import { AdminRole  } from '@/lib/types';
 
 export function useCurrentAdmin() {
   const queryClient = useQueryClient();
@@ -52,10 +52,11 @@ export function useCurrentAdmin() {
       case 'SUPER_ADMIN':
         return true; // Super Admins can do anything
       case 'SUPPORT':
-        // Support can view, and initiate impersonation, but cannot do billing refunds, plan price updates, or manage feature flags/colleges
-        return !['BILLING_REFUND', 'PLAN_UPDATE_PRICING', 'ORG_DELETE', 'FEATURE_FLAG_MANAGE', 'COLLEGE_MANAGE', 'APP_SETTINGS_MANAGE'].includes(action);
+        // Support can view, but cannot do billing refunds, plan price updates, manage feature flags/colleges, or change an
+        // organization's lifecycle (create / edit / suspend / delete — the server only allows SUPER_ADMIN for those).
+        return !['BILLING_REFUND', 'PLAN_UPDATE_PRICING', 'ORG_MANAGE', 'ORG_SUSPEND', 'ORG_DELETE', 'FEATURE_FLAG_MANAGE', 'COLLEGE_MANAGE', 'APP_SETTINGS_MANAGE'].includes(action);
       case 'BILLING_ADMIN':
-        // Billing Admins can manage plans, issue refunds, view, but cannot suspend/activate orgs or view secure system audit logs
+        // Billing Admins can manage plans, issue refunds, view, but cannot manage organizations or view secure system audit logs
         return ['BILLING_REFUND', 'PLAN_UPDATE_PRICING', 'PLAN_UPDATE', 'BILLING_VIEW'].includes(action);
       default:
         return false;

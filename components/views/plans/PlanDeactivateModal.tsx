@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { EyeOff, AlertTriangle } from 'lucide-react';
+import { EyeOff  } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SubscriptionPlan } from '@/lib/types';
 
@@ -43,7 +43,7 @@ export default function PlanDeactivateModal({
 
           <div className="p-6 space-y-4 text-xs">
             <p className="text-muted-foreground leading-relaxed">
-              Are you sure you want to deactivate <strong className="text-foreground">"{plan.name}"</strong>?
+              Are you sure you want to deactivate <strong className="text-foreground">&quot;{plan.name}&quot;</strong>?
             </p>
 
             <div className="p-3 bg-muted/40 rounded-md border border-border/40 text-muted-foreground">

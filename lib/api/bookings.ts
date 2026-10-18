@@ -1,6 +1,6 @@
 'use client';
 
-import { ContestBooking, PricingConfig } from '@/lib/types';
+import { AdminRole, ContestBooking, PricingConfig } from '@/lib/types';
 import { apiRequest } from '@/lib/api/utils';
 export { calculateBookingEstimate } from '@/lib/pricing/estimate';
 
@@ -9,9 +9,7 @@ export async function getPricingConfig(): Promise<PricingConfig> {
 }
 
 export async function updatePricingConfig(
-  updates: Partial<PricingConfig>,
-  _adminName?: string,
-  _adminRole?: any
+  updates: Partial<PricingConfig>
 ): Promise<PricingConfig> {
   return apiRequest<PricingConfig>('/api/v1/ops/bookings/pricing-config', {
     method: 'PUT',
@@ -60,7 +58,7 @@ export async function updateBookingStatus(
     paymentReference?: string;
     cancellationReason?: string;
     adminName?: string;
-    adminRole?: any;
+    adminRole?: AdminRole;
   }
 ): Promise<ContestBooking> {
   const payload = {

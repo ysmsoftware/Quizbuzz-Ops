@@ -12,6 +12,7 @@ export interface AuditLogListQuery {
   targetType?: AuditTargetType;
   targetId?: string;
   requestId?: string;
+  organizationId?: string;
   actorId?: string;
   // Free-text, case-insensitive "contains" filters — actorLabel/targetLabel
   // are denormalized display strings on PlatformAuditLog (e.g. "Jane Doe

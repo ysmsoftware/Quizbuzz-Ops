@@ -1,11 +1,13 @@
 'use client';
 
-import { getDatabase } from '@/lib/data/db';
+import { INITIAL_INFRA_STATUS, INITIAL_SCALING_CONFIG } from '@/lib/data/mock-infra';
 import {
   InfraStatus,
   ScalingConfig,
   FeatureFlag,
   FeatureFlagOrgOverride,
+  FlagWriteOutcome,
+  FlagSyncReport,
   AmbassadorType,
   AmbassadorApplicationFieldDef,
   AmbassadorTypeOrgAccess,
@@ -19,17 +21,19 @@ import { apiRequest } from '@/lib/api/utils';
 
 export async function getInfraStatus(): Promise<InfraStatus> {
   await simulateLatency(100, 200);
-  const db = getDatabase();
-  return db.infraStatus;
+  return INITIAL_INFRA_STATUS;
 }
 
 export async function getScalingConfig(): Promise<ScalingConfig> {
   await simulateLatency(100, 200);
-  const db = getDatabase();
-  return db.scalingConfig;
+  return INITIAL_SCALING_CONFIG;
 }
 
-function mapFlag(f: any): FeatureFlag {
+/** GET /ops/feature-flags row: the FeatureFlag fields the server may omit, and `updatedByName` for `updatedByAdminName`. */
+type RawFlag = Omit<FeatureFlag, 'scope' | 'updatedByAdminName' | 'requires' | 'dependents' | 'grantedOrgCount' | 'mirror'> &
+  Partial<Pick<FeatureFlag, 'requires' | 'dependents' | 'grantedOrgCount' | 'mirror'>> & { updatedByName?: string };
+
+function mapFlag(f: RawFlag): FeatureFlag {
   return {
     id: f.id,
     key: f.key,
@@ -39,22 +43,27 @@ function mapFlag(f: any): FeatureFlag {
     scope: 'global',
     severity: f.severity,
     supportsOrgOverride: f.supportsOrgOverride,
+    accessModel: f.accessModel,
+    requires: f.requires ?? [],
+    dependents: f.dependents ?? [],
+    grantedOrgCount: f.grantedOrgCount ?? 0,
+    mirror: f.mirror ?? { state: 'UNKNOWN', mainValue: null },
     updatedAt: f.updatedAt,
-    updatedByAdminName: f.updatedByName,
+    updatedByAdminName: f.updatedByName ?? '',
   };
 }
 
 export async function getFeatureFlags(): Promise<FeatureFlag[]> {
-  const raw = await apiRequest<any[]>('/api/v1/ops/feature-flags');
+  const raw = await apiRequest<RawFlag[]>('/api/v1/ops/feature-flags');
   return raw.map(mapFlag);
 }
 
-export async function toggleFeatureFlag(key: string, isEnabled: boolean): Promise<FeatureFlag> {
-  const raw = await apiRequest<any>(`/api/v1/ops/feature-flags/${key}`, {
+export async function toggleFeatureFlag(key: string, isEnabled: boolean): Promise<FlagWriteOutcome & { flag: FeatureFlag }> {
+  const raw = await apiRequest<{ flag: RawFlag; mirror: FlagWriteOutcome['mirror']; warnings?: string[] }>(`/api/v1/ops/feature-flags/${key}`, {
     method: 'PATCH',
     body: JSON.stringify({ isEnabled }),
   });
-  return mapFlag(raw);
+  return { flag: mapFlag(raw.flag), mirror: raw.mirror, warnings: raw.warnings ?? [] };
 }
 
 export async function getFlagOrgOverrides(key: string): Promise<FeatureFlagOrgOverride[]> {
@@ -65,18 +74,32 @@ export async function setFlagOrgOverride(
   key: string,
   orgId: string,
   isEnabled: boolean,
-  reason: string
-): Promise<FeatureFlagOrgOverride> {
-  return apiRequest<FeatureFlagOrgOverride>(`/api/v1/ops/feature-flags/${key}/organizations/${orgId}`, {
+  reason: string,
+  expiresAt?: string
+): Promise<FlagWriteOutcome & { override: FeatureFlagOrgOverride }> {
+  return apiRequest(`/api/v1/ops/feature-flags/${key}/organizations/${orgId}`, {
     method: 'PUT',
-    body: JSON.stringify({ isEnabled, reason }),
+    body: JSON.stringify({ isEnabled, reason, expiresAt }),
   });
 }
 
-export async function removeFlagOrgOverride(key: string, orgId: string): Promise<void> {
-  await apiRequest<any>(`/api/v1/ops/feature-flags/${key}/organizations/${orgId}`, {
+export async function removeFlagOrgOverride(key: string, orgId: string): Promise<{ mirror: { ok: boolean; error?: string } }> {
+  return apiRequest(`/api/v1/ops/feature-flags/${key}/organizations/${orgId}`, {
     method: 'DELETE',
     body: JSON.stringify({}),
+  });
+}
+
+/** Ops vs the main app's copy of one flag (read-only). */
+export async function getFlagSync(key: string): Promise<FlagSyncReport> {
+  return apiRequest<FlagSyncReport>(`/api/v1/ops/feature-flags/${key}/sync`);
+}
+
+/** Make the main app match Ops. `extras` = what to do with grants only the main app has. */
+export async function repairFlagSync(key: string, extras: 'keep' | 'adopt' | 'remove' = 'keep'): Promise<FlagSyncReport> {
+  return apiRequest<FlagSyncReport>(`/api/v1/ops/feature-flags/${key}/sync`, {
+    method: 'POST',
+    body: JSON.stringify({ extras }),
   });
 }
 

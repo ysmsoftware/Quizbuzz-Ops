@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getMessages,
   getMessageTemplates,
@@ -10,7 +10,6 @@ import {
   GetMessagesParams,
   SendMessageParams,
 } from '@/lib/api/messaging';
-import { getOrganizationDetail } from '@/lib/api/organizations';
 
 /**
  * Backs the centralized Messaging dashboard page. `filters` should be a
@@ -89,31 +88,4 @@ export function useMessages(filters: GetMessagesParams) {
     retryFailed: retryFailedMutation.mutateAsync,
     isRetryingFailed: retryFailedMutation.isPending,
   };
-}
-
-/**
- * The message log only stores organizationId (it lives in the ops DB;
- * organizations live in the main app's DB — there's no cheap server-side
- * join across the two). This resolves display names for whichever org IDs
- * are visible on the current page, one cached lookup per ID, so paging
- * through the same organizations' messages doesn't refetch their names.
- */
-export function useOrganizationNames(organizationIds: string[]) {
-  const uniqueIds = Array.from(new Set(organizationIds)).filter(Boolean);
-
-  const results = useQueries({
-    queries: uniqueIds.map((id) => ({
-      queryKey: ['organizations', 'detail', id],
-      queryFn: () => getOrganizationDetail(id),
-      staleTime: 5 * 60 * 1000,
-    })),
-  });
-
-  const namesById: Record<string, string> = {};
-  uniqueIds.forEach((id, index) => {
-    const org = results[index]?.data;
-    if (org) namesById[id] = org.name;
-  });
-
-  return namesById;
 }

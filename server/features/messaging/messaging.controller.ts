@@ -21,6 +21,7 @@ const TEMPLATE_CATALOG: { id: OpsMessageTemplate; name: string; variables: strin
   { id: 'PAYOUT_ACCOUNT_STATUS_CHANGED', name: 'Payout: Status Changed', variables: ['adminName', 'status', 'reason'] },
   { id: 'ORG_SUSPENDED', name: 'Organization Suspended', variables: ['adminName', 'reason'] },
   { id: 'ORG_REACTIVATED', name: 'Organization Reactivated', variables: ['adminName'] },
+  { id: 'ORG_CREATED', name: 'Organization Created', variables: ['adminName', 'organizationName', 'ownerEmail', 'newAccount', 'loginUrl', 'forgotPasswordUrl'] },
   { id: 'CUSTOM', name: 'Custom Message', variables: ['adminName', 'subject', 'body'] },
 ];
 

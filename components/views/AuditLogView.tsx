@@ -28,11 +28,11 @@ export default function AuditLogView() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground">Security Audit Ledger</h1>
-          <p className="text-xs text-muted-foreground">Immutable, cryptographically signed administrative activity trail</p>
+          <p className="text-xs text-muted-foreground">Append-only record of administrative activity — rows are only ever added, never edited from this app</p>
         </div>
         <div className="flex items-center gap-2 px-3.5 py-1.5 text-xs text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 rounded-lg font-medium shadow-sm">
           <Lock className="h-4 w-4 shrink-0" />
-          <span>Write-Only Ledger Enforced</span>
+          <span>Read-Only View</span>
         </div>
       </div>
 

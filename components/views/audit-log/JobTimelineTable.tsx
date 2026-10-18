@@ -8,8 +8,6 @@ import {
   Timer,
   Search,
   ChevronUp,
-  ChevronLeft,
-  ChevronRight,
   Eye,
   Loader2,
   Link2,
@@ -18,6 +16,8 @@ import {
 } from 'lucide-react';
 import { ScheduledJobSummary } from '@/lib/types';
 import { KNOWN_QUEUES } from '@/lib/constants/queues';
+import StatusBadge from '@/components/ui/StatusBadge';
+import Pagination from '@/components/ui/Pagination';
 
 const PAGE_SIZE = 50;
 
@@ -32,13 +32,6 @@ function formatMs(ms: number | null): string {
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
-const STATUS_STYLE: Record<string, string> = {
-  COMPLETED: 'bg-emerald-500/10 text-emerald-600',
-  FAILED: 'bg-rose-500/10 text-rose-600',
-  ACTIVE: 'bg-blue-500/10 text-blue-600',
-  WAITING: 'bg-amber-500/10 text-amber-600',
-  DELAYED: 'bg-amber-500/10 text-amber-600',
-};
 
 /**
  * The "Job Timeline" tab — deliberately separate from the Security Audit
@@ -71,10 +64,6 @@ export default function JobTimelineTable({ initialRequestId }: { initialRequestI
     queue: debouncedQueue || undefined,
     status: statusFilter !== 'ALL' ? statusFilter : undefined,
   });
-
-  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
-  const rangeStart = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
-  const rangeEnd = Math.min(page * pagination.limit, pagination.total);
 
   const toggleExpand = (bullJobId: string) => {
     setExpandedJobId((current) => (current === bullJobId ? null : bullJobId));
@@ -216,16 +205,14 @@ export default function JobTimelineTable({ initialRequestId }: { initialRequestI
                           <span className="text-[9px] font-mono text-muted-foreground/80 block mt-0.5">{job.name}</span>
                         </td>
                         <td className="py-2.5 px-5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded font-mono text-[10px] font-bold tracking-tight ${STATUS_STYLE[job.status] ?? 'bg-secondary/40 text-muted-foreground'}`}>
-                            {job.status}
-                          </span>
+                          <StatusBadge kind="job" value={job.status} />
                         </td>
                         <td className="py-2.5 px-5 font-mono text-[11px] text-muted-foreground">{formatMs(job.queueWaitMs)}</td>
                         <td className="py-2.5 px-5 font-mono text-[11px] text-muted-foreground">{formatMs(job.processingMs)}</td>
                         <td className="py-2.5 px-5 font-mono text-[11px] font-semibold text-foreground">{formatMs(job.totalMs)}</td>
                         <td className="py-2.5 px-5 text-center">
                           <button
-                            onClick={(e) => { e.stopPropagation(); job.bullJobId && toggleExpand(job.bullJobId); }}
+                            onClick={(e) => { e.stopPropagation(); if (job.bullJobId) toggleExpand(job.bullJobId); }}
                             className="p-1.5 rounded-md hover:bg-card border border-transparent hover:border-border/40 text-muted-foreground hover:text-foreground transition-all shrink-0 cursor-pointer"
                           >
                             {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -249,35 +236,8 @@ export default function JobTimelineTable({ initialRequestId }: { initialRequestI
         )}
       </div>
 
-      {!isLoading && !isError && jobs.length > 0 && (
-        <div className="p-4 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-[11px] text-muted-foreground font-mono">
-            Showing <span className="text-foreground font-semibold">{rangeStart}-{rangeEnd}</span> of{' '}
-            <span className="text-foreground font-semibold">{pagination.total.toLocaleString()}</span> jobs
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1 || isFetching}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              <span>Prev</span>
-            </button>
-            <span className="text-[11px] font-mono text-muted-foreground px-2">
-              Page <span className="text-foreground font-semibold">{page}</span> of{' '}
-              <span className="text-foreground font-semibold">{totalPages}</span>
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || isFetching}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
-            >
-              <span>Next</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
+      {!isLoading && !isError && (
+        <Pagination currentPage={page} totalItems={pagination.total} pageSize={pagination.limit} itemLabel="jobs" onPageChange={setPage} isLoading={isFetching} />
       )}
     </div>
   );
@@ -296,7 +256,7 @@ function JobWaterfall({ jobId }: { jobId: string }) {
   if (stages.length === 0) {
     return (
       <div className="text-[11px] text-muted-foreground font-mono py-4 text-center">
-        No per-stage checkpoints recorded yet for this job — either it hasn't reached an instrumented worker step, or the drain worker hasn't flushed it from Redis yet.
+        No per-stage checkpoints recorded yet for this job — either it hasn&apos;t reached an instrumented worker step, or the drain worker hasn&apos;t flushed it from Redis yet.
       </div>
     );
   }

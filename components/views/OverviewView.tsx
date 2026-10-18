@@ -2,24 +2,18 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 import { usePlatformStats } from '@/lib/hooks/usePlatformStats';
-import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useAuditLogs } from '@/lib/hooks/useAuditLogs';
-import { useToast } from '@/components/ui/Toast';
-import { resetDatabaseToSeed } from '@/lib/data/db';
-import { motion } from 'motion/react';
-import { AuditLogEntry } from '@/lib/types';
+import { describeAuditEntry } from '@/lib/audit-describe';
 import { 
   Building2, 
   Users, 
-  Sparkles, 
   TrendingUp, 
   IndianRupee, 
   ArrowRight,
-  ShieldCheck,
   RotateCcw,
   Trophy,
+  GraduationCap,
   Calendar,
   Clock,
   ExternalLink,
@@ -37,20 +31,14 @@ import {
   Cell
 } from 'recharts';
 import { format } from 'date-fns';
+import { formatInr, formatNumber } from '@/lib/format';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { INSTITUTION_FLAGS } from '@/lib/constants/institution';
 
 export default function OverviewPlaceholder() {
   const { stats, isLoading, isError, refetch } = usePlatformStats();
-  const { admin } = useCurrentAdmin();
   const { logs } = useAuditLogs();
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  const handleResetData = () => {
-    resetDatabaseToSeed();
-    queryClient.invalidateQueries();
-    toast('Demo Data Reset', 'The platform mock database has been restored to default seed values.', 'success');
-  };
 
   // Color mapping for contest status donut
   const CONTEST_STATUS_COLORS: Record<string, string> = {
@@ -156,41 +144,25 @@ export default function OverviewPlaceholder() {
     );
   }
 
+  // "112 submitted · 26 assigned · 15 registered" — registrations are not all attempts.
+  const by = stats.participants.byStatus;
+  const participantBreakdown =
+    [
+      [by.SUBMITTED, 'submitted'],
+      [by.ASSIGNED, 'assigned'],
+      [(by.REGISTERED ?? 0) + (by.CHECKED_IN ?? 0) + (by.IN_WAITING ?? 0) + (by.IN_QUIZ ?? 0), 'registered / in progress'],
+      [by.ABSENT, 'absent'],
+    ]
+      .filter(([n]) => Number(n) > 0)
+      .map(([n, label]) => `${formatNumber(Number(n))} ${label}`)
+      .join(' · ') || 'No participants yet';
+
   // Calculate status percentages for small trends
   const activePercent = stats.organizations.total > 0 
     ? Math.round((stats.organizations.active / stats.organizations.total) * 100) 
     : 0;
 
-  const getLogDetailsString = (log: AuditLogEntry) => {
-    switch (log.action) {
-      case 'org.suspended':
-        return `Suspended organization "${log.targetLabel}" due to: ${log.metadata?.reason || 'No reason provided'}`;
-      case 'org.activated':
-        return `Reactivated organization "${log.targetLabel}"`;
-      case 'org.edited':
-        return `Updated profile details for organization "${log.targetLabel}"`;
-      case 'org.note_added':
-        return `Added operational support note to organization "${log.targetLabel}"`;
-      case 'plan.created':
-        return `Created new subscription plan "${log.targetLabel}"`;
-      case 'plan.updated':
-        return `Updated features or limits for plan "${log.targetLabel}"`;
-      case 'org.plan_changed':
-        return `Changed subscription plan for "${log.targetLabel}" from ${log.metadata?.oldPlanId || 'N/A'} to ${log.metadata?.newPlanId || 'N/A'}`;
-      case 'override.added':
-        return `Added subscription override for "${log.targetLabel}" (${log.metadata?.field}: ${log.metadata?.value})`;
-      case 'override.removed':
-        return `Removed subscription override for "${log.targetLabel}" (${log.metadata?.field})`;
-      case 'payment.refunded':
-        return `Issued refund of ₹${log.metadata?.amount || '0'} for participant ${log.metadata?.participantName || ''} on contest "${log.targetLabel}"`;
-      case 'org.impersonated':
-        return `Initiated impersonation session for organization "${log.targetLabel}"`;
-      case 'org.impersonation_ended':
-        return `Terminated impersonation session for organization "${log.targetLabel}"`;
-      default:
-        return `Executed action "${log.action}" on ${log.targetType} "${log.targetLabel}"`;
-    }
-  };
+  const getLogDetailsString = describeAuditEntry;
 
 
   return (
@@ -233,9 +205,9 @@ export default function OverviewPlaceholder() {
         <div className="rounded-xl border border-border/50 bg-card p-6 shadow-sm flex items-center justify-between hover:shadow-md transition-all">
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Participants</p>
-            <h3 className="text-3xl font-bold font-mono tracking-tight text-foreground">{stats.participants.total.toLocaleString('en-IN')}</h3>
+            <h3 className="text-3xl font-bold font-mono tracking-tight text-foreground">{formatNumber(stats.participants.total)}</h3>
             <p className="text-[10px] text-muted-foreground">
-              Aggregated lifetime contest submissions
+              {participantBreakdown}
             </p>
           </div>
           <div className="p-3 bg-accent/10 rounded-xl text-accent-foreground">
@@ -249,10 +221,10 @@ export default function OverviewPlaceholder() {
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Revenue</p>
             <h3 className="text-3xl font-bold font-mono tracking-tight text-foreground flex items-baseline">
               <IndianRupee className="h-5 w-5 mr-0.5" />
-              {stats.revenue.totalAllTime.toLocaleString('en-IN')}
+              {formatNumber(stats.revenue.totalAllTime)}
             </h3>
             <p className="text-[10px] text-muted-foreground">
-              <span className="text-success font-semibold font-mono">₹{stats.revenue.thisMonth.toLocaleString('en-IN')}</span> this month (MRR + entry)
+              <span className="text-success font-semibold font-mono">{formatInr(stats.revenue.thisMonth)}</span> this month (MRR + entry)
             </p>
           </div>
           <div className="p-3 bg-success/10 rounded-xl text-success">
@@ -260,6 +232,64 @@ export default function OverviewPlaceholder() {
           </div>
         </div>
       </div>
+
+      {/* Institution mode adoption */}
+      {stats.institution && (
+        <div className="rounded-xl border border-border/50 bg-card p-6 shadow-sm space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="font-semibold text-foreground text-sm font-sans flex items-center gap-1.5">
+                <GraduationCap className="h-4 w-4 text-primary" /> Institution Mode Adoption
+              </h3>
+              <p className="text-[11px] text-muted-foreground">Organizations that effectively have each feature (global switch on and an active grant)</p>
+            </div>
+            <button
+              onClick={() => router.push('/dashboard/flags')}
+              className="text-xs font-semibold text-primary hover:text-primary/80 flex items-center gap-0.5 hover:underline"
+            >
+              <span>Manage flags</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              {INSTITUTION_FLAGS.map((f) => {
+                const n = stats.institution!.orgsByFeature[f.key] ?? 0;
+                const pct = stats.organizations.total > 0 ? Math.min(100, Math.round((n / stats.organizations.total) * 100)) : 0;
+                return (
+                  <div key={f.key} className="space-y-1">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="font-medium text-foreground">{f.label}</span>
+                      <span className="font-mono text-muted-foreground">
+                        <b className="text-foreground">{n}</b> of {stats.organizations.total} orgs
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-secondary/60 overflow-hidden">
+                      <div className="h-full rounded-full bg-primary/70" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 content-start">
+              {[
+                ['Active learners', stats.institution.activeLearners, undefined],
+                ['Portal-enabled', stats.institution.portalEnabled, 'can log in'],
+                ['Learner groups', stats.institution.groups, undefined],
+                ['Window contests', stats.institution.windowContests, stats.institution.liveWindowContests > 0 ? `${stats.institution.liveWindowContests} live now` : undefined],
+              ].map(([label, value, sub]) => (
+                <div key={label as string} className="rounded-lg border border-border/30 bg-secondary/10 p-3">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">{label as string}</span>
+                  <span className="text-2xl font-bold font-mono text-foreground block">{formatNumber(value as number)}</span>
+                  {sub && <span className="text-[10px] text-rose-500 font-semibold">{sub as string}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Charts section */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -269,7 +299,7 @@ export default function OverviewPlaceholder() {
           <div className="flex justify-between items-center mb-4">
             <div>
               <h3 className="font-semibold text-foreground text-sm font-sans">Organizations Growth Trend</h3>
-              <p className="text-[11px] text-muted-foreground">Weekly cumulative signups of QuizBuzz customer tenants over the last 12 weeks</p>
+              <p className="text-[11px] text-muted-foreground">New organizations onboarded per week, last 12 weeks</p>
             </div>
           </div>
           
@@ -342,7 +372,7 @@ export default function OverviewPlaceholder() {
 
             {/* Custom Legend */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-2 max-h-24 overflow-y-auto px-1 custom-scrollbar">
-              {contestStatusData.map((entry, index) => (
+              {contestStatusData.map((entry) => (
                 <div key={entry.name} className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                   <span 
                     className="h-2.5 w-2.5 rounded-full shrink-0" 
@@ -365,9 +395,9 @@ export default function OverviewPlaceholder() {
           <div className="flex justify-between items-center">
             <div>
               <h3 className="font-semibold text-foreground text-sm font-sans flex items-center gap-1.5">
-                <Calendar className="h-4 w-4 text-primary" /> Upcoming Contests (Next 7 days)
+                <Calendar className="h-4 w-4 text-primary" /> Live &amp; Upcoming Contests
               </h3>
-              <p className="text-[11px] text-muted-foreground">Global schedule of quizzes with registrations open or about to commence</p>
+              <p className="text-[11px] text-muted-foreground">Contests live now, starting in the next 7 days, or with an open attempt window</p>
             </div>
             <button
               onClick={() => router.push('/dashboard/organizations')}
@@ -382,8 +412,8 @@ export default function OverviewPlaceholder() {
             {stats.upcomingContests.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full min-h-[220px] text-center p-4 border border-dashed border-border/30 rounded-lg bg-secondary/10">
                 <Clock className="h-6 w-6 text-muted-foreground mb-1.5 animate-pulse" />
-                <span className="text-xs font-semibold text-muted-foreground">No upcoming quizzes scheduled</span>
-                <span className="text-[10px] text-muted-foreground/75 mt-0.5">Tenant organizations have no quizzes in the next 7 days</span>
+                <span className="text-xs font-semibold text-muted-foreground">Nothing live or upcoming</span>
+                <span className="text-[10px] text-muted-foreground/75 mt-0.5">No published contest starts in the next 7 days and none is running</span>
               </div>
             ) : (
               <table className="w-full text-xs text-left">
@@ -391,24 +421,32 @@ export default function OverviewPlaceholder() {
                   <tr className="border-b border-border/40 text-muted-foreground">
                     <th className="pb-2 font-semibold">Quiz Title</th>
                     <th className="pb-2 font-semibold">Organization</th>
-                    <th className="pb-2 font-semibold">Scheduled Date</th>
+                    <th className="pb-2 font-semibold">When</th>
                     <th className="pb-2 font-semibold text-right">Participants</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/35">
                   {stats.upcomingContests.map((c) => (
                     <tr key={c.id} className="hover:bg-secondary/20 transition-all">
-                      <td className="py-2.5 font-medium text-foreground max-w-[150px] truncate">{c.title}</td>
+                      <td className="py-2.5 font-medium text-foreground max-w-[180px]">
+                        <span className="block truncate">{c.title}</span>
+                        <span className="flex items-center gap-1 mt-0.5">
+                          <StatusBadge kind="contest" value={c.status} />
+                          {c.timingMode === 'WINDOW' && <StatusBadge tone="accent">Window</StatusBadge>}
+                        </span>
+                      </td>
                       <td className="py-2.5">
                         <button
-                          onClick={() => router.push(`/dashboard/organizations?orgId=${c.orgId}`)}
+                          onClick={() => router.push(`/dashboard/organizations/${c.orgId}`)}
                           className="hover:underline text-primary/95 text-[11px] font-semibold text-left max-w-[120px] truncate block flex items-center gap-0.5"
                         >
                           {c.orgName} <ExternalLink className="h-2.5 w-2.5" />
                         </button>
                       </td>
                       <td className="py-2.5 text-muted-foreground">
-                        {format(new Date(c.startTime), 'dd MMM, hh:mm a')}
+                        {c.timingMode === 'WINDOW'
+                          ? `${format(new Date(c.startTime), 'dd MMM')} – ${format(new Date(c.endTime), 'dd MMM, hh:mm a')}`
+                          : format(new Date(c.startTime), 'dd MMM, hh:mm a')}
                       </td>
                       <td className="py-2.5 text-right font-mono font-bold text-foreground/80">{c.participantCount}</td>
                     </tr>
@@ -445,11 +483,11 @@ export default function OverviewPlaceholder() {
                   />
                   <div className="min-w-0">
                     <span className="text-xs font-semibold text-foreground block truncate max-w-[160px]">{o.name}</span>
-                    <span className="text-[10px] text-muted-foreground font-mono uppercase block">{o.planId.replace('plan_', '')}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono uppercase block">{o.planId}</span>
                   </div>
                 </div>
                 <button
-                  onClick={() => router.push(`/dashboard/organizations?orgId=${o.id}`)}
+                  onClick={() => router.push(`/dashboard/organizations/${o.id}`)}
                   className="p-1 text-muted-foreground hover:text-primary rounded hover:bg-card hover:border hover:border-border/30 transition-all shrink-0 cursor-pointer flex items-center text-[10px] font-semibold gap-0.5"
                 >
                   <span>View</span>

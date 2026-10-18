@@ -3,8 +3,9 @@
 import React, { useState } from 'react';
 import { OrganizationSubscription, SubscriptionPlan } from '@/lib/types';
 import { OrgPayment } from '@/lib/api/organizations';
-import { Layers, Calendar, ArrowRight, ShieldCheck, CreditCard, Receipt, ChevronDown, ChevronUp, BellRing, Loader2 } from 'lucide-react';
+import { Layers, Calendar, ArrowRight, Receipt, ChevronDown, ChevronUp, BellRing, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatInr } from '@/lib/format';
 
 interface CurrentPlanCardProps {
   subscription: OrganizationSubscription;
@@ -67,7 +68,7 @@ export default function CurrentPlanCard({
         {/* Price & Billing Cycle */}
         <div className="mt-4 flex items-baseline space-x-2">
           <span className="text-2xl font-black text-foreground">
-            {displayPrice === null ? '—' : isFree ? 'Free' : `₹${displayPrice.toLocaleString('en-IN')}`}
+            {displayPrice === null ? '—' : isFree ? 'Free' : `${formatInr(displayPrice)}`}
           </span>
           {!isFree && displayPrice !== null && (
             <span className="text-xs text-muted-foreground font-medium">
@@ -127,24 +128,24 @@ export default function CurrentPlanCard({
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Base Amount</span>
                   <span className="font-mono text-foreground">
-                    {lastPayment.baseAmount != null ? `₹${lastPayment.baseAmount.toLocaleString('en-IN')}` : '—'}
+                    {lastPayment.baseAmount != null ? `${formatInr(lastPayment.baseAmount)}` : '—'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Gateway Fee (2%)</span>
                   <span className="font-mono text-foreground">
-                    {lastPayment.gatewayFeeAmount != null ? `₹${lastPayment.gatewayFeeAmount.toLocaleString('en-IN')}` : '—'}
+                    {lastPayment.gatewayFeeAmount != null ? `${formatInr(lastPayment.gatewayFeeAmount)}` : '—'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">GST (18% on fee)</span>
                   <span className="font-mono text-foreground">
-                    {lastPayment.gstAmount != null ? `₹${lastPayment.gstAmount.toLocaleString('en-IN')}` : '—'}
+                    {lastPayment.gstAmount != null ? `${formatInr(lastPayment.gstAmount)}` : '—'}
                   </span>
                 </div>
                 <div className="flex justify-between pt-1.5 border-t border-border/40">
                   <span className="font-semibold text-foreground">Total Paid</span>
-                  <span className="font-mono font-bold text-foreground">₹{lastPayment.amount.toLocaleString('en-IN')}</span>
+                  <span className="font-mono font-bold text-foreground">{formatInr(lastPayment.amount)}</span>
                 </div>
                 <div className="flex justify-between pt-1.5 border-t border-border/40 text-muted-foreground">
                   <span>Paid On</span>

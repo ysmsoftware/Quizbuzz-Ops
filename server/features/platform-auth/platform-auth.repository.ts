@@ -6,6 +6,7 @@ export interface IPlatformAuthRepository {
   findAdminByEmail(email: string): Promise<PlatformAdmin | null>;
   findAdminById(id: string): Promise<PlatformAdmin | null>;
   updateAdminOtp(id: string, otpCode: string | null, otpExpiresAt: Date | null): Promise<PlatformAdmin>;
+  recordFailedOtpAttempt(id: string): Promise<number>;
   updateLastLogin(id: string): Promise<PlatformAdmin>;
   createRefreshToken(
     adminId: string,
@@ -35,8 +36,18 @@ export class PlatformAuthRepository implements IPlatformAuthRepository {
   async updateAdminOtp(id: string, otpCode: string | null, otpExpiresAt: Date | null): Promise<PlatformAdmin> {
     return prisma.platformAdmin.update({
       where: { id },
-      data: { otpCode, otpExpiresAt },
+      data: { otpCode, otpExpiresAt, otpAttempts: 0 },
     });
+  }
+
+  /** Atomically counts a wrong guess and returns the new total. */
+  async recordFailedOtpAttempt(id: string): Promise<number> {
+    const row = await prisma.platformAdmin.update({
+      where: { id },
+      data: { otpAttempts: { increment: 1 } },
+      select: { otpAttempts: true },
+    });
+    return row.otpAttempts;
   }
 
   async updateLastLogin(id: string): Promise<PlatformAdmin> {

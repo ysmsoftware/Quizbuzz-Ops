@@ -68,6 +68,10 @@ const WHATSAPP_TEMPLATES: Record<OpsMessageTemplate, WhatsAppTemplateBuilder> = 
     campaignName: 'ops_org_reactivated',
     templateParams: [p.adminName],
   }),
+  ORG_CREATED: (p) => ({
+    campaignName: 'ops_org_created',
+    templateParams: [p.adminName, p.organizationName],
+  }),
   CUSTOM: (p) => ({
     campaignName: 'ops_custom_broadcast',
     templateParams: [p.adminName, p.body || ''],

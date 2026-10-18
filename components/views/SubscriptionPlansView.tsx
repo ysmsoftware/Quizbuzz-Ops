@@ -9,8 +9,10 @@ import PlanCard from './plans/PlanCard';
 import PlanFormModal, { PlanFormValues } from './plans/PlanFormModal';
 import PlanEditImpactModal from './plans/PlanEditImpactModal';
 import PlanDeactivateModal from './plans/PlanDeactivateModal';
-import { Layers, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Layers } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
+import Pagination from '@/components/ui/Pagination';
+import { errorMessage } from '@/lib/errors';
 
 const ITEMS_PER_PAGE = 6;
 
@@ -42,7 +44,6 @@ export default function SubscriptionPlansView() {
   }, [plans, searchQuery]);
 
   // Pagination
-  const totalPages = Math.ceil(filteredPlans.length / ITEMS_PER_PAGE) || 1;
   const paginatedPlans = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredPlans.slice(start, start + ITEMS_PER_PAGE);
@@ -70,25 +71,25 @@ export default function SubscriptionPlansView() {
 
   const commitCreate = async (data: PlanFormValues) => {
     try {
-      await createPlan(data as any);
+      await createPlan(data);
       toast('Plan Created', `Subscription plan "${data.name}" was created successfully.`, 'success');
       setIsFormOpen(false);
-    } catch (err: any) {
-      toast('Creation Failed', err.message || 'Failed to create plan.', 'error');
+    } catch (err) {
+      toast('Creation Failed', errorMessage(err) || 'Failed to create plan.', 'error');
     }
   };
 
   const commitUpdate = async () => {
     if (!editingPlan || !pendingFormData) return;
     try {
-      await updatePlan({ planId: editingPlan.id, updates: pendingFormData as any });
+      await updatePlan({ planId: editingPlan.id, updates: pendingFormData });
       toast('Plan Updated', `Plan "${pendingFormData.name}" updated and limits cache synced.`, 'success');
       setIsEditImpactOpen(false);
       setIsFormOpen(false);
       setEditingPlan(null);
       setPendingFormData(null);
-    } catch (err: any) {
-      toast('Update Failed', err.message || 'Failed to update plan.', 'error');
+    } catch (err) {
+      toast('Update Failed', errorMessage(err) || 'Failed to update plan.', 'error');
     }
   };
 
@@ -104,8 +105,8 @@ export default function SubscriptionPlansView() {
       toast('Plan Deactivated', `Plan "${deactivatingPlanTarget.name}" is now soft-deactivated.`, 'success');
       setIsDeactivateOpen(false);
       setDeactivatingPlanTarget(null);
-    } catch (err: any) {
-      toast('Deactivation Failed', err.message || 'Failed to deactivate plan.', 'error');
+    } catch (err) {
+      toast('Deactivation Failed', errorMessage(err) || 'Failed to deactivate plan.', 'error');
     }
   };
 
@@ -159,30 +160,7 @@ export default function SubscriptionPlansView() {
       )}
 
       {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4 border-t border-border/40 text-xs">
-          <p className="text-muted-foreground">
-            Page <span className="font-semibold text-foreground">{currentPage}</span> of{' '}
-            <span className="font-semibold text-foreground">{totalPages}</span> ({filteredPlans.length} plans)
-          </p>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="p-1.5 rounded-md border border-input bg-background hover:bg-muted disabled:opacity-40"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="p-1.5 rounded-md border border-input bg-background hover:bg-muted disabled:opacity-40"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination currentPage={currentPage} totalItems={filteredPlans.length} pageSize={ITEMS_PER_PAGE} itemLabel="plans" onPageChange={setCurrentPage} />
 
       {/* Modals */}
       <PlanFormModal

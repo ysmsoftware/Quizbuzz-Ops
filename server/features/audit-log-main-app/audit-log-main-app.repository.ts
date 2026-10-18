@@ -1,8 +1,10 @@
 import { queryMainDb } from '../../db/main-db-pool';
+import { SqlWhere, pageOffset } from '../../db/sql';
 import { MainAppAuditLogListQuery } from './audit-log-main-app.types';
 
 export interface IMainAppAuditLogRepository {
   listAuditLogs(params: MainAppAuditLogListQuery): Promise<{ rows: any[]; total: number }>;
+  listActions(): Promise<string[]>;
 }
 
 /**
@@ -29,47 +31,41 @@ export class MainAppAuditLogRepository implements IMainAppAuditLogRepository {
       dateTo,
     } = params;
 
-    const conditions: string[] = ['1=1'];
-    const sqlParams: any[] = [];
+    const where = new SqlWhere();
+    if (action) where.and('"action" = ?', action);
+    else if (actionPrefix) where.prefix('"action"', actionPrefix);
+    if (targetType) where.and('"targetType" = ?::"AuditTargetType"', targetType);
+    if (targetId) where.and('"targetId" = ?', targetId);
+    if (requestId) where.and('"requestId" = ?', requestId);
+    if (organizationId) where.and('"organizationId" = ?', organizationId);
+    if (actorId) where.and('"actorId" = ?', actorId);
+    if (actorName) where.search(['"actorLabel"'], actorName);
+    if (targetLabel) where.search(['"targetLabel"'], targetLabel);
+    if (dateFrom) where.and('"createdAt" >= ?', new Date(dateFrom));
+    if (dateTo) where.and('"createdAt" <= ?', new Date(dateTo));
 
-    const addParam = (value: any) => {
-      sqlParams.push(value);
-      return `$${sqlParams.length}`;
-    };
-
-    if (action) {
-      conditions.push(`"action" = ${addParam(action)}`);
-    } else if (actionPrefix) {
-      conditions.push(`"action" LIKE ${addParam(`${actionPrefix}.%`)}`);
-    }
-    if (targetType) conditions.push(`"targetType" = ${addParam(targetType)}::"AuditTargetType"`);
-    if (targetId) conditions.push(`"targetId" = ${addParam(targetId)}`);
-    if (requestId) conditions.push(`"requestId" = ${addParam(requestId)}`);
-    if (organizationId) conditions.push(`"organizationId" = ${addParam(organizationId)}`);
-    if (actorId) conditions.push(`"actorId" = ${addParam(actorId)}`);
-    if (actorName) conditions.push(`"actorLabel" ILIKE ${addParam(`%${actorName}%`)}`);
-    if (targetLabel) conditions.push(`"targetLabel" ILIKE ${addParam(`%${targetLabel}%`)}`);
-    if (dateFrom) conditions.push(`"createdAt" >= ${addParam(new Date(dateFrom))}`);
-    if (dateTo) conditions.push(`"createdAt" <= ${addParam(new Date(dateTo))}`);
-
-    const whereClause = conditions.join(' AND ');
-
-    const countQuery = `SELECT COUNT(*)::int as count FROM audit_logs WHERE ${whereClause}`;
+    const countQuery = `SELECT COUNT(*)::int as count FROM audit_logs ${where.sql}`;
     const dataQuery = `
       SELECT id, "requestId", "organizationId", "actorId", "actorType", "actorLabel",
         action, "targetType", "targetId", "targetLabel", metadata, "ipAddress", "userAgent", "createdAt"
       FROM audit_logs
-      WHERE ${whereClause}
+      ${where.sql}
       ORDER BY "createdAt" DESC
-      LIMIT ${limit} OFFSET ${(page - 1) * limit}
+      LIMIT ${limit} OFFSET ${pageOffset(page, limit)}
     `;
 
     const [countResult, dataResult] = await Promise.all([
-      queryMainDb(countQuery, sqlParams),
-      queryMainDb(dataQuery, sqlParams),
+      queryMainDb(countQuery, where.params),
+      queryMainDb(dataQuery, where.params),
     ]);
 
     return { rows: dataResult, total: countResult[0]?.count || 0 };
+  }
+
+  /** Every action in the table — the main app can add new ones without this app knowing. */
+  async listActions() {
+    const rows = await queryMainDb('SELECT DISTINCT action FROM audit_logs ORDER BY action', []);
+    return rows.map((r: { action: string }) => r.action);
   }
 }
 export default MainAppAuditLogRepository;

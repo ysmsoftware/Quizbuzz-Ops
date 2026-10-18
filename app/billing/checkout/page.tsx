@@ -18,14 +18,39 @@ import {
   calculateSubscriptionPricing,
   calculateProratedBase,
   resolvePlanCyclePrice,
+  type PlanCyclePricing,
+  type CurrentSubscriptionForProration,
   availableCyclesForPlan,
   type BillingCycleChoice,
 } from '@/lib/pricing/subscriptionPricing';
+import { formatInr } from '@/lib/format';
+import { errorMessage } from '@/lib/errors';
+
+interface RazorpaySuccessResponse {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
 
 declare global {
   interface Window {
-    Razorpay: any;
+    // Loaded from checkout.razorpay.com at runtime; only the surface used here is typed.
+    Razorpay: new (options: Record<string, unknown>) => { open: () => void };
   }
+}
+
+/** Response of POST /api/v1/billing-portal/session. */
+interface CheckoutSessionData {
+  session: {
+    organizationId: string;
+    organizationName: string;
+    organizationSlug: string | null;
+    adminId: string | null;
+    adminEmail: string | null;
+    adminName: string | null;
+  };
+  plan: PlanCyclePricing & { id: string; name: string; description: string; features: string[] };
+  currentSubscription: (CurrentSubscriptionForProration & { planId: string; planName: string }) | null;
 }
 
 const RAZORPAY_BRAND_TEAL = '#0d9488';
@@ -38,9 +63,11 @@ function CheckoutContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [sessionData, setSessionData] = useState<any>(null);
+  const [loading, setLoading] = useState(!!token);
+  const [error, setError] = useState<string | null>(
+    token ? null : 'No billing handoff token provided. Please start checkout from the main application.'
+  );
+  const [sessionData, setSessionData] = useState<CheckoutSessionData | null>(null);
   const [payState, setPayState] = useState<PayState>('idle');
   const [payError, setPayError] = useState<string | null>(null);
   const [cycle, setCycle] = useState<BillingCycleChoice | null>(null);
@@ -48,6 +75,11 @@ function CheckoutContent() {
   const pollStopRef = useRef<(() => void) | null>(null);
 
   const mainAppUrl = process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://localhost:3000';
+  // Organizer URLs are /org/[orgSlug]/…; bare /org opens the signed-in user's active org (keeps the query).
+  const billingUrl = (query = '') => {
+    const slug = sessionData?.session?.organizationSlug;
+    return `${mainAppUrl}${slug ? `/org/${slug}/settings` : '/org'}?tab=billing${query}`;
+  };
 
   useEffect(() => {
     const script = document.createElement('script');
@@ -55,11 +87,7 @@ function CheckoutContent() {
     script.async = true;
     document.body.appendChild(script);
 
-    if (!token) {
-      setError('No billing handoff token provided. Please start checkout from the main application.');
-      setLoading(false);
-      return;
-    }
+    if (!token) return;
 
     fetch('/api/v1/billing-portal/session', {
       method: 'POST',
@@ -141,12 +169,12 @@ function CheckoutContent() {
 
         if (status === 'PAID') {
           stopPolling();
-          window.location.href = `${mainAppUrl}/org/settings?tab=billing&subscription=success`;
+          window.location.href = billingUrl('&subscription=success');
           return;
         }
         if (status === 'FAILED') {
           stopPolling();
-          window.location.href = `${mainAppUrl}/org/settings?tab=billing&subscription=failed`;
+          window.location.href = billingUrl('&subscription=failed');
           return;
         }
       } catch {
@@ -186,7 +214,8 @@ function CheckoutContent() {
       }
 
       const { paymentId, orderId, amount, currency, keyId, planName } = orderRes.data;
-      const { session } = sessionData;
+      const session = sessionData?.session;
+      if (!session) throw new Error('Checkout session is not loaded.');
 
       if (typeof window === 'undefined' || !window.Razorpay) {
         setPayError('Payment gateway failed to load. Please refresh the page and try again.');
@@ -206,7 +235,7 @@ function CheckoutContent() {
           email: session.adminEmail || '',
         },
         theme: { color: RAZORPAY_BRAND_TEAL },
-        handler: async function (response: any) {
+        handler: async function (response: RazorpaySuccessResponse) {
           try {
             await fetch('/api/v1/billing-portal/subscription/verify', {
               method: 'POST',
@@ -235,16 +264,16 @@ function CheckoutContent() {
       setPayState('checkout_open');
       const rzp = new window.Razorpay(options);
       rzp.open();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Payment error:', err);
-      setPayError(err?.message || 'An unexpected error occurred processing payment.');
+      setPayError(errorMessage(err) || 'An unexpected error occurred processing payment.');
       setPayState('idle');
     }
   };
 
   const handleAbandon = () => {
     if (sessionData?.plan) {
-      window.location.href = `${mainAppUrl}/org/settings?tab=billing&subscription=failed`;
+      window.location.href = billingUrl('&subscription=failed');
     } else {
       window.location.href = mainAppUrl;
     }
@@ -308,7 +337,7 @@ function CheckoutContent() {
           </div>
           {payState === 'timeout' && (
             <button
-              onClick={() => (window.location.href = `${mainAppUrl}/org/settings?tab=billing`)}
+              onClick={() => (window.location.href = billingUrl())}
               className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-colors text-sm cursor-pointer"
             >
               Return to Dashboard
@@ -412,8 +441,8 @@ function CheckoutContent() {
           {/* Price Breakdown */}
           {alreadySubscribedToSelected ? (
             <div className="text-xs text-muted-foreground pt-5 border-t border-border/50 mb-2 bg-muted/30 rounded-xl p-4">
-              You're already subscribed to this plan until{' '}
-              {new Date(sessionData.currentSubscription.currentPeriodEnd).toLocaleDateString()}. Pick a different plan
+              You&apos;re already subscribed to this plan until{' '}
+              {new Date(sessionData.currentSubscription?.currentPeriodEnd ?? '').toLocaleDateString()}. Pick a different plan
               or billing cycle above to make changes, or return to the dashboard.
             </div>
           ) : pricing ? (
@@ -422,29 +451,29 @@ function CheckoutContent() {
                 <>
                   <div className="flex justify-between text-muted-foreground">
                     <span>{sessionData.currentSubscription?.planName || 'Current plan'} — full price ({cycle === 'ANNUAL' ? 'annual' : 'monthly'})</span>
-                    <span>₹{(pricing.baseAmount + pricing.creditApplied).toFixed(2)}</span>
+                    <span>{formatInr(pricing.baseAmount + pricing.creditApplied, { fixed: 2 })}</span>
                   </div>
                   <div className="flex justify-between text-success">
                     <span>Credit for unused time on current plan</span>
-                    <span>−₹{pricing.creditApplied.toFixed(2)}</span>
+                    <span>−{formatInr(pricing.creditApplied, { fixed: 2 })}</span>
                   </div>
                 </>
               )}
               <div className="flex justify-between text-muted-foreground">
                 <span>Subscription ({cycle === 'ANNUAL' ? 'annual' : 'monthly'}){pricing.creditApplied > 0 ? ', after credit' : ''}</span>
-                <span>₹{pricing.baseAmount.toFixed(2)}</span>
+                <span>{formatInr(pricing.baseAmount, { fixed: 2 })}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
                 <span>Payment gateway fee (2%)</span>
-                <span>₹{pricing.gatewayFeeAmount.toFixed(2)}</span>
+                <span>{formatInr(pricing.gatewayFeeAmount, { fixed: 2 })}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
                 <span>GST on gateway fee (18%)</span>
-                <span>₹{pricing.gstAmount.toFixed(2)}</span>
+                <span>{formatInr(pricing.gstAmount, { fixed: 2 })}</span>
               </div>
               <div className="flex justify-between text-base font-bold text-foreground pt-3 border-t border-dashed border-border/60">
                 <span>Total Amount Due Now</span>
-                <span className="text-primary text-lg">₹{pricing.totalAmount.toFixed(2)}</span>
+                <span className="text-primary text-lg">{formatInr(pricing.totalAmount, { fixed: 2 })}</span>
               </div>
               {pricing.creditApplied > 0 && (
                 <p className="text-[11px] text-muted-foreground italic">
@@ -459,7 +488,7 @@ function CheckoutContent() {
           )}
 
           <p className="text-[11px] text-muted-foreground mb-6">
-            This is a one-time charge for the selected period — no auto-renewal. You'll need to return here to renew when the period ends.
+            This is a one-time charge for the selected period — no auto-renewal. You&apos;ll need to return here to renew when the period ends.
           </p>
 
           {payError && (
@@ -486,7 +515,7 @@ function CheckoutContent() {
               ) : (
                 <>
                   <CreditCard className="w-5 h-5" />
-                  <span>Pay {pricing ? `₹${pricing.totalAmount.toFixed(2)}` : ''} via Razorpay</span>
+                  <span>Pay {pricing ? `${formatInr(pricing.totalAmount, { fixed: 2 })}` : ''} via Razorpay</span>
                   <ArrowRight className="w-5 h-5 ml-1" />
                 </>
               )}

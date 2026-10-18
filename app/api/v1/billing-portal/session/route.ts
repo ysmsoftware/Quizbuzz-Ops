@@ -1,10 +1,11 @@
 import { prisma } from '@/server/db/ops-prisma';
 import { queryMainDb } from '@/server/db/main-db-pool';
-import { verifyJwt } from '@/server/utils/jwt';
+import { verifyJwt, type BillingHandoffPayload } from '@/server/utils/jwt';
 import { env } from '@/server/config/env';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
 import { okResponse, errorResponse } from '@/server/http/envelope';
+import { errorMessage } from '@/lib/errors';
 
 export async function POST(req: Request) {
   try {
@@ -16,11 +17,11 @@ export async function POST(req: Request) {
     }
 
     const secret = env.BILLING_HANDOFF_SECRET;
-    let payload: any;
+    let payload: BillingHandoffPayload;
     try {
       payload = verifyJwt(token, secret);
-    } catch (e: any) {
-      return errorResponse(`Invalid or expired token: ${e.message}`, 'UNAUTHENTICATED', null, 401);
+    } catch (e) {
+      return errorResponse(`Invalid or expired token: ${errorMessage(e)}`, 'UNAUTHENTICATED', null, 401);
     }
 
     const { organizationId, adminId, adminEmail, adminName, planSlug } = payload;
@@ -48,7 +49,16 @@ export async function POST(req: Request) {
       include: { plan: { select: { id: true, name: true, monthlyPrice: true, annualPrice: true } } },
     });
 
-    let currentSubscription: any = null;
+    let currentSubscription: {
+      planId: string;
+      planName: string;
+      billingCycle: string;
+      currentPeriodStart: string;
+      currentPeriodEnd: string;
+      lastPaidBaseAmount: number | null;
+      planMonthlyPrice: number | null;
+      planAnnualPrice: number | null;
+    } | null = null;
     if (currentSub && currentSub.status === 'ACTIVE' && currentSub.currentPeriodEnd > new Date()) {
       const lastPaidPayment = await prisma.opsPayment.findFirst({
         where: {
@@ -74,14 +84,16 @@ export async function POST(req: Request) {
 
     // 2. Fetch Organization Name from Main DB (optional fallback to organizationId)
     let organizationName = organizationId;
+    let organizationSlug: string | null = null;
     try {
-      const orgRows = await queryMainDb<{ name: string }>(
-        `SELECT name FROM organizations WHERE id = $1 LIMIT 1`,
+      const orgRows = await queryMainDb<{ name: string; slug: string | null }>(
+        `SELECT name, slug FROM organizations WHERE id = $1 LIMIT 1`,
         [organizationId]
       );
       if (orgRows.length > 0 && orgRows[0].name) {
         organizationName = orgRows[0].name;
       }
+      organizationSlug = orgRows[0]?.slug ?? null;
     } catch (dbErr) {
       console.warn('Failed to query organization name from main DB:', dbErr);
     }
@@ -131,6 +143,7 @@ export async function POST(req: Request) {
         session: {
           organizationId,
           organizationName,
+          organizationSlug,
           adminId: adminId || null,
           adminEmail: adminEmail || null,
           adminName: adminName || null,
@@ -151,7 +164,7 @@ export async function POST(req: Request) {
       },
       'Checkout session verified.'
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error verifying billing portal session:', error);
     return errorResponse('Internal server error verifying session', 'INTERNAL_SERVER_ERROR', null, 500);
   }

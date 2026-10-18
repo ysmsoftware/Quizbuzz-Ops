@@ -3,9 +3,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useRouter } from 'next/navigation';
-import { Search, Globe, ChevronRight, CornerDownLeft, X } from 'lucide-react';
+import { Search, Globe, CornerDownLeft, X } from 'lucide-react';
 import { useOrganizations } from '@/lib/hooks/useOrganizations';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import StatusBadge from '@/components/ui/StatusBadge';
 import { Organization } from '@/lib/types';
+import { useResetOnChange } from '@/lib/hooks/useResetOnChange';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -15,19 +18,32 @@ interface CommandPaletteProps {
 export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const { organizations } = useOrganizations({ search: query, limit: 8 });
+  // Debounced, and only while the palette is open (it is mounted on every dashboard page).
+  const debouncedQuery = useDebouncedValue(query.trim(), 250);
+  const { organizations } = useOrganizations({ search: debouncedQuery || undefined, limit: 8, enabled: isOpen });
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Focus input on mount
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const handleSelect = (org: Organization) => {
+    router.push(`/dashboard/organizations/${org.id}`);
+    onClose();
+  };
+
+  // Start every opening with an empty search.
+  useResetOnChange(String(isOpen), () => {
     if (isOpen) {
       setQuery('');
       setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
     }
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
   }, [isOpen]);
 
   // Handle outside click and keyboard shortcuts
@@ -56,11 +72,6 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, organizations, selectedIndex]);
-
-  const handleSelect = (org: Organization) => {
-    router.push(`/dashboard/organizations?orgId=${org.id}`);
-    onClose();
-  };
 
   return (
     <AnimatePresence>
@@ -132,9 +143,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className={`p-1.5 rounded-md shrink-0 ${
-                            org.status === 'ACTIVE' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
-                          }`}>
+                          <div className="p-1.5 rounded-md shrink-0 bg-secondary/40 text-muted-foreground">
                             <Globe className="h-4 w-4" />
                           </div>
                           <div className="truncate">
@@ -145,12 +154,15 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                           </div>
                         </div>
                         
-                        {isSelected && (
-                          <div className="flex items-center gap-1 text-[11px] text-primary font-mono shrink-0">
-                            <span>Open</span>
-                            <CornerDownLeft className="h-3 w-3" />
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {org.status !== 'ACTIVE' && <StatusBadge kind="org" value={org.status} />}
+                          {isSelected && (
+                            <div className="flex items-center gap-1 text-[11px] text-primary font-mono">
+                              <span>Open</span>
+                              <CornerDownLeft className="h-3 w-3" />
+                            </div>
+                          )}
+                        </div>
                       </button>
                     );
                   })}

@@ -12,14 +12,14 @@ import {
   Check, 
   Copy, 
   Calendar, 
-  HelpCircle,
+  
   Building2,
   Mail,
   Zap,
   ArrowRight,
   Sparkles,
   Server,
-  Network,
+  
   Users,
   Clock,
   HelpCircle as QuestionIcon
@@ -32,6 +32,8 @@ import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { calculateBookingEstimate } from '@/lib/api/bookings';
 import { PricingConfig } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
+import { formatInr, formatNumber } from '@/lib/format';
+import { errorMessage } from '@/lib/errors';
 
 const DEFAULT_PRICING_CONFIG: PricingConfig = {
   id: 'pricing_default',
@@ -230,7 +232,7 @@ export default function ContestCalculator() {
 
   // Settings Preview Estimating logic
   const watchedSettings = watchSettings();
-  const [previewEstimate, setPreviewEstimate] = useState<any>(null);
+  const [previewEstimate, setPreviewEstimate] = useState<ReturnType<typeof calculateBookingEstimate> | null>(null);
 
   useEffect(() => {
     if (!watchedSettings.baseBookingFee) return;
@@ -329,8 +331,8 @@ export default function ContestCalculator() {
 
       // Navigate to the newly created booking detail
       router.push(`/dashboard/bookings?bookingId=${newBooking.id}`);
-    } catch (e: any) {
-      toast('Booking Failed', e.message || 'Failed to create contest booking.', 'error');
+    } catch (e) {
+      toast('Booking Failed', errorMessage(e) || 'Failed to create contest booking.', 'error');
     }
   };
 
@@ -357,18 +359,18 @@ Questions: ${watchedCalc.questionCount}
 Estimated Participants: ${watchedCalc.participantCount}
 
 INFRASTRUCTURE & SERVICE BREAKDOWN:
-- Base Reservation Fee: ₹${estimate.baseFee.toLocaleString('en-IN')}
-- Dedicated Compute [${estimate.instances} instance(s)]: ₹${estimate.computeCost.toLocaleString('en-IN')}
-- ElastiCache Session State: ₹${estimate.cacheCost.toLocaleString('en-IN')}
-- Question Processor Pipeline: ₹${estimate.questionCost.toLocaleString('en-IN')}
-- Enabled Add-ons: ₹${estimate.addOnsCost.toLocaleString('en-IN')}
+- Base Reservation Fee: ${formatInr(estimate.baseFee)}
+- Dedicated Compute [${estimate.instances} instance(s)]: ${formatInr(estimate.computeCost)}
+- ElastiCache Session State: ${formatInr(estimate.cacheCost)}
+- Question Processor Pipeline: ${formatInr(estimate.questionCost)}
+- Enabled Add-ons: ${formatInr(estimate.addOnsCost)}
   * Proctoring: ${watchedCalc.proctoring ? 'Yes' : 'No'}
   * Custom Certificates: ${watchedCalc.certificates ? 'Yes' : 'No'}
   * Priority 24/7 SLA Support: ${watchedCalc.prioritySupport ? 'Yes' : 'No'}
 
 ----------------------------------------
 ESTIMATED TOTAL CONTRACT VALUE (₹):
-₹${estimate.total.toLocaleString('en-IN')} (incl. taxes and hosting SLA margin)
+${formatInr(estimate.total)} (incl. taxes and hosting SLA margin)
 ========================================
 Generated on: ${new Date().toLocaleDateString()}
 Assisted by operator: ${admin?.name} (${admin?.role})
@@ -405,15 +407,13 @@ Assisted by operator: ${admin?.name} (${admin?.role})
           },
           marginMultiplier: pendingSettings.marginMultiplier,
         },
-        adminName: admin?.name || 'System Operator',
-        adminRole: admin?.role,
       });
 
       toast('Config Saved', 'Pricing engine parameters updated successfully. Existing bookings are unaffected.', 'success');
       setShowSaveConfirm(false);
       setPendingSettings(null);
-    } catch (e: any) {
-      toast('Save Failed', e.message || 'Failed to update pricing engine config.', 'error');
+    } catch (e) {
+      toast('Save Failed', errorMessage(e) || 'Failed to update pricing engine config.', 'error');
     }
   };
 
@@ -704,7 +704,7 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                     <Users className="h-3.5 w-3.5 text-muted-foreground" /> Estimated Participants
                   </label>
                   <span className="text-xs font-bold font-mono text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded">
-                    {(Number(watchedCalc.participantCount) || 0).toLocaleString('en-IN')} Candidates
+                    {formatNumber((Number(watchedCalc.participantCount) || 0))} Candidates
                   </span>
                 </div>
 
@@ -749,7 +749,7 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                       <span className="text-xs font-bold text-foreground">AI Human Proctoring Integration</span>
                       {currentConfig.addOns.proctoring.enabled && (
                         <span className="text-[9px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                          +₹{currentConfig.addOns.proctoring.flatCost.toLocaleString('en-IN')} flat
+                          +{formatInr(currentConfig.addOns.proctoring.flatCost)} flat
                         </span>
                       )}
                     </div>
@@ -778,7 +778,7 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                       <span className="text-xs font-bold text-foreground">Automated Certificate Branding</span>
                       {currentConfig.addOns.certificates.enabled && (
                         <span className="text-[9px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                          +₹{currentConfig.addOns.certificates.perParticipantCost} / candidate
+                          +{formatInr(currentConfig.addOns.certificates.perParticipantCost)} / candidate
                         </span>
                       )}
                     </div>
@@ -807,7 +807,7 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                       <span className="text-xs font-bold text-foreground">Priority SLA Operator Support</span>
                       {currentConfig.addOns.prioritySupport.enabled && (
                         <span className="text-[9px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                          +₹{currentConfig.addOns.prioritySupport.flatCost.toLocaleString('en-IN')} flat
+                          +{formatInr(currentConfig.addOns.prioritySupport.flatCost)} flat
                         </span>
                       )}
                     </div>
@@ -865,7 +865,7 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                       {/* Base booking fee */}
                       <div className="flex justify-between text-xs text-muted-foreground leading-none">
                         <span>Base booking reservation fee:</span>
-                        <span className="font-semibold text-foreground">₹{estimate.baseFee.toLocaleString('en-IN')}</span>
+                        <span className="font-semibold text-foreground">{formatInr(estimate.baseFee)}</span>
                       </div>
 
                       {/* Compute Node overhead */}
@@ -876,19 +876,19 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                             ({estimate.instances} instance(s) @ {watchedCalc.durationMode === 'custom' ? watchedCalc.durationCustom : watchedCalc.durationMode}m run)
                           </span>
                         </div>
-                        <span className="font-semibold text-foreground">₹{estimate.computeCost.toLocaleString('en-IN')}</span>
+                        <span className="font-semibold text-foreground">{formatInr(estimate.computeCost)}</span>
                       </div>
 
                       {/* Cache session server */}
                       <div className="flex justify-between text-xs text-muted-foreground leading-none">
                         <span>Cache & session infrastructure:</span>
-                        <span className="font-semibold text-foreground">₹{estimate.cacheCost.toLocaleString('en-IN')}</span>
+                        <span className="font-semibold text-foreground">{formatInr(estimate.cacheCost)}</span>
                       </div>
 
                       {/* Question data pipeline */}
                       <div className="flex justify-between text-xs text-muted-foreground leading-none">
                         <span>Question & content processing:</span>
-                        <span className="font-semibold text-foreground">₹{estimate.questionCost.toLocaleString('en-IN')}</span>
+                        <span className="font-semibold text-foreground">{formatInr(estimate.questionCost)}</span>
                       </div>
 
                       {/* Addons summary */}
@@ -907,7 +907,7 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                             )}
                           </div>
                         </div>
-                        <span className="font-semibold text-foreground">₹{estimate.addOnsCost.toLocaleString('en-IN')}</span>
+                        <span className="font-semibold text-foreground">{formatInr(estimate.addOnsCost)}</span>
                       </div>
                     </div>
 
@@ -915,12 +915,12 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                     <div className="space-y-2 pb-2">
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>Subtotal (estimated cost):</span>
-                        <span>₹{estimate.subtotal.toLocaleString('en-IN')}</span>
+                        <span>{formatInr(estimate.subtotal)}</span>
                       </div>
                       <div className="flex justify-between items-center bg-secondary/30 p-3 rounded-lg border border-border/40">
                         <span className="text-xs font-bold text-foreground">Total (incl. SLA margin):</span>
                         <span className="text-lg font-black text-amber-500 font-mono">
-                          ₹{estimate.total.toLocaleString('en-IN')}
+                          {formatInr(estimate.total)}
                         </span>
                       </div>
                     </div>
@@ -1208,35 +1208,35 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                         <div className="space-y-3 font-mono text-[11px] border-t border-border/40 pt-3 text-muted-foreground leading-normal">
                           <div className="flex justify-between">
                             <span>Base Reservation Fee:</span>
-                            <span className="text-foreground">₹{previewEstimate.baseFee}</span>
+                            <span className="text-foreground">{formatInr(previewEstimate.baseFee)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Compute Overheads:</span>
-                            <span className="text-foreground">₹{previewEstimate.computeCost}</span>
+                            <span className="text-foreground">{formatInr(previewEstimate.computeCost)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>ElastiCache Session:</span>
-                            <span className="text-foreground">₹{previewEstimate.cacheCost}</span>
+                            <span className="text-foreground">{formatInr(previewEstimate.cacheCost)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Question Processing:</span>
-                            <span className="text-foreground">₹{previewEstimate.questionCost}</span>
+                            <span className="text-foreground">{formatInr(previewEstimate.questionCost)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Enabled Add-ons:</span>
-                            <span className="text-foreground">₹{previewEstimate.addOnsCost}</span>
+                            <span className="text-foreground">{formatInr(previewEstimate.addOnsCost)}</span>
                           </div>
                           <div className="border-t border-dashed border-border/50 pt-2 flex justify-between font-bold text-foreground">
                             <span>Subtotal Cost:</span>
-                            <span>₹{previewEstimate.subtotal}</span>
+                            <span>{formatInr(previewEstimate.subtotal)}</span>
                           </div>
                           <div className="flex justify-between font-bold text-foreground">
                             <span>Profit Margin Portion:</span>
-                            <span>₹{previewEstimate.margin}</span>
+                            <span>{formatInr(previewEstimate.margin)}</span>
                           </div>
                           <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 font-bold rounded flex justify-between text-xs font-sans mt-2">
                             <span>Proposed Total:</span>
-                            <span className="font-mono font-bold">₹{previewEstimate.total}</span>
+                            <span className="font-mono font-bold">{formatInr(previewEstimate.total)}</span>
                           </div>
                         </div>
                       ) : (

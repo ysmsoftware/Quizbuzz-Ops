@@ -15,6 +15,8 @@ import {
   Receipt,
   ShieldAlert,
 } from 'lucide-react';
+import { formatNumber } from '@/lib/format';
+import { errorMessage } from '@/lib/errors';
 
 interface PayoutInvestigationPanelProps {
   canEdit: boolean;
@@ -30,7 +32,7 @@ export default function PayoutInvestigationPanel({ canEdit }: PayoutInvestigatio
   const { toast } = useToast();
   const [searchInput, setSearchInput] = useState('');
   const [activeSearch, setActiveSearch] = useState('');
-  const [needsAttentionPage, setNeedsAttentionPage] = useState(1);
+  const [needsAttentionPage] = useState(1);
 
   const { data: timeline, isLoading: isLoadingTimeline, isFetched } = usePaymentTimeline(
     activeSearch,
@@ -56,8 +58,8 @@ export default function PayoutInvestigationPanel({ canEdit }: PayoutInvestigatio
     try {
       await retryMutation.mutateAsync(paymentId);
       toast('Retry Enqueued', 'The transfer will be attempted again shortly. Refresh the timeline in a moment to see the outcome.', 'success');
-    } catch (err: any) {
-      toast('Retry Failed', err.message || 'Could not enqueue the retry', 'error');
+    } catch (err) {
+      toast('Retry Failed', errorMessage(err) || 'Could not enqueue the retry', 'error');
     }
   };
 
@@ -112,7 +114,7 @@ export default function PayoutInvestigationPanel({ canEdit }: PayoutInvestigatio
                 <div className="flex items-center gap-3 shrink-0 text-xs">
                   <span className="font-mono font-bold text-foreground flex items-center">
                     <IndianRupee className="h-3 w-3" />
-                    {item.grossAmount.toLocaleString('en-IN')}
+                    {formatNumber(item.grossAmount)}
                   </span>
                   <span className="text-muted-foreground">{item.ageMinutes}m ago</span>
                 </div>
@@ -132,7 +134,7 @@ export default function PayoutInvestigationPanel({ canEdit }: PayoutInvestigatio
           <p className="text-xs text-muted-foreground mt-1">
             Search by registration reference, participant email or phone, or a payment/order ID, to see the full
             chain: registered, order created, payment captured, transfer enqueued, transfer processed or failed.
-            This is what a support ticket usually gives you — "participant X registered for contest Y" — not a
+            This is what a support ticket usually gives you — &quot;participant X registered for contest Y&quot; — not a
             payment ID.
           </p>
           <form onSubmit={handleSearch} className="mt-3 flex gap-2">

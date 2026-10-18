@@ -4,12 +4,13 @@ import React, { useState } from 'react';
 import { format } from 'date-fns';
 import { SupportNote } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
+import { errorMessage } from '@/lib/errors';
 
 interface OrgNotesTabProps {
   notes?: SupportNote[];
   authorName?: string;
   isAddingNote: boolean;
-  addNote: (data: { authorName: string; body: string; tags: string[] }) => Promise<any>;
+  addNote: (data: { authorName: string; body: string; tags: string[] }) => Promise<unknown>;
 }
 
 export default function OrgNotesTab({
@@ -42,8 +43,8 @@ export default function OrgNotesTab({
       toast('Note Appended', 'Support log note updated.', 'success');
       setNoteBody('');
       setNoteTags('');
-    } catch (err: any) {
-      toast('Note Failed', err.message || 'Operation failed.', 'error');
+    } catch (err) {
+      toast('Note Failed', errorMessage(err) || 'Operation failed.', 'error');
     }
   };
 

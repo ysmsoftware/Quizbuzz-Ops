@@ -27,7 +27,7 @@ export async function GET(req: Request) {
       },
       'Payment status retrieved.'
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error checking billing portal payment status:', error);
     return errorResponse('Internal server error checking payment status', 'INTERNAL_SERVER_ERROR', null, 500);
   }

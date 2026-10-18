@@ -9,7 +9,7 @@ import {
   createContestBooking, 
   updateBookingStatus 
 } from '@/lib/api/bookings';
-import { ContestBooking, PricingConfig } from '@/lib/types';
+import { AdminRole, ContestBooking, PricingConfig } from '@/lib/types';
 
 export function usePricingConfig() {
   const queryClient = useQueryClient();
@@ -20,15 +20,7 @@ export function usePricingConfig() {
   });
 
   const updateConfigMutation = useMutation({
-    mutationFn: ({ 
-      updates, 
-      adminName, 
-      adminRole 
-    }: { 
-      updates: Partial<PricingConfig>; 
-      adminName: string; 
-      adminRole: any; 
-    }) => updatePricingConfig(updates, adminName, adminRole),
+    mutationFn: ({ updates }: { updates: Partial<PricingConfig> }) => updatePricingConfig(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pricingConfig'] });
       queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
@@ -94,7 +86,7 @@ export function useBookingDetail(bookingId: string | null) {
         paymentReference?: string;
         cancellationReason?: string;
         adminName: string;
-        adminRole: any;
+        adminRole?: AdminRole;
       }
     }) => {
       if (!bookingId) throw new Error('No booking selected');

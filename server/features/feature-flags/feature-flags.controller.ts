@@ -1,6 +1,6 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseRequest } from '../../http/validation';
-import { flagUpdateSchema, orgOverrideSetSchema, orgOverrideRemoveSchema } from './feature-flags.validator';
+import { flagUpdateSchema, orgOverrideSetSchema, orgOverrideRemoveSchema, syncRepairSchema } from './feature-flags.validator';
 import { IFeatureFlagsService, FeatureFlagsService } from './feature-flags.service';
 import { okResponse, errorResponse } from '../../http/envelope';
 import { PlatformAdminRole } from '@prisma/client';
@@ -44,18 +44,44 @@ export class FeatureFlagsController {
   async setOrgOverride(req: Request, key: string, orgId: string) {
     const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
     const input = await parseRequest(req, orgOverrideSetSchema);
-    const result = await this.service.setOrgOverride(key, orgId, input.isEnabled, input.reason, toActor(admin));
+    const result = await this.service.setOrgOverride(
+      key,
+      orgId,
+      input.isEnabled,
+      input.reason,
+      input.expiresAt ? new Date(input.expiresAt) : null,
+      toActor(admin)
+    );
     return okResponse(result, 'Organization override set.');
   }
 
   async removeOrgOverride(req: Request, key: string, orgId: string) {
     const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
     const input = await parseRequest(req, orgOverrideRemoveSchema);
-    await this.service.removeOrgOverride(key, orgId, toActor(admin), input.reason);
+    const mirror = await this.service.removeOrgOverride(key, orgId, toActor(admin), input.reason);
     return okResponse(
-      { flagKey: key, organizationId: orgId, removedAt: new Date().toISOString() },
+      { flagKey: key, organizationId: orgId, removedAt: new Date().toISOString(), mirror },
       'Organization override removed. Organization now follows the global default.'
     );
+  }
+
+  /** Every per-org flag with this organization's effective state. */
+  async getOrgFeatures(orgId: string) {
+    await getSessionAdmin();
+    return okResponse(await this.service.getOrgFeatureAccess(orgId), 'Organization feature access retrieved.');
+  }
+
+  /** Ops vs main-app comparison for one flag (read-only). */
+  async getSync(key: string) {
+    await getSessionAdmin();
+    return okResponse(await this.service.getSyncReport(key), 'Flag sync report retrieved.');
+  }
+
+  /** Re-write the main app's copy of this flag from Ops. */
+  async repairSync(req: Request, key: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
+    const input = await parseRequest(req, syncRepairSchema);
+    return okResponse(await this.service.repairSync(key, toActor(admin), input.extras), 'Flag re-synced to the main app.');
   }
 }
 export default FeatureFlagsController;

@@ -23,6 +23,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { errorMessage } from '@/lib/errors';
 
 type ToastFn = (title: string, description?: string, type?: 'success' | 'warning' | 'error' | 'info') => void;
 
@@ -219,8 +220,8 @@ function OrgAccessPanel({ typeKey, canManage, toast }: { typeKey: string; canMan
       setIsEnabled(true);
       invalidate();
     },
-    onError: (err: any) => {
-      toast('Failed to Update Access', err?.message || 'Could not update organization access.', 'error');
+    onError: (err: unknown) => {
+      toast('Failed to Update Access', errorMessage(err) || 'Could not update organization access.', 'error');
     },
   });
 
@@ -443,8 +444,8 @@ export default function AmbassadorTypesView() {
       await createType(input);
       toast('Ambassador Type Created', `"${input.label}" is now available for orgs to enable.`, 'success');
       setModalState({ open: false });
-    } catch (err: any) {
-      toast('Failed to Create Type', err?.message || 'Could not create the ambassador type.', 'error');
+    } catch (err) {
+      toast('Failed to Create Type', errorMessage(err) || 'Could not create the ambassador type.', 'error');
     }
   };
 
@@ -453,8 +454,8 @@ export default function AmbassadorTypesView() {
       await updateType(input);
       toast('Ambassador Type Updated', `"${input.label}" has been updated.`, 'success');
       setModalState({ open: false });
-    } catch (err: any) {
-      toast('Failed to Update Type', err?.message || 'Could not update the ambassador type.', 'error');
+    } catch (err) {
+      toast('Failed to Update Type', errorMessage(err) || 'Could not update the ambassador type.', 'error');
     }
   };
 
@@ -465,8 +466,8 @@ export default function AmbassadorTypesView() {
       toast('Ambassador Type Deleted', `"${deleting.label}" has been permanently deleted.`, 'success');
       if (expandedKey === deleting.key) setExpandedKey(null);
       setDeleting(null);
-    } catch (err: any) {
-      toast('Failed to Delete Type', err?.message || 'Could not delete the ambassador type.', 'error');
+    } catch (err) {
+      toast('Failed to Delete Type', errorMessage(err) || 'Could not delete the ambassador type.', 'error');
     }
   };
 

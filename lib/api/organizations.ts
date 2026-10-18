@@ -1,7 +1,8 @@
 'use client';
 
-import { Organization, Contest, Participant, SupportNote, OrganizationSubscription, SubscriptionOverride, PlanChangeEvent, UsageSnapshot } from '@/lib/types';
+import { ContestStatus, ParticipantStatus, ParticipantPaymentStatus, Organization, Contest, Participant, SupportNote, OrganizationSubscription, SubscriptionOverride, PlanChangeEvent, UsageSnapshot } from '@/lib/types';
 import { apiRequest } from '@/lib/api/utils';
+import { orgLogoFallback } from '@/lib/format';
 
 export interface GetOrganizationsResponse {
   data: Array<Organization & {
@@ -13,33 +14,73 @@ export interface GetOrganizationsResponse {
   limit: number;
 }
 
-export async function getOrganizations(params: {
+/** Row of GET /organizations/[orgId]/notes (author name is resolved server-side). */
+interface RawNote {
+  id: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+  tags?: string[];
+}
+
+/** GET /organizations/[orgId]/subscription — only the parts the client reads. */
+interface RawSubscriptionResponse {
+  subscription: Pick<
+    OrganizationSubscription,
+    'id' | 'organizationId' | 'billingCycle' | 'periodMonths' | 'currentPeriodStart' | 'currentPeriodEnd'
+  > & { status: string };
+  plan: { id?: string; slug: string };
+  overrides?: Array<Omit<SubscriptionOverride, 'value' | 'createdByAdminName'> & { value: unknown; createdByAdminName?: string }>;
+  effectiveLimits: OrganizationSubscription['effectiveLimits'];
+  changeHistory?: Array<{ id: string; fromPlanId: string; toPlanId: string; changedAt: string }>;
+}
+
+export type OrgSortField = 'createdAt' | 'name' | 'memberCount' | 'contestCount' | 'participantCount';
+
+import type { OrgListMember, OrgProfileDetail, OrgContestDetail, OrgParticipantDetail } from '@/server/features/organizations/organizations.types';
+import type { OrgInstitutionSummary } from '@/server/features/institution/institution.types';
+import type { OrgFeatureAccess } from '@/server/features/feature-flags/feature-flags.types';
+
+export interface GetOrganizationsParams {
   page?: number;
   limit?: number;
   search?: string;
+  /** 'all' | 'active' | 'suspended' | 'deleted' (see ORG_STATUS_FILTERS). */
   status?: string;
-  planId?: string;
-} = {}): Promise<GetOrganizationsResponse> {
+  /** Plan slug (not id). */
+  planSlug?: string;
+  /** Only organizations that effectively have this institution feature ('any' = at least one). */
+  feature?: string;
+  sort?: OrgSortField;
+  order?: 'asc' | 'desc';
+}
+
+export async function getOrganizations(params: GetOrganizationsParams = {}): Promise<GetOrganizationsResponse> {
   const query = new URLSearchParams();
   if (params.page) query.append('page', params.page.toString());
   if (params.limit) query.append('limit', params.limit.toString());
   if (params.search) query.append('search', params.search);
-  if (params.status) query.append('status', params.status);
-  if (params.planId) query.append('planSlug', params.planId);
+  if (params.status && params.status !== 'all') query.append('status', params.status);
+  if (params.planSlug && params.planSlug !== 'all') query.append('planSlug', params.planSlug);
+  if (params.feature && params.feature !== 'all') query.append('feature', params.feature);
+  if (params.sort) query.append('sort', params.sort);
+  if (params.order) query.append('order', params.order);
 
   const response = await apiRequest<{
-    data: any[];
+    data: OrgListMember[];
     total: number;
     page: number;
     limit: number;
   }>(`/api/v1/ops/organizations?${query.toString()}`);
 
-  const data = response.data.map((item: any) => ({
+  const data = response.data.map((item) => ({
     id: item.id,
     name: item.name,
     slug: item.slug,
     status: item.status,
     planId: item.plan.slug,
+    hasSubscription: item.plan.hasSubscription,
+    features: item.features ?? [],
     createdAt: item.createdAt,
     updatedAt: item.createdAt,
     memberCount: item.memberCount,
@@ -53,7 +94,7 @@ export async function getOrganizations(params: {
       email: item.ownerEmail,
       phone: '',
     },
-    logoUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(item.name)}&backgroundColor=0d9488`,
+    logoUrl: item.logoUrl || orgLogoFallback(item.name),
     notes: [],
   }));
 
@@ -67,7 +108,7 @@ export async function getOrganizations(params: {
 
 export async function getOrganizationNotes(orgId: string): Promise<SupportNote[]> {
   try {
-    const notes = await apiRequest<any[]>(`/api/v1/ops/organizations/${orgId}/notes`);
+    const notes = await apiRequest<RawNote[]>(`/api/v1/ops/organizations/${orgId}/notes`);
     return notes.map(n => ({
       id: n.id,
       authorName: n.authorName,
@@ -83,7 +124,7 @@ export async function getOrganizationNotes(orgId: string): Promise<SupportNote[]
 export async function getOrganizationDetail(orgId: string): Promise<Organization | null> {
   try {
     const [raw, notes] = await Promise.all([
-      apiRequest<any>(`/api/v1/ops/organizations/${orgId}`),
+      apiRequest<OrgProfileDetail>(`/api/v1/ops/organizations/${orgId}`),
       getOrganizationNotes(orgId),
     ]);
     return {
@@ -92,6 +133,7 @@ export async function getOrganizationDetail(orgId: string): Promise<Organization
       slug: raw.slug,
       status: raw.isDeleted ? 'DELETED' : raw.isActive ? 'ACTIVE' : 'SUSPENDED',
       planId: raw.plan.slug,
+      hasSubscription: raw.plan.hasSubscription,
       createdAt: raw.createdAt,
       updatedAt: raw.createdAt,
       memberCount: raw.memberCount,
@@ -103,35 +145,41 @@ export async function getOrganizationDetail(orgId: string): Promise<Organization
         email: raw.ownerEmail,
         phone: '',
       },
-      logoUrl: raw.logoUrl,
+      logoUrl: raw.logoUrl ?? orgLogoFallback(raw.name),
+      hasCustomLogo: raw.hasCustomLogo,
+      contestCount: raw.contestCount,
+      participantCount: raw.participantCount,
       suspendReason: raw.suspension?.reason,
       suspendedAt: raw.suspension?.suspendedAt,
       notes: notes,
     };
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
-export async function createOrganization(params: {
+export interface CreateOrganizationInput {
   name: string;
-  slug: string;
+  /** Optional: generated from the name when empty. Immutable once created. */
+  slug?: string;
   ownerName: string;
   ownerEmail: string;
-  planId: string;
-}): Promise<Organization> {
-  throw new Error('Direct organization creation is handled via public tenant signup.');
+  /** Ops subscription plan id; the free starter plan when omitted. */
+  planId?: string;
 }
 
-export async function updateOrganization(
-  orgId: string,
-  params: {
-    name: string;
-    logoUrl: string;
-    planId?: string;
-  }
-): Promise<Organization> {
-  throw new Error('Organization details are managed by tenant owners.');
+export async function createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string; createdAccount: boolean; planAssigned: boolean }> {
+  return apiRequest(`/api/v1/ops/organizations`, {
+    method: 'POST',
+    body: JSON.stringify({ ...input, slug: input.slug || undefined, planId: input.planId || undefined }),
+  });
+}
+
+export async function updateOrganization(orgId: string, input: { name?: string; logoUrl?: string | null }): Promise<void> {
+  await apiRequest(`/api/v1/ops/organizations/${orgId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
 }
 
 export async function suspendOrganization(orgId: string, reason: string): Promise<void> {
@@ -148,21 +196,42 @@ export async function activateOrganization(orgId: string): Promise<void> {
   });
 }
 
-export async function deleteOrganization(orgId: string): Promise<void> {
-  await suspendOrganization(orgId, 'Soft-deleted by platform operator');
+/** Soft delete: hidden from lists, admins locked out, reversible, owner NOT notified. */
+export async function deleteOrganization(orgId: string, reason: string): Promise<void> {
+  await apiRequest(`/api/v1/ops/organizations/${orgId}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ reason }),
+  });
 }
 
-export async function bulkSuspendOrganizations(orgIds: string[], reason: string): Promise<void> {
-  for (const id of orgIds) {
-    await suspendOrganization(id, reason);
-  }
+export async function restoreOrganization(orgId: string, reason?: string): Promise<void> {
+  await apiRequest(`/api/v1/ops/organizations/${orgId}/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export interface BulkSuspendResult {
+  succeeded: string[];
+  failed: Array<{ orgId: string; message: string }>;
+}
+
+/** Suspends every org it can and reports the rest, instead of stopping at the first failure. */
+export async function bulkSuspendOrganizations(orgIds: string[], reason: string): Promise<BulkSuspendResult> {
+  const results = await Promise.allSettled(orgIds.map((id) => suspendOrganization(id, reason)));
+  const outcome: BulkSuspendResult = { succeeded: [], failed: [] };
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') outcome.succeeded.push(orgIds[i]);
+    else outcome.failed.push({ orgId: orgIds[i], message: (r.reason as Error)?.message || 'Failed' });
+  });
+  return outcome;
 }
 
 export async function addOrganizationNote(
   orgId: string,
   note: { authorName: string; body: string; tags: string[] }
 ): Promise<SupportNote> {
-  const result = await apiRequest<any>(`/api/v1/ops/organizations/${orgId}/notes`, {
+  const result = await apiRequest<RawNote>(`/api/v1/ops/organizations/${orgId}/notes`, {
     method: 'POST',
     body: JSON.stringify({
       body: note.body,
@@ -175,7 +244,7 @@ export async function addOrganizationNote(
     authorName: result.authorName,
     body: result.body,
     createdAt: result.createdAt,
-    tags: result.tags,
+    tags: result.tags ?? [],
   };
 }
 
@@ -191,26 +260,52 @@ export async function getOrganizationMembers(orgId: string): Promise<OrgMember[]
   return apiRequest<OrgMember[]>(`/api/v1/ops/organizations/${orgId}/members`);
 }
 
-export async function getOrganizationParticipants(orgId: string, contestId?: string): Promise<Participant[]> {
-  const rawList = await apiRequest<any[]>(`/api/v1/ops/organizations/${orgId}/participants`);
-  return rawList.map((p) => ({
-    id: p.id,
-    organizationId: orgId,
-    // Use the participant's real contest linkage returned by the API.
-    // `contestId` (the function argument) is an optional caller-supplied
-    // filter, not a per-row fallback — it must never overwrite real data,
-    // and there is no literal placeholder here anymore.
-    contestId: p.contestId || contestId || '',
-    registrationRef: p.registrationRef,
-    firstName: p.firstName,
-    lastName: p.lastName,
-    email: p.email,
-    phone: p.phone,
-    status: p.status,
-    registeredAt: p.registeredAt,
-    paymentStatus: p.paymentStatus,
-    paymentAmount: p.paymentAmount,
-  }));
+export interface OrgParticipantsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  contestId?: string;
+  status?: string;
+  /** A payment status, or FREE for participants with no payment row. */
+  paymentStatus?: string;
+}
+
+export interface OrgParticipantsPage {
+  data: Participant[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+/** One page of an organization's participants; filtering and paging happen on the server. */
+export async function getOrganizationParticipants(orgId: string, params: OrgParticipantsParams = {}): Promise<OrgParticipantsPage> {
+  const query = new URLSearchParams();
+  (Object.entries(params) as Array<[string, string | number | undefined]>).forEach(([key, value]) => {
+    if (value !== undefined && value !== '' && value !== 'all') query.set(key, String(value));
+  });
+  const res = await apiRequest<{ data: OrgParticipantDetail[]; total: number; page: number; limit: number }>(
+    `/api/v1/ops/organizations/${orgId}/participants?${query.toString()}`
+  );
+  return {
+    total: res.total,
+    page: res.page,
+    limit: res.limit,
+    data: res.data.map((p) => ({
+      id: p.id,
+      organizationId: orgId,
+      contestId: p.contestId,
+      contestTitle: p.contestTitle,
+      registrationRef: p.registrationRef,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      email: p.email,
+      phone: p.phone,
+      status: p.status as ParticipantStatus,
+      registeredAt: p.registeredAt,
+      paymentStatus: p.paymentStatus as ParticipantPaymentStatus,
+      paymentAmount: p.paymentAmount,
+    })),
+  };
 }
 
 export interface OrgPayment {
@@ -256,7 +351,7 @@ export async function resendRenewalReminder(orgId: string): Promise<ResendResult
 }
 
 export async function getOrganizationContests(orgId: string): Promise<Contest[]> {
-  const rawList = await apiRequest<any[]>(`/api/v1/ops/organizations/${orgId}/contests`);
+  const rawList = await apiRequest<OrgContestDetail[]>(`/api/v1/ops/organizations/${orgId}/contests`);
   return rawList.map((c) => ({
     id: c.id,
     organizationId: orgId,
@@ -264,15 +359,19 @@ export async function getOrganizationContests(orgId: string): Promise<Contest[]>
     title: c.title,
     slug: c.slug,
     description: '',
-    status: c.status,
+    status: c.status as ContestStatus,
     startTime: c.startTime,
     scheduledAt: c.startTime,
     duration: c.duration,
     durationMinutes: c.duration,
-    registrationDeadline: c.startTime,
+    endTime: c.endTime,
+    registrationDeadline: c.registrationDeadline,
     registrationFee: c.registrationFee,
     currency: 'INR',
-    maxParticipants: 1000,
+    maxParticipants: c.maxParticipants,
+    timingMode: c.timingMode,
+    audience: c.audience,
+    questionSelection: c.questionSelection,
     participantCount: c.participantCount,
     revenueCollected: c.revenueCollected,
     createdAt: c.createdAt,
@@ -282,17 +381,17 @@ export async function getOrganizationContests(orgId: string): Promise<Contest[]>
 
 export async function getOrganizationSubscription(orgId: string): Promise<OrganizationSubscription | null> {
   try {
-    const res = await apiRequest<any>(`/api/v1/ops/organizations/${orgId}/subscription`);
+    const res = await apiRequest<RawSubscriptionResponse>(`/api/v1/ops/organizations/${orgId}/subscription`);
     return {
       id: res.subscription.id,
       organizationId: res.subscription.organizationId,
       planId: res.plan.id || res.plan.slug,
-      status: res.subscription.status.toLowerCase(),
+      status: res.subscription.status.toLowerCase() as OrganizationSubscription['status'],
       billingCycle: res.subscription.billingCycle,
       periodMonths: res.subscription.periodMonths,
       currentPeriodStart: res.subscription.currentPeriodStart,
       currentPeriodEnd: res.subscription.currentPeriodEnd,
-      overrides: (res.overrides || []).map((o: any) => ({
+      overrides: (res.overrides || []).map((o) => ({
         id: o.id,
         field: o.field,
         value: typeof o.value === 'string' ? JSON.parse(o.value) : o.value,
@@ -300,13 +399,14 @@ export async function getOrganizationSubscription(orgId: string): Promise<Organi
         reason: o.reason,
         expiresAt: o.expiresAt,
         createdAt: o.createdAt,
+        createdByAdminName: o.createdByAdminName ?? '',
       })),
       // Server-computed (server/features/subscriptions/effective-limits.ts) —
       // the frontend renders this rather than re-deriving it from raw
       // overrides, so there's exactly one place the fold logic lives.
       effectiveLimits: res.effectiveLimits,
     };
-  } catch (err) {
+  } catch {
     return null;
   }
 }
@@ -319,7 +419,7 @@ export async function assignInitialSubscriptionPlan(orgId: string, planId: strin
   return getOrganizationSubscription(orgId) as Promise<OrganizationSubscription>;
 }
 
-export async function changeOrganizationPlan(orgId: string, planId: string, adminName: string): Promise<OrganizationSubscription> {
+export async function changeOrganizationPlan(orgId: string, planId: string): Promise<OrganizationSubscription> {
   await apiRequest(`/api/v1/ops/organizations/${orgId}/subscription/change-plan`, {
     method: 'POST',
     body: JSON.stringify({ planId }),
@@ -347,8 +447,7 @@ export async function addSubscriptionOverride(
 export async function removeSubscriptionOverride(
   orgId: string,
   overrideId: string,
-  reason: string,
-  adminName: string
+  reason: string
 ): Promise<OrganizationSubscription> {
   await apiRequest(`/api/v1/ops/organizations/${orgId}/subscription/overrides/${overrideId}`, {
     method: 'DELETE',
@@ -358,9 +457,9 @@ export async function removeSubscriptionOverride(
 }
 
 export async function getPlanChangeHistory(orgId: string): Promise<PlanChangeEvent[]> {
-  const sub = await apiRequest<any>(`/api/v1/ops/organizations/${orgId}/subscription`).catch(() => null);
+  const sub = await apiRequest<RawSubscriptionResponse>(`/api/v1/ops/organizations/${orgId}/subscription`).catch(() => null);
   if (!sub || !sub.changeHistory) return [];
-  return sub.changeHistory.map((c: any) => ({
+  return sub.changeHistory.map((c) => ({
     id: c.id,
     organizationId: orgId,
     fromPlanId: c.fromPlanId,
@@ -382,4 +481,20 @@ export async function getPlanChangeHistory(orgId: string): Promise<PlanChangeEve
  */
 export async function getUsageSnapshot(orgId: string): Promise<UsageSnapshot> {
   return apiRequest<UsageSnapshot>(`/api/v1/ops/organizations/${orgId}/usage`);
+}
+
+/** id → name for a set of organizations, in one request. */
+export async function getOrganizationNames(ids: string[]): Promise<Record<string, string>> {
+  if (ids.length === 0) return {};
+  return apiRequest<Record<string, string>>(`/api/v1/ops/organizations/names?ids=${encodeURIComponent(ids.join(','))}`);
+}
+
+/** Learners, groups, contests by mode, gradebook — how this organization uses institution mode. */
+export async function getOrganizationInstitution(orgId: string): Promise<OrgInstitutionSummary> {
+  return apiRequest<OrgInstitutionSummary>(`/api/v1/ops/organizations/${orgId}/institution`);
+}
+
+/** Every per-organization flag with this organization's effective state, why, and what blocks it. */
+export async function getOrganizationFeatures(orgId: string): Promise<OrgFeatureAccess[]> {
+  return apiRequest<OrgFeatureAccess[]>(`/api/v1/ops/organizations/${orgId}/features`);
 }

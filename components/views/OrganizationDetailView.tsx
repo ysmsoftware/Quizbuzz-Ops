@@ -1,13 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOrganizationDetail } from '@/lib/hooks/useOrganizations';
 import { usePlans } from '@/lib/hooks/usePlans';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
-import { Globe, Users, Trophy, User, CreditCard, Notebook, Layers, Landmark } from 'lucide-react';
-import { writeAuditLogEntry } from '@/lib/api/auditLog';
+import { Globe, Users, Trophy, User, CreditCard, Notebook, Layers, Landmark, GraduationCap, ToggleRight, type LucideIcon } from 'lucide-react';
 
 import OrgDetailHeader from './organization-detail/OrgDetailHeader';
 import OrgOverviewTab from './organization-detail/tabs/OrgOverviewTab';
@@ -17,18 +16,22 @@ import OrgParticipantsTab from './organization-detail/tabs/OrgParticipantsTab';
 import OrgPaymentsTab from './organization-detail/tabs/OrgPaymentsTab';
 import OrgPayoutAccountTab from './organization-detail/tabs/OrgPayoutAccountTab';
 import OrgNotesTab from './organization-detail/tabs/OrgNotesTab';
+import OrgInstitutionTab from './organization-detail/tabs/OrgInstitutionTab';
+import OrgFeaturesTab from './organization-detail/tabs/OrgFeaturesTab';
 import OrganizationSubscriptionTab from './OrganizationSubscriptionTab';
 
 import OrgEditModal from './organization-detail/modals/OrgEditModal';
 import OrgSuspendModal from './organization-detail/modals/OrgSuspendModal';
 import OrgDeleteModal from './organization-detail/modals/OrgDeleteModal';
+import { useResetOnChange } from '@/lib/hooks/useResetOnChange';
+import { errorMessage } from '@/lib/errors';
 
 interface DetailViewProps {
   orgId: string;
   onBack?: () => void;
 }
 
-type DetailTab = 'overview' | 'members' | 'contests' | 'participants' | 'payments' | 'payout_account' | 'notes' | 'subscription';
+type DetailTab = 'overview' | 'members' | 'contests' | 'participants' | 'institution' | 'features' | 'payments' | 'payout_account' | 'notes' | 'subscription';
 
 export default function OrganizationDetailView({ orgId, onBack }: DetailViewProps) {
   const router = useRouter();
@@ -45,65 +48,65 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
     contests,
     members,
     payments,
-    useParticipants,
     isLoadingDetails,
     isLoadingMembers,
     isLoadingPayments,
     suspendOrg,
     activateOrg,
     deleteOrg,
+    restoreOrg,
     updateOrg,
     addNote,
     isSuspending,
     isActivating,
     isDeleting,
+    isRestoring,
     isUpdating,
     isAddingNote,
     resendReceipt,
     resendingReceiptPaymentId,
   } = useOrganizationDetail(orgId);
 
-  // Load participants hook query
-  const { data: participants = [], isLoading: isLoadingParticipants } = useParticipants();
-
   // Dialog States
   const [isSuspendOpen, setIsSuspendOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
-  const [confirmNameDelete, setConfirmNameDelete] = useState('');
 
   // Edit Form Fields State
   const [editFields, setEditFields] = useState({
     name: '',
     logoUrl: '',
-    planId: ''
   });
 
   // Populate Edit Fields when organization is loaded
-  useEffect(() => {
+  useResetOnChange(`${organization?.id}|${organization?.name}|${organization?.logoUrl}|${organization?.hasCustomLogo}`, () => {
     if (organization) {
       setEditFields({
         name: organization.name,
-        logoUrl: organization.logoUrl,
-        planId: organization.planId
+        logoUrl: organization.hasCustomLogo ? organization.logoUrl : '',
       });
     }
-  }, [organization]);
+  });
 
   // Payment Financial Aggregates
   const paymentAggregates = useMemo(() => {
     let collected = 0;
     let pending = 0;
     let refunded = 0;
+    let subscriptionPaid = 0;
+    let contestFeesCollected = 0;
 
     (payments || []).forEach(p => {
-      if (p.status === 'PAID') collected += p.amount;
-      else if (p.status === 'PENDING') pending += p.amount;
+      if (p.status === 'PAID') {
+        collected += p.amount;
+        if (p.source === 'subscription') subscriptionPaid += p.amount;
+        else contestFeesCollected += p.amount;
+      } else if (p.status === 'PENDING') pending += p.amount;
       else if (p.status === 'REFUNDED') refunded += p.amount;
     });
 
-    return { collected, pending, refunded };
+    return { collected, pending, refunded, subscriptionPaid, contestFeesCollected };
   }, [payments]);
 
   if (isLoadingDetails || !organization) {
@@ -133,11 +136,11 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateOrg(editFields);
+      await updateOrg({ name: editFields.name.trim(), logoUrl: editFields.logoUrl.trim() || null });
       toast('Profile Updated', 'Organization modifications have been saved.', 'success');
       setIsEditOpen(false);
-    } catch (err: any) {
-      toast('Update Failed', err.message || 'Operation failed.', 'error');
+    } catch (err) {
+      toast('Update Failed', errorMessage(err) || 'Operation failed.', 'error');
     }
   };
 
@@ -152,8 +155,8 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
       toast('Organization Suspended', `"${organization.name}" compliance lock applied.`, 'success');
       setIsSuspendOpen(false);
       setSuspendReason('');
-    } catch (err: any) {
-      toast('Suspension Failed', err.message || 'Operation failed.', 'error');
+    } catch (err) {
+      toast('Suspension Failed', errorMessage(err) || 'Operation failed.', 'error');
     }
   };
 
@@ -161,32 +164,37 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
     try {
       await activateOrg();
       toast('Organization Reactivated', `"${organization.name}" operations are restored.`, 'success');
-    } catch (err: any) {
-      toast('Activation Failed', err.message || 'Operation failed.', 'error');
+    } catch (err) {
+      toast('Activation Failed', errorMessage(err) || 'Operation failed.', 'error');
     }
   };
 
-  const handleDeleteSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (confirmNameDelete !== organization.name) {
-      toast('Validation Error', 'Names do not match.', 'warning');
-      return;
-    }
+  const handleDelete = async (reason: string) => {
     try {
-      await deleteOrg();
-      toast('Deleted Successfully', `"${organization.name}" has been deleted.`, 'success');
-      setIsDeleteOpen(false);
+      await deleteOrg(reason);
+      toast('Organization Deleted', `"${organization.name}" is hidden from lists. You can restore it from the Deleted filter. The owner was not notified.`, 'success');
       handleBackClick();
-    } catch (err: any) {
-      toast('Deletion Failed', err.message || 'Operation failed.', 'error');
+    } catch (err: unknown) {
+      toast('Deletion Failed', err instanceof Error ? err.message : 'Operation failed.', 'error');
     }
   };
 
-  const TABS_LIST: Array<{ id: DetailTab; label: string; icon: any }> = [
+  const handleRestore = async () => {
+    try {
+      await restoreOrg();
+      toast('Organization Restored', `"${organization.name}" is back in the directory.`, 'success');
+    } catch (err: unknown) {
+      toast('Restore Failed', err instanceof Error ? err.message : 'Operation failed.', 'error');
+    }
+  };
+
+  const TABS_LIST: Array<{ id: DetailTab; label: string; icon: LucideIcon }> = [
     { id: 'overview', label: 'Overview', icon: Globe },
     { id: 'members', label: 'Members', icon: Users },
     { id: 'contests', label: 'Contests', icon: Trophy },
     { id: 'participants', label: 'Participants', icon: User },
+    { id: 'institution', label: 'Institution', icon: GraduationCap },
+    { id: 'features', label: 'Features', icon: ToggleRight },
     { id: 'payments', label: 'Payments', icon: CreditCard },
     { id: 'payout_account', label: 'Payout Account', icon: Landmark },
     { id: 'notes', label: 'Support Notes', icon: Notebook },
@@ -204,7 +212,10 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
         onOpenSuspend={() => setIsSuspendOpen(true)}
         onReactivate={handleReactivateClick}
         onOpenDelete={() => setIsDeleteOpen(true)}
+        onRestore={handleRestore}
         isActivating={isActivating}
+        isRestoring={isRestoring}
+        canManage={admin?.role === 'SUPER_ADMIN'}
       />
 
       {/* Tabs Navigation Bar */}
@@ -238,7 +249,6 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
             organization={organization}
             contests={contests}
             members={members}
-            participantsCount={participants.length}
             paymentAggregates={paymentAggregates}
             currentPlan={currentPlan}
           />
@@ -256,11 +266,13 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
         )}
 
         {activeTab === 'participants' && (
-          <OrgParticipantsTab
-            participants={participants}
-            contests={contests}
-            isLoadingParticipants={isLoadingParticipants}
-          />
+          <OrgParticipantsTab orgId={organization.id} contests={contests} />
+        )}
+
+        {activeTab === 'institution' && <OrgInstitutionTab orgId={organization.id} />}
+
+        {activeTab === 'features' && (
+          <OrgFeaturesTab orgId={organization.id} canManage={admin?.role === 'SUPER_ADMIN' && organization.status !== 'DELETED'} />
         )}
 
         {activeTab === 'payments' && (
@@ -300,7 +312,6 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
         onClose={() => setIsEditOpen(false)}
         editFields={editFields}
         setEditFields={setEditFields}
-        plans={plans}
         isUpdating={isUpdating}
         onSubmit={handleEditSubmit}
       />
@@ -317,18 +328,11 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
 
       <OrgDeleteModal
         isOpen={isDeleteOpen}
-        onClose={() => {
-          setIsDeleteOpen(false);
-          setConfirmNameDelete('');
-        }}
+        onClose={() => setIsDeleteOpen(false)}
         orgName={organization.name}
-        confirmNameDelete={confirmNameDelete}
-        setConfirmNameDelete={setConfirmNameDelete}
         isDeleting={isDeleting}
-        onSubmit={handleDeleteSubmit}
+        onConfirm={handleDelete}
       />
-
-
 
     </div>
   );

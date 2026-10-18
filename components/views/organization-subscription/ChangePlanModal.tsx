@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { SubscriptionPlan } from '@/lib/types';
 import { Layers, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { formatInr } from '@/lib/format';
 
 interface ChangePlanModalProps {
   isOpen: boolean;
@@ -87,9 +88,9 @@ export default function ChangePlanModal({
                       <div className="text-right">
                         <span className="font-bold text-foreground">
                           {p.allowsMonthly && p.monthlyPrice !== null
-                            ? p.monthlyPrice === 0 ? 'Free' : `₹${p.monthlyPrice.toLocaleString('en-IN')}/mo`
+                            ? p.monthlyPrice === 0 ? 'Free' : `${formatInr(p.monthlyPrice)}/mo`
                             : p.allowsAnnual && p.annualPrice !== null
-                            ? p.annualPrice === 0 ? 'Free' : `₹${p.annualPrice.toLocaleString('en-IN')}/yr`
+                            ? p.annualPrice === 0 ? 'Free' : `${formatInr(p.annualPrice)}/yr`
                             : '—'}
                         </span>
                         {isSelected && !isCurrent && <Check className="h-4 w-4 text-primary ml-auto mt-1 font-bold" />}

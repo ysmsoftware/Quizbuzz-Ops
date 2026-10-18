@@ -49,3 +49,6 @@ export async function getMainAppAuditLogs(
 
   return apiRequest<PaginatedMainAppAuditLogs>(`/api/v1/ops/audit-log/main-app?${query.toString()}`);
 }
+
+/** Distinct actions present in the main app's audit_logs. */
+export const getMainAppAuditActions = () => apiRequest<string[]>('/api/v1/ops/audit-log/main-app/actions');

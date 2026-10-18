@@ -76,8 +76,11 @@ model PlatformAdmin {
   lastName      String?
   role          PlatformAdminRole @default(SUPPORT)
   isActive      Boolean           @default(true)
+  /** HMAC of the emailed login code (never the code itself). */
   otpCode       String?
   otpExpiresAt  DateTime?
+  /** Wrong guesses against the current code; the code is burned at OTP_MAX_ATTEMPTS. */
+  otpAttempts   Int               @default(0)
   lastLoginAt   DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
@@ -493,6 +496,9 @@ enum OpsMessageTemplate {
   PAYOUT_ACCOUNT_STATUS_CHANGED
   ORG_SUSPENDED
   ORG_REACTIVATED
+  // Welcome mail for an organization created from the ops dashboard (owner sets a
+  // password through the main app's Forgot password flow).
+  ORG_CREATED
   CUSTOM
   // Platform-admin login OTP. Sent directly via getEmailProvider() from
   // platform-auth.service.ts — bypasses OpsMessageLog/the BullMQ queue on

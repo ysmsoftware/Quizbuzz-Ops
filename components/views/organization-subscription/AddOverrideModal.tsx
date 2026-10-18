@@ -109,7 +109,7 @@ export default function AddOverrideModal({
                 }`}
               >
                 <div className="font-semibold">Add to current limit</div>
-                <div className="text-[10px] opacity-80">e.g. "+1" on top of what they already have</div>
+                <div className="text-[10px] opacity-80">e.g. &quot;+1&quot; on top of what they already have</div>
               </button>
               <button
                 type="button"

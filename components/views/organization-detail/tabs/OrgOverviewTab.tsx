@@ -3,16 +3,21 @@
 import { Globe, User } from 'lucide-react';
 import { format } from 'date-fns';
 import { Organization, Contest, Member, SubscriptionPlan } from '@/lib/types';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatInr, formatNumber } from '@/lib/format';
 
 interface OrgOverviewTabProps {
   organization: Organization;
   contests: Contest[];
   members: Member[];
-  participantsCount: number;
   paymentAggregates: {
     collected: number;
     pending: number;
     refunded: number;
+    /** Paid by the org to QuizBuzz (plan subscriptions). */
+    subscriptionPaid: number;
+    /** Paid by participants to the org (registration fees). Org money, not QuizBuzz revenue. */
+    contestFeesCollected: number;
   };
   currentPlan?: SubscriptionPlan;
 }
@@ -21,7 +26,6 @@ export default function OrgOverviewTab({
   organization,
   contests,
   members,
-  participantsCount,
   paymentAggregates,
   currentPlan,
 }: OrgOverviewTabProps) {
@@ -31,22 +35,30 @@ export default function OrgOverviewTab({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-card border border-border/40 rounded-xl p-5 shadow-sm space-y-2">
           <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Quizzes Hosted</span>
-          <h3 className="text-2xl font-bold font-mono text-foreground">{(organization as any).contestCount || contests.length}</h3>
+          <h3 className="text-2xl font-bold font-mono text-foreground">{formatNumber(organization.contestCount ?? contests.length)}</h3>
           <span className="text-[11px] text-muted-foreground block">
-            {contests.filter(c => c.status === 'COMPLETED').length} completed • {contests.filter(c => c.status === 'PUBLISHED' || c.status === 'LIVE').length} scheduled
+            {contests.filter(c => c.status === 'LIVE').length} live • {contests.filter(c => c.status === 'PUBLISHED' || c.status === 'REGISTRATION_CLOSED').length} upcoming • {contests.filter(c => c.status === 'COMPLETED' || c.status === 'RESULTS_OUT').length} finished
           </span>
         </div>
 
         <div className="bg-card border border-border/40 rounded-xl p-5 shadow-sm space-y-2">
           <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Total Registrations</span>
-          <h3 className="text-2xl font-bold font-mono text-foreground">{((organization as any).participantCount || participantsCount).toLocaleString('en-IN')}</h3>
-          <span className="text-[11px] text-muted-foreground block">Across all hosted trivia and exams</span>
+          <h3 className="text-2xl font-bold font-mono text-foreground">{formatNumber(organization.participantCount ?? 0)}</h3>
+          <span className="text-[11px] text-muted-foreground block">Registrations and assigned learners, all contests</span>
         </div>
 
         <div className="bg-card border border-border/40 rounded-xl p-5 shadow-sm space-y-2">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Total Revenue Log</span>
-          <h3 className="text-2xl font-bold font-mono text-foreground">₹{paymentAggregates.collected.toLocaleString('en-IN')}</h3>
-          <span className="text-[11px] text-muted-foreground block">Includes renewal subs + user reg tickets</span>
+          <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Payments</span>
+          <div className="space-y-1">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[11px] text-muted-foreground">Subscription paid to QuizBuzz</span>
+              <span className="font-mono font-bold text-foreground">{formatInr(paymentAggregates.subscriptionPaid)}</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[11px] text-muted-foreground">Contest fees collected by the org</span>
+              <span className="font-mono font-bold text-foreground">{formatInr(paymentAggregates.contestFeesCollected)}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -73,7 +85,7 @@ export default function OrgOverviewTab({
             </div>
             <div>
               <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Operational State</span>
-              <span className="font-bold text-emerald-600">{organization.status}</span>
+              <span className="block mt-0.5"><StatusBadge kind="org" value={organization.status} /></span>
             </div>
             <div>
               <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Creation Timestamp</span>
@@ -81,7 +93,7 @@ export default function OrgOverviewTab({
             </div>
             <div>
               <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Staff Member Accounts</span>
-              <span className="text-foreground font-mono font-bold">{(organization as any).memberCount || members.length} admins</span>
+              <span className="text-foreground font-mono font-bold">{organization.memberCount ?? members.length} admins</span>
             </div>
           </div>
         </div>

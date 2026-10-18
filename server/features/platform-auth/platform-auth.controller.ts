@@ -9,9 +9,9 @@ import { AuthenticationError } from '../../http/errors';
 export class PlatformAuthController {
   constructor(private service: IPlatformAuthService = new PlatformAuthService()) {}
 
-  async login(req: Request) {
+  async login(req: Request, ipAddress: string | null = null) {
     const input = await parseRequest(req, loginSchema);
-    const result = await this.service.login(input.email, input.password);
+    const result = await this.service.login(input.email, input.password, ipAddress);
     return okResponse(result, 'Verification code has been dispatched.');
   }
 

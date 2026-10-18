@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { AlertTriangle, X, Check, Building2, ShieldAlert } from 'lucide-react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { AlertTriangle, Building2  } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SubscriptionPlan } from '@/lib/types';
 
@@ -22,18 +23,15 @@ export default function PlanEditImpactModal({
   fetchImpact,
   isSubmitting,
 }: PlanEditImpactModalProps) {
-  const [impactData, setImpactData] = useState<{ organizationCount: number; organizations: Array<{ id: string; name?: string }> } | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && plan) {
-      setIsLoading(true);
-      fetchImpact(plan.id)
-        .then((res) => setImpactData(res))
-        .catch(() => setImpactData(null))
-        .finally(() => setIsLoading(false));
-    }
-  }, [isOpen, plan, fetchImpact]);
+  // gcTime 0: an impact count must be fresh every time the modal opens, never a cached one.
+  const planId = plan?.id;
+  const { data: impactData = null, isLoading } = useQuery({
+    queryKey: ['plan-edit-impact', planId],
+    queryFn: () => fetchImpact(planId!),
+    enabled: isOpen && !!planId,
+    gcTime: 0,
+    retry: false,
+  });
 
   if (!isOpen || !plan) return null;
 
@@ -75,7 +73,7 @@ export default function PlanEditImpactModal({
                 </div>
 
                 <div className="p-3 bg-amber-500/5 rounded-md border border-amber-500/20 text-muted-foreground leading-relaxed">
-                  Modifying limits or pricing for <strong className="text-foreground">"{plan.name}"</strong> will immediately sync limit caches (<code className="text-primary font-mono text-[11px]">planLimitsCache</code>) across all subscribed tenant organizations.
+                  Modifying limits or pricing for <strong className="text-foreground">&quot;{plan.name}&quot;</strong> will immediately sync limit caches (<code className="text-primary font-mono text-[11px]">planLimitsCache</code>) across all subscribed tenant organizations.
                 </div>
               </>
             )}

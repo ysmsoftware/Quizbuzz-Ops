@@ -1,6 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap');
 @import "tailwindcss";
 
+/* The app toggles a `.dark` class on <html> (ThemeToggle), so make `dark:` follow it, not the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     --background: oklch(0.985 0.002 75);       /* warm off-white, not pure white */
@@ -40,6 +43,26 @@
     --sidebar-accent-foreground: oklch(0.25 0.02 60);
     --sidebar-border: oklch(0.9 0.01 75);
     --sidebar-ring: oklch(0.55 0.15 180);
+
+    /* Status tones: used by StatusBadge, readable in light and dark without dark: variants */
+    --tone-success-bg: oklch(0.96 0.04 155);
+    --tone-success-fg: oklch(0.4 0.12000000000000001 155);
+    --tone-success-border: oklch(0.88 0.07 155);
+    --tone-warning-bg: oklch(0.96 0.04 80);
+    --tone-warning-fg: oklch(0.4 0.12000000000000001 80);
+    --tone-warning-border: oklch(0.88 0.07 80);
+    --tone-danger-bg: oklch(0.96 0.04 25);
+    --tone-danger-fg: oklch(0.4 0.12000000000000001 25);
+    --tone-danger-border: oklch(0.88 0.07 25);
+    --tone-info-bg: oklch(0.96 0.04 245);
+    --tone-info-fg: oklch(0.4 0.12000000000000001 245);
+    --tone-info-border: oklch(0.88 0.07 245);
+    --tone-neutral-bg: oklch(0.96 0.015 260);
+    --tone-neutral-fg: oklch(0.4 0.03 260);
+    --tone-neutral-border: oklch(0.88 0.02 260);
+    --tone-accent-bg: oklch(0.96 0.04 300);
+    --tone-accent-fg: oklch(0.4 0.12000000000000001 300);
+    --tone-accent-border: oklch(0.88 0.07 300);
   }
 
   .dark {
@@ -79,6 +102,26 @@
     --sidebar-accent-foreground: oklch(0.95 0.005 75);
     --sidebar-border: oklch(0.28 0.01 60);
     --sidebar-ring: oklch(0.65 0.14 180);
+
+    /* Status tones (dark) */
+    --tone-success-bg: oklch(0.3 0.06 155);
+    --tone-success-fg: oklch(0.85 0.11 155);
+    --tone-success-border: oklch(0.4 0.08 155);
+    --tone-warning-bg: oklch(0.3 0.06 80);
+    --tone-warning-fg: oklch(0.85 0.11 80);
+    --tone-warning-border: oklch(0.4 0.08 80);
+    --tone-danger-bg: oklch(0.3 0.06 25);
+    --tone-danger-fg: oklch(0.85 0.11 25);
+    --tone-danger-border: oklch(0.4 0.08 25);
+    --tone-info-bg: oklch(0.3 0.06 245);
+    --tone-info-fg: oklch(0.85 0.11 245);
+    --tone-info-border: oklch(0.4 0.08 245);
+    --tone-neutral-bg: oklch(0.3 0.02 260);
+    --tone-neutral-fg: oklch(0.85 0.03 260);
+    --tone-neutral-border: oklch(0.4 0.02 260);
+    --tone-accent-bg: oklch(0.3 0.06 300);
+    --tone-accent-fg: oklch(0.85 0.11 300);
+    --tone-accent-border: oklch(0.4 0.08 300);
   }
 }
 
@@ -133,6 +176,26 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+
+  --color-tone-success-bg: var(--tone-success-bg);
+  --color-tone-success-fg: var(--tone-success-fg);
+  --color-tone-success-border: var(--tone-success-border);
+  --color-tone-warning-bg: var(--tone-warning-bg);
+  --color-tone-warning-fg: var(--tone-warning-fg);
+  --color-tone-warning-border: var(--tone-warning-border);
+  --color-tone-danger-bg: var(--tone-danger-bg);
+  --color-tone-danger-fg: var(--tone-danger-fg);
+  --color-tone-danger-border: var(--tone-danger-border);
+  --color-tone-info-bg: var(--tone-info-bg);
+  --color-tone-info-fg: var(--tone-info-fg);
+  --color-tone-info-border: var(--tone-info-border);
+  --color-tone-neutral-bg: var(--tone-neutral-bg);
+  --color-tone-neutral-fg: var(--tone-neutral-fg);
+  --color-tone-neutral-border: var(--tone-neutral-border);
+  --color-tone-accent-bg: var(--tone-accent-bg);
+  --color-tone-accent-fg: var(--tone-accent-fg);
+  --color-tone-accent-border: var(--tone-accent-border);
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);

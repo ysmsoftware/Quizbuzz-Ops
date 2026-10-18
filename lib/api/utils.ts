@@ -8,13 +8,6 @@ export function simulateLatency(min = 300, max = 600): Promise<void> {
 }
 
 /**
- * Returns true if a random failure should trigger, defaults to 2% chance.
- */
-export function shouldFail(chance = 0.02): boolean {
-  return Math.random() < chance;
-}
-
-/**
  * Error thrown by apiRequest — carries the HTTP status code so callers can
  * distinguish "definitely unauthenticated" (401) from transient failures
  * (network blips, 5xx, aborted requests) instead of treating every failure
@@ -31,7 +24,7 @@ export class ApiRequestError extends Error {
  * Shared wrapper for Next.js API requests.
  * Parses the standard envelope, checks success status, and returns the payload data.
  */
-export async function apiRequest<T = any>(
+export async function apiRequest<T = unknown>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
@@ -44,10 +37,10 @@ export async function apiRequest<T = any>(
     },
   });
 
-  let body: any;
+  let body: { success?: boolean; data?: unknown; message?: string; error?: { code?: string } };
   try {
     body = await response.json();
-  } catch (err) {
+  } catch {
     body = {};
   }
 
@@ -62,5 +55,6 @@ export async function apiRequest<T = any>(
     throw new ApiRequestError(errorMsg, response.status);
   }
 
-  return body.success ? body.data : body;
+  // The caller names the payload type; the response body is validated server-side, not here.
+  return (body.success ? body.data : body) as T;
 }

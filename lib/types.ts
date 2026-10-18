@@ -50,6 +50,14 @@ export interface Organization {
   ownerName: string;
   ownerEmail: string;
   logoUrl: string;
+  /** False when logoUrl is only a generated avatar (no real logo set). */
+  hasCustomLogo?: boolean;
+  contestCount?: number;
+  participantCount?: number;
+  /** false = the plan shown is only the free default (no subscription record). */
+  hasSubscription?: boolean;
+  /** Institution flags this organization effectively has (list view only). */
+  features?: string[];
   notes: SupportNote[];
   suspendReason?: string;
   suspendedAt?: string;
@@ -79,23 +87,38 @@ export interface Contest {
   participantCount: number;
   revenueCollected: number;
   createdAt: string;
+  // Real fields from the main DB (institution mode adds timing mode, audience and question selection).
+  slug?: string;
+  endTime?: string;
+  registrationDeadline?: string;
+  maxParticipants?: number | null;
+  timingMode?: 'SCHEDULED' | 'WINDOW';
+  audience?: 'PUBLIC' | 'PRIVATE_LINK' | 'ASSIGNED';
+  questionSelection?: 'ALL' | 'SETS' | 'POOL';
 }
 
-export type ParticipantStatus = 
-  | 'REGISTERED' 
-  | 'CHECKED_IN' 
-  | 'IN_WAITING' 
-  | 'IN_QUIZ' 
-  | 'SUBMITTED' 
-  | 'DISQUALIFIED' 
+// Mirrors the main app's ParticipantStatus enum (ASSIGNED = added by the org to an
+// assigned-learners contest, no registration/payment). Labels/tones: lib/constants/status.ts.
+export type ParticipantStatus =
+  | 'PENDING_PAYMENT'
+  | 'ASSIGNED'
+  | 'REGISTERED'
+  | 'CHECKED_IN'
+  | 'IN_WAITING'
+  | 'IN_QUIZ'
+  | 'SUBMITTED'
+  | 'DISQUALIFIED'
   | 'ABSENT';
 
-export type ParticipantPaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+// Main-app PaymentStatus as returned by the API, plus FREE (no payment row — free or assigned).
+export type ParticipantPaymentStatus = 'CREATED' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'REFUNDED' | 'FREE';
 
 export interface Participant {
   id: string;
   organizationId: string;
   contestId: string;
+  contestTitle?: string;
+  registrationRef?: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -241,6 +264,9 @@ export interface Payment {
   createdAt: string;
 }
 
+/** Free-form JSON an audit writer attached to the entry (before/after values, ids, ip…). */
+export type AuditMetadata = Record<string, any> | null; // eslint-disable-line @typescript-eslint/no-explicit-any -- values are heterogeneous JSON read by audit-describe
+
 export interface AuditLogEntry {
   id: string;
   actorAdminName: string;
@@ -251,7 +277,8 @@ export interface AuditLogEntry {
   targetType: string;
   targetId: string;
   targetLabel: string; // human-readable, e.g. org name
-  metadata: any; // a small before/after or details object
+  metadata: AuditMetadata; // a small before/after or details object
+  requestId?: string | null;
   createdAt: string;
 }
 
@@ -267,7 +294,7 @@ export interface MainAppAuditLogEntry {
   targetType: string; // main app's own AuditTargetType enum casing (e.g. "CONTEST", "PAYMENT")
   targetId: string;
   targetLabel: string;
-  metadata: any;
+  metadata: AuditMetadata;
   ipAddress: string | null;
   userAgent: string | null;
   createdAt: string;
@@ -419,6 +446,7 @@ export type OpsMessageTemplate =
   | 'PAYOUT_ACCOUNT_STATUS_CHANGED'
   | 'ORG_SUSPENDED'
   | 'ORG_REACTIVATED'
+  | 'ORG_CREATED'
   | 'CUSTOM';
 
 export interface OpsMessage {
@@ -457,6 +485,16 @@ export interface FeatureFlag {
   scope: 'global';
   severity: FeatureFlagSeverity;
   supportsOrgOverride: boolean;
+  /** GLOBAL = on for everyone unless overridden. OPT_IN = off for every org until granted; the global switch only makes it grantable (and OFF is a kill switch). */
+  accessModel: 'GLOBAL' | 'OPT_IN';
+  /** Other flags that must also be on for this one to do anything. */
+  requires: string[];
+  /** Flags that stop working if this one is switched off. */
+  dependents: string[];
+  /** Organizations that currently have it ON through an active (non-expired) override. */
+  grantedOrgCount: number;
+  /** The global value as the main app (which enforces flags) holds it. */
+  mirror: { state: 'IN_SYNC' | 'OUT_OF_SYNC' | 'UNKNOWN'; mainValue: boolean | null };
   updatedAt: string;
   updatedByAdminName: string;
 }
@@ -465,11 +503,31 @@ export interface FeatureFlagOrgOverride {
   id: string;
   flagKey: string;
   organizationId: string;
+  organizationName: string | null;
   isEnabled: boolean;
   reason: string;
   createdByName: string;
   expiresAt: string | null;
+  /** Past its expiry: the main app ignores it. */
+  isExpired: boolean;
+  /** Does the main app hold the same override? null = couldn't check. */
+  mirrored: boolean | null;
   createdAt: string;
+}
+
+/** Result of a flag write: did it also reach the main app, and anything the operator should know. */
+export interface FlagWriteOutcome {
+  mirror: { ok: boolean; error?: string };
+  warnings: string[];
+}
+
+export interface FlagSyncReport {
+  key: string;
+  inSync: boolean;
+  global: { ops: boolean; main: boolean | null };
+  missingInMain: string[];
+  mismatched: Array<{ organizationId: string; ops: { isEnabled: boolean; expiresAt: string | null }; main: { isEnabled: boolean; expiresAt: string | null } }>;
+  extraInMain: string[];
 }
 
 export type AmbassadorApplicationFieldType = 'TEXT' | 'EMAIL' | 'PHONE' | 'NUMBER' | 'SELECT' | 'DATE';

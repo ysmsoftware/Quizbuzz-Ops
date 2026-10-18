@@ -53,12 +53,12 @@ export async function POST(req: Request) {
         where: { razorpayOrderId, status: 'CREATED' },
         data: { status: 'PENDING', razorpayPaymentId, razorpaySignature },
       });
-    } catch (e: any) {
-      if (e?.code !== 'P2025') throw e;
+    } catch (e) {
+      if ((e as { code?: string })?.code !== 'P2025') throw e;
     }
 
     return okResponse({ verified: true }, 'Payment signature verified.');
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error verifying billing portal payment signature:', error);
     return errorResponse('Internal server error verifying payment', 'INTERNAL_SERVER_ERROR', null, 500);
   }

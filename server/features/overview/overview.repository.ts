@@ -1,10 +1,11 @@
 import { queryMainDb } from '../../db/main-db-pool';
+import { ownerEmailSql } from '../organizations/org-owner.sql';
 import { PlatformOverviewStats, OrgGrowthPoint, UpcomingContest, RecentOrg } from './overview.types';
 
 export interface IOverviewRepository {
   getOrgStats(): Promise<{ total: number; active: number; suspended: number; deleted: number }>;
   getContestStats(): Promise<{ total: number; byStatus: Record<string, number> }>;
-  getParticipantStats(): Promise<{ total: number }>;
+  getParticipantStats(): Promise<{ total: number; byStatus: Record<string, number> }>;
   getRevenueStats(): Promise<{ allTime: number; thisMonth: number; currency: string }>;
   getOrgGrowth(weeks?: number): Promise<OrgGrowthPoint[]>;
   getUpcomingContests(days?: number): Promise<UpcomingContest[]>;
@@ -47,8 +48,14 @@ export class OverviewRepository implements IOverviewRepository {
   }
 
   async getParticipantStats() {
-    const rows = await queryMainDb(`SELECT COUNT(*)::int as count FROM participants`);
-    return { total: rows[0]?.count || 0 };
+    const rows = await queryMainDb(`SELECT status, COUNT(*)::int as count FROM participants GROUP BY status`);
+    const byStatus: Record<string, number> = {};
+    let total = 0;
+    for (const r of rows) {
+      byStatus[r.status] = r.count;
+      total += r.count;
+    }
+    return { total, byStatus };
   }
 
   async getRevenueStats() {
@@ -77,22 +84,43 @@ export class OverviewRepository implements IOverviewRepository {
   }
 
   async getOrgGrowth(weeks = 12): Promise<OrgGrowthPoint[]> {
-    const rows = await queryMainDb(`
-      SELECT 
-        to_char(date_trunc('week', "createdAt"), 'YYYY-"W"IW') as week,
-        COUNT(*)::int as count
-      FROM organizations
-      WHERE "createdAt" >= CURRENT_DATE - INTERVAL '${weeks} weeks' AND "isDeleted" = false
-      GROUP BY 1
-      ORDER BY 1 ASC
-    `);
+    // One row per week, zero-filled: a week with no signups must appear as 0, not be skipped.
+    // Timestamps are compared as UTC "timestamp without time zone", like the main app stores them.
+    const rows = await queryMainDb(
+      `
+      WITH weeks AS (
+        SELECT generate_series(
+          date_trunc('week', LOCALTIMESTAMP) - make_interval(weeks => $1::int - 1),
+          date_trunc('week', LOCALTIMESTAMP),
+          interval '1 week'
+        ) AS w
+      ),
+      counts AS (
+        SELECT date_trunc('week', "createdAt") AS w, COUNT(*)::int AS c
+        FROM organizations
+        WHERE "isDeleted" = false AND "createdAt" >= (SELECT MIN(w) FROM weeks)
+        GROUP BY 1
+      )
+      SELECT to_char(weeks.w, 'IYYY-"W"IW') AS week, COALESCE(counts.c, 0)::int AS count
+      FROM weeks LEFT JOIN counts USING (w)
+      ORDER BY weeks.w ASC
+      `,
+      [weeks]
+    );
     return rows.map((r) => ({ week: r.week, count: r.count }));
   }
 
   async getUpcomingContests(days = 7): Promise<UpcomingContest[]> {
-    const rows = await queryMainDb(`
+    // "Upcoming" = something an operator should keep an eye on:
+    //   - open for registration / about to start (PUBLISHED, REGISTRATION_CLOSED) within the horizon,
+    //   - anything LIVE right now,
+    //   - WINDOW contests whose window is open right now.
+    // Drafts and cancelled contests never qualify.
+    const rows = await queryMainDb(
+      `
       SELECT
-        c.id, c.title, o.id as "organizationId", o.name as "organizationName", c."startTime",
+        c.id, c.title, c.status, c."timingMode", c."startTime", c."endTime",
+        o.id as "organizationId", o.name as "organizationName",
         COALESCE(p.cnt, 0)::int as "participantCount"
       FROM contests c
       JOIN organizations o ON c."organizationId" = o.id
@@ -100,40 +128,52 @@ export class OverviewRepository implements IOverviewRepository {
         SELECT "contestId", COUNT(*)::int as cnt FROM participants GROUP BY "contestId"
       ) p ON c.id = p."contestId"
       WHERE c."isDeleted" = false
-        AND c."startTime" >= NOW()
-        AND c."startTime" <= NOW() + INTERVAL '${days} days'
-      ORDER BY c."startTime" ASC
+        AND o."isDeleted" = false
+        AND c.status IN ('PUBLISHED', 'REGISTRATION_CLOSED', 'LIVE')
+        AND (
+          c.status = 'LIVE'
+          OR (c."startTime" >= (NOW() AT TIME ZONE 'UTC')
+              AND c."startTime" <= (NOW() AT TIME ZONE 'UTC') + make_interval(days => $1::int))
+          OR (c."timingMode" = 'WINDOW'
+              AND c."startTime" <= (NOW() AT TIME ZONE 'UTC')
+              AND c."endTime" >= (NOW() AT TIME ZONE 'UTC'))
+        )
+      ORDER BY (c.status = 'LIVE') DESC, c."startTime" ASC
       LIMIT 10
-    `);
+      `,
+      [days]
+    );
     return rows.map((r) => ({
       id: r.id,
       title: r.title,
       organizationId: r.organizationId,
       organizationName: r.organizationName,
       startTime: new Date(r.startTime).toISOString(),
+      endTime: new Date(r.endTime).toISOString(),
+      status: r.status,
+      timingMode: r.timingMode,
       participantCount: r.participantCount,
     }));
   }
 
   async getRecentOrgs(limit = 5): Promise<RecentOrg[]> {
     const rows = await queryMainDb(`
-      SELECT 
-        o.id, o.name, o.slug, o."createdAt",
-        COALESCE(a.email, c.email, 'unknown@org.com') as "ownerEmail"
+      SELECT
+        o.id, o.name, o.slug, o."logoUrl", o."planSlug", o."createdAt",
+        ${ownerEmailSql('o')} as "ownerEmail"
       FROM organizations o
-      LEFT JOIN org_members om ON om."organizationId" = o.id AND om.role = 'OWNER'
-      LEFT JOIN admins a ON om."adminId" = a.id
-      LEFT JOIN contacts c ON c."organizationId" = o.id
       WHERE o."isDeleted" = false
       ORDER BY o."createdAt" DESC
-      LIMIT ${limit}
-    `);
+      LIMIT $1
+    `, [limit]);
     return rows.map((r) => ({
       id: r.id,
       name: r.name,
       slug: r.slug,
       createdAt: new Date(r.createdAt).toISOString(),
       ownerEmail: r.ownerEmail,
+      planSlug: r.planSlug ?? null,
+      logoUrl: r.logoUrl ?? null,
     }));
   }
 }

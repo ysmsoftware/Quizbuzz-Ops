@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { State, City } from 'country-state-city';
 import { useColleges, useCollegeDepartments, useUnlistedRequests } from '@/lib/hooks/useColleges';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
@@ -16,8 +16,6 @@ import {
   Lock,
   X,
   Search,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   ChevronUp,
   ArrowUpDown,
@@ -26,6 +24,9 @@ import {
   XCircle,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import Pagination from '@/components/ui/Pagination';
+import { useResetOnChange } from '@/lib/hooks/useResetOnChange';
+import { errorMessage } from '@/lib/errors';
 
 type ToastFn = (title: string, description?: string, type?: 'success' | 'warning' | 'error' | 'info') => void;
 
@@ -74,8 +75,8 @@ function DepartmentsManager({ collegeId, canManage, toast }: { collegeId: string
     try {
       await createDepartment({ name: name.trim() });
       setName('');
-    } catch (err: any) {
-      toast('Failed to Add Department', err?.message || 'Could not create the department.', 'error');
+    } catch (err) {
+      toast('Failed to Add Department', errorMessage(err) || 'Could not create the department.', 'error');
     }
   };
 
@@ -84,16 +85,16 @@ function DepartmentsManager({ collegeId, canManage, toast }: { collegeId: string
     try {
       await updateDepartment({ departmentId: department.id, name: editing.name.trim() });
       setEditing(null);
-    } catch (err: any) {
-      toast('Failed to Update Department', err?.message || 'Could not update the department.', 'error');
+    } catch (err) {
+      toast('Failed to Update Department', errorMessage(err) || 'Could not update the department.', 'error');
     }
   };
 
   const toggleActive = async (department: Department) => {
     try {
       await updateDepartment({ departmentId: department.id, isActive: !department.isActive });
-    } catch (err: any) {
-      toast('Failed to Update Department', err?.message || 'Could not update the department.', 'error');
+    } catch (err) {
+      toast('Failed to Update Department', errorMessage(err) || 'Could not update the department.', 'error');
     }
   };
 
@@ -219,13 +220,12 @@ function CollegeModal({
 
   // Re-sync local fields if the college's data refreshes from under us (e.g. after a
   // department mutation invalidates the list) — never clobber an in-progress edit though.
-  useEffect(() => {
+  useResetOnChange(college.id, () => {
     setName(college.name);
     setState(college.state ?? '');
     setDistrict(college.district ?? '');
     setCity(college.city ?? '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [college.id]);
+  });
 
   const handleSaveInfo = async () => {
     if (!name.trim()) return;
@@ -233,8 +233,8 @@ function CollegeModal({
     try {
       await onSave({ name: name.trim(), state: state.trim(), district: district.trim(), city: city.trim() });
       toast('College Updated', `"${name.trim()}" has been updated.`, 'success');
-    } catch (err: any) {
-      toast('Failed to Update College', err?.message || 'Could not update the college.', 'error');
+    } catch (err) {
+      toast('Failed to Update College', errorMessage(err) || 'Could not update the college.', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -243,8 +243,8 @@ function CollegeModal({
   const toggleActive = async () => {
     try {
       await onSave({ isActive: !college.isActive });
-    } catch (err: any) {
-      toast('Failed to Update College', err?.message || 'Could not update the college.', 'error');
+    } catch (err) {
+      toast('Failed to Update College', errorMessage(err) || 'Could not update the college.', 'error');
     }
   };
 
@@ -252,8 +252,8 @@ function CollegeModal({
     try {
       await onDelete();
       toast('College Deleted', `"${college.name}" and its ${college.departmentCount} department(s) have been removed.`, 'success');
-    } catch (err: any) {
-      toast('Failed to Delete College', err?.message || 'Could not delete the college.', 'error');
+    } catch (err) {
+      toast('Failed to Delete College', errorMessage(err) || 'Could not delete the college.', 'error');
       setConfirmingDelete(false);
     }
   };
@@ -519,16 +519,16 @@ function UnlistedRequestsPanel({
   const handleSkipCollege = async (name: string) => {
     try {
       await dismissUnlistedCollege(name);
-    } catch (err: any) {
-      toast('Failed to Skip', err?.message || 'Could not dismiss this request.', 'error');
+    } catch (err) {
+      toast('Failed to Skip', errorMessage(err) || 'Could not dismiss this request.', 'error');
     }
   };
 
   const handleSkipDepartment = async (collegeKey: string, department: string) => {
     try {
       await dismissUnlistedDepartment({ collegeKey, department });
-    } catch (err: any) {
-      toast('Failed to Skip', err?.message || 'Could not dismiss this request.', 'error');
+    } catch (err) {
+      toast('Failed to Skip', errorMessage(err) || 'Could not dismiss this request.', 'error');
     }
   };
 
@@ -672,9 +672,7 @@ export default function CollegesView() {
   const [createPrefillName, setCreatePrefillName] = useState<string | undefined>(undefined);
   const [manageCollegeId, setManageCollegeId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, stateFilter, statusFilter]);
+  useResetOnChange(`${search}|${stateFilter}|${statusFilter}`, () => setCurrentPage(1));
 
   const states = useMemo(() => {
     const set = new Set(colleges.map((c) => c.state).filter((s): s is string => !!s));
@@ -708,8 +706,6 @@ export default function CollegesView() {
       return 0;
     });
   }, [colleges, search, stateFilter, statusFilter, sortBy, sortOrder]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredSorted.length / PAGE_SIZE));
   const pageRows = filteredSorted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const manageCollege = manageCollegeId ? colleges.find((c) => c.id === manageCollegeId) ?? null : null;
 
@@ -727,8 +723,8 @@ export default function CollegesView() {
       await createCollege(input);
       toast('College Created', `"${input.name}" is now available in the registration dropdown.`, 'success');
       setIsCreateOpen(false);
-    } catch (err: any) {
-      toast('Failed to Create College', err?.message || 'Could not create the college.', 'error');
+    } catch (err) {
+      toast('Failed to Create College', errorMessage(err) || 'Could not create the college.', 'error');
     }
   };
 
@@ -981,37 +977,7 @@ export default function CollegesView() {
           </table>
         </div>
 
-        {filteredSorted.length > 0 && (
-          <div className="px-4 py-3 bg-secondary/10 border-t border-border/30 flex items-center justify-between text-xs font-sans">
-            <span className="text-muted-foreground">
-              Showing{' '}
-              <span className="font-semibold text-foreground">
-                {Math.min((currentPage - 1) * PAGE_SIZE + 1, filteredSorted.length)}
-              </span>{' '}
-              to{' '}
-              <span className="font-semibold text-foreground">
-                {Math.min(currentPage * PAGE_SIZE, filteredSorted.length)}
-              </span>{' '}
-              of <span className="font-semibold text-foreground">{filteredSorted.length}</span> colleges
-            </span>
-            <div className="flex gap-1.5">
-              <button
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                className="p-1.5 rounded-md border border-border/50 bg-card text-muted-foreground hover:text-foreground hover:bg-secondary/50 disabled:opacity-40 transition-colors"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                className="p-1.5 rounded-md border border-border/50 bg-card text-muted-foreground hover:text-foreground hover:bg-secondary/50 disabled:opacity-40 transition-colors"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
+        <Pagination currentPage={currentPage} totalItems={filteredSorted.length} pageSize={PAGE_SIZE} itemLabel="colleges" onPageChange={setCurrentPage} />
       </div>
 
       {isCreateOpen && (

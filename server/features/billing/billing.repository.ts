@@ -1,4 +1,5 @@
 import { queryMainDb } from '../../db/main-db-pool';
+import { SqlWhere, pageOffset } from '../../db/sql';
 import { prisma } from '../../db/ops-prisma';
 import { BillingPaymentsListQueryParams } from './billing.types';
 
@@ -12,40 +13,15 @@ export interface IBillingRepository {
 
 export class BillingRepository implements IBillingRepository {
   async getPlatformPayments(params: BillingPaymentsListQueryParams): Promise<{ rows: any[]; total: number }> {
-    const offset = (params.page - 1) * params.limit;
-    const sqlParams: any[] = [];
-
-    const conditions: string[] = ['pay."isDeleted" = false'];
-
-    if (params.status !== 'all') {
-      sqlParams.push(params.status);
-      conditions.push(`pay.status = $${sqlParams.length}`);
-    }
-
-    if (params.orgId) {
-      sqlParams.push(params.orgId);
-      conditions.push(`pay."organizationId" = $${sqlParams.length}`);
-    }
-
+    const where = new SqlWhere('pay."isDeleted" = false');
+    if (params.status !== 'all') where.and('pay.status = ?::"PaymentStatus"', params.status);
+    if (params.orgId) where.and('pay."organizationId" = ?', params.orgId);
     if (params.search) {
-      sqlParams.push(`%${params.search}%`);
-      const idx = sqlParams.length;
-      conditions.push(
-        `(o.name ILIKE $${idx} OR o.slug ILIKE $${idx} OR c.title ILIKE $${idx} OR cnt.email ILIKE $${idx} OR pay."razorpayPaymentId" ILIKE $${idx})`
-      );
+      where.search(['o.name', 'o.slug', 'c.title', 'cnt.email', 'pay."razorpayPaymentId"'], params.search);
     }
-
-    if (params.dateFrom) {
-      sqlParams.push(params.dateFrom);
-      conditions.push(`pay."createdAt" >= $${sqlParams.length}`);
-    }
-
-    if (params.dateTo) {
-      sqlParams.push(params.dateTo);
-      conditions.push(`pay."createdAt" <= $${sqlParams.length}`);
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    if (params.dateFrom) where.and('pay."createdAt" >= ?', new Date(params.dateFrom));
+    if (params.dateTo) where.and('pay."createdAt" <= ?', new Date(params.dateTo));
+    const offset = pageOffset(params.page, params.limit);
 
     const countQuery = `
       SELECT COUNT(*)::int as count
@@ -53,7 +29,7 @@ export class BillingRepository implements IBillingRepository {
       JOIN organizations o ON pay."organizationId" = o.id
       LEFT JOIN contests c ON pay."contestId" = c.id
       LEFT JOIN contacts cnt ON pay."contactId" = cnt.id
-      ${whereClause}
+      ${where.sql}
     `;
 
     const dataQuery = `
@@ -76,13 +52,13 @@ export class BillingRepository implements IBillingRepository {
       JOIN organizations o ON pay."organizationId" = o.id
       LEFT JOIN contests c ON pay."contestId" = c.id
       LEFT JOIN contacts cnt ON pay."contactId" = cnt.id
-      ${whereClause}
+      ${where.sql}
       ORDER BY pay."createdAt" DESC
       LIMIT ${params.limit} OFFSET ${offset}
     `;
 
-    const countResult = await queryMainDb(countQuery, sqlParams);
-    const dataResult = await queryMainDb(dataQuery, sqlParams);
+    const countResult = await queryMainDb(countQuery, where.params);
+    const dataResult = await queryMainDb(dataQuery, where.params);
 
     return {
       rows: dataResult,

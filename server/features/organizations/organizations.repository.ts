@@ -1,20 +1,70 @@
-import { queryMainDb } from '../../db/main-db-pool';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { queryMainDb, mainDbPool } from '../../db/main-db-pool';
 import { prisma } from '../../db/ops-prisma';
 import { generateUlid } from '../../utils/ulid';
+import { SqlWhere, pageOffset } from '../../db/sql';
+import { paiseToRupees } from '../../../lib/format';
+import { INSTITUTION_FLAG_KEYS } from '../../../lib/constants/institution';
+import { effectiveOptInKeysSql } from '../institution/institution.repository';
+import { ownerNameSql, ownerEmailSql } from './org-owner.sql';
+import type { OrgSortField } from './organizations.validator';
 import { OrgMemberDetail, OrgContestDetail, OrgParticipantDetail } from './organizations.types';
 
+export interface OrgListParams {
+  page: number;
+  limit: number;
+  search?: string;
+  status: 'all' | 'active' | 'suspended' | 'deleted';
+  /** Main-app plan slug (organizations."planSlug"); 'starter' also matches orgs with no plan recorded. */
+  planSlug?: string;
+  /** Institution flag key, or 'any'. */
+  feature?: string;
+  sort?: OrgSortField;
+  order?: 'asc' | 'desc';
+}
+
+export interface OrgParticipantsParams {
+  page: number;
+  limit: number;
+  search?: string;
+  contestId?: string;
+  status?: string;
+  /** A main-app PaymentStatus, or 'FREE' for participants with no payment row. */
+  paymentStatus?: string;
+}
+
+export interface CreateOrgWithOwnerInput {
+  name: string;
+  slug: string;
+  ownerFirstName: string;
+  ownerLastName: string;
+  ownerEmail: string;
+}
+
+// Whitelist: the only strings that ever reach ORDER BY.
+const ORG_SORT_SQL: Record<OrgSortField, string> = {
+  createdAt: 'o."createdAt"',
+  name: 'LOWER(o.name)',
+  memberCount: '"memberCount"',
+  contestCount: '"contestCount"',
+  participantCount: '"participantCount"',
+};
+
 export interface IOrganizationsRepository {
-  getOrganizationsList(params: {
-    page: number;
-    limit: number;
-    search?: string;
-    status: 'all' | 'active' | 'suspended' | 'deleted';
-  }): Promise<{ rows: any[]; total: number }>;
-  getOrganizationDetail(orgId: string): Promise<any | null>;
+  getOrganizationsList(params: OrgListParams): Promise<{ rows: any[]; total: number }>;
+  getOrganizationDetail(orgId: string, opts?: { includeDeleted?: boolean }): Promise<any | null>;
+  getOrganizationNames(ids: string[]): Promise<Record<string, string>>;
+  isSlugTaken(slug: string): Promise<boolean>;
+  findAdminByEmail(email: string): Promise<{ id: string; isActive: boolean; isDeleted: boolean } | null>;
+  createOrganizationWithOwner(input: CreateOrgWithOwnerInput): Promise<{ organizationId: string; adminId: string; createdAdmin: boolean }>;
+  updateMainDbOrganization(orgId: string, fields: { name?: string; logoUrl?: string | null }): Promise<void>;
+  setMainDbOrganizationDeleted(orgId: string, deleted: boolean, isActiveAfter: boolean): Promise<void>;
+  hasOpenSuspension(orgId: string): Promise<boolean>;
   getOwnerContact(orgId: string): Promise<{ name: string; email: string } | null>;
   getOrganizationMembers(orgId: string): Promise<OrgMemberDetail[]>;
   getOrganizationContests(orgId: string): Promise<OrgContestDetail[]>;
-  getOrganizationParticipants(orgId: string): Promise<OrgParticipantDetail[]>;
+  getOrganizationParticipants(orgId: string, params: OrgParticipantsParams): Promise<{ rows: OrgParticipantDetail[]; total: number }>;
   getOrganizationPayments(orgId: string): Promise<any[]>;
   getOrganizationNotes(orgId: string): Promise<any[]>;
   createOrganizationNote(orgId: string, authorId: string, body: string, tags: string[]): Promise<any>;
@@ -38,94 +88,173 @@ export interface IOrganizationsRepository {
 }
 
 export class OrganizationsRepository implements IOrganizationsRepository {
-  async getOrganizationsList(params: {
-    page: number;
-    limit: number;
-    search?: string;
-    status: 'all' | 'active' | 'suspended' | 'deleted';
-  }): Promise<{ rows: any[]; total: number }> {
-    const offset = (params.page - 1) * params.limit;
-    
-    // Status filters
-    let statusFilter = '';
-    if (params.status === 'active') {
-      statusFilter = 'AND o."isActive" = true AND o."isDeleted" = false';
-    } else if (params.status === 'suspended') {
-      statusFilter = 'AND o."isActive" = false AND o."isDeleted" = false';
-    } else if (params.status === 'deleted') {
-      statusFilter = 'AND o."isDeleted" = true';
-    } else {
-      // Default: 'all' maps to active and suspended (excludes deleted)
-      statusFilter = 'AND o."isDeleted" = false';
-    }
-
-    // Search filters
-    let searchFilter = '';
-    const sqlParams: any[] = [];
+  async getOrganizationsList(params: OrgListParams): Promise<{ rows: any[]; total: number }> {
+    const where = new SqlWhere();
+    if (params.status === 'active') where.and('o."isActive" = true AND o."isDeleted" = false');
+    else if (params.status === 'suspended') where.and('o."isActive" = false AND o."isDeleted" = false');
+    else if (params.status === 'deleted') where.and('o."isDeleted" = true');
+    else where.and('o."isDeleted" = false'); // 'all' = active + suspended, never deleted
     if (params.search) {
-      sqlParams.push(`%${params.search}%`);
-      const searchIndex = sqlParams.length;
-      searchFilter = `AND (o.name ILIKE $${searchIndex} OR o.slug ILIKE $${searchIndex})`;
+      where.search(['o.name', 'o.slug', ownerEmailSql('o')], params.search);
+    }
+    if (params.planSlug) {
+      // An org with no recorded plan is on the free starter plan (see OrganizationsService).
+      if (params.planSlug === 'starter') where.and(`(o."planSlug" = 'starter' OR o."planSlug" IS NULL)`);
+      else where.and('o."planSlug" = ?', params.planSlug);
     }
 
-    const countQuery = `
-      SELECT COUNT(*)::int as count 
-      FROM organizations o
-      WHERE 1=1 ${statusFilter} ${searchFilter}
-    `;
+    if (params.feature) {
+      const has = effectiveOptInKeysSql('o.id', where.bind(INSTITUTION_FLAG_KEYS));
+      if (params.feature === 'any') where.and(`cardinality(${has}) > 0`);
+      else where.and(`${has} @> ARRAY[?]::text[]`, params.feature);
+    }
+
+    const sortSql = ORG_SORT_SQL[params.sort ?? 'createdAt'];
+    const direction = params.order === 'asc' ? 'ASC' : 'DESC';
+
+    const countQuery = `SELECT COUNT(*)::int as count FROM organizations o ${where.sql}`;
+    // The select list needs the flag keys too; bind them after every filter so the count query's params stay minimal.
+    const dataKeysParam = `$${where.params.length + 1}`;
 
     const dataQuery = `
-      SELECT 
-        o.id, o.name, o.slug, o."createdAt", o."isActive", o."isDeleted",
+      SELECT
+        o.id, o.name, o.slug, o."logoUrl", o."planSlug", o."createdAt", o."isActive", o."isDeleted",
         (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id) as "memberCount",
         (SELECT COUNT(*)::int FROM contests WHERE "organizationId" = o.id AND "isDeleted" = false) as "contestCount",
         (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id) as "participantCount",
-        COALESCE(
-          (SELECT a."firstName" || ' ' || COALESCE(a."lastName", '') FROM admins a JOIN org_members om ON om."adminId" = a.id WHERE om."organizationId" = o.id AND om.role = 'OWNER' LIMIT 1),
-          (SELECT c."firstName" || ' ' || COALESCE(c."lastName", '') FROM contacts c WHERE c."organizationId" = o.id LIMIT 1),
-          'Unknown Owner'
-        ) as "ownerName",
-        COALESCE(
-          (SELECT email FROM admins a JOIN org_members om ON om."adminId" = a.id WHERE om."organizationId" = o.id AND om.role = 'OWNER' LIMIT 1),
-          (SELECT email FROM contacts c WHERE c."organizationId" = o.id LIMIT 1),
-          'unknown@org.com'
-        ) as "ownerEmail"
+        ${ownerNameSql('o')} as "ownerName",
+        ${ownerEmailSql('o')} as "ownerEmail",
+        ${effectiveOptInKeysSql('o.id', dataKeysParam)} as features
       FROM organizations o
-      WHERE 1=1 ${statusFilter} ${searchFilter}
-      ORDER BY o."createdAt" DESC
-      LIMIT ${params.limit} OFFSET ${offset}
+      ${where.sql}
+      ORDER BY ${sortSql} ${direction}, o.id ASC
+      LIMIT ${params.limit} OFFSET ${pageOffset(params.page, params.limit)}
     `;
 
-    const countResult = await queryMainDb(countQuery, sqlParams);
-    const dataResult = await queryMainDb(dataQuery, sqlParams);
-    
+    const [countResult, dataResult] = await Promise.all([
+      queryMainDb(countQuery, where.params),
+      queryMainDb(dataQuery, [...where.params, INSTITUTION_FLAG_KEYS]),
+    ]);
+
     return {
       rows: dataResult,
       total: countResult[0]?.count || 0,
     };
   }
 
-  async getOrganizationDetail(orgId: string): Promise<any | null> {
+  async getOrganizationDetail(orgId: string, opts: { includeDeleted?: boolean } = {}): Promise<any | null> {
     const rows = await queryMainDb(`
       SELECT 
-        o.id, o.name, o.slug, o."createdAt", o."isActive", o."isDeleted", o."onboardingStep", o."onboardingCompleted",
+        o.id, o.name, o.slug, o."logoUrl", o."planSlug", o."createdAt", o."isActive", o."isDeleted", o."onboardingStep", o."onboardingCompleted",
         (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id) as "memberCount",
         (SELECT COUNT(*)::int FROM contests WHERE "organizationId" = o.id AND "isDeleted" = false) as "contestCount",
         (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id) as "participantCount",
-        COALESCE(
-          (SELECT a."firstName" || ' ' || a."lastName" FROM admins a JOIN org_members om ON om."adminId" = a.id WHERE om."organizationId" = o.id AND om.role = 'OWNER' LIMIT 1),
-          (SELECT c."firstName" || ' ' || COALESCE(c."lastName", '') FROM contacts c WHERE c."organizationId" = o.id LIMIT 1),
-          'Unknown Owner'
-        ) as "ownerName",
-        COALESCE(
-          (SELECT email FROM admins a JOIN org_members om ON om."adminId" = a.id WHERE om."organizationId" = o.id AND om.role = 'OWNER' LIMIT 1),
-          (SELECT email FROM contacts c WHERE c."organizationId" = o.id LIMIT 1),
-          'unknown@org.com'
-        ) as "ownerEmail"
+        ${ownerNameSql('o')} as "ownerName",
+        ${ownerEmailSql('o')} as "ownerEmail"
       FROM organizations o
-      WHERE o.id = $1 AND o."isDeleted" = false
+      WHERE o.id = $1 ${opts.includeDeleted ? '' : 'AND o."isDeleted" = false'}
     `, [orgId]);
     return rows[0] || null;
+  }
+
+  async getOrganizationNames(ids: string[]): Promise<Record<string, string>> {
+    if (ids.length === 0) return {};
+    const rows = await queryMainDb<{ id: string; name: string }>(
+      `SELECT id, name FROM organizations WHERE id = ANY($1::text[])`,
+      [ids]
+    );
+    return Object.fromEntries(rows.map((r) => [r.id, r.name]));
+  }
+
+  async isSlugTaken(slug: string): Promise<boolean> {
+    // Includes soft-deleted orgs: organizations.slug is UNIQUE across all rows.
+    const rows = await queryMainDb(`SELECT 1 FROM organizations WHERE slug = $1 LIMIT 1`, [slug]);
+    return rows.length > 0;
+  }
+
+  async findAdminByEmail(email: string) {
+    const rows = await queryMainDb(
+      `SELECT id, "isActive", "isDeleted" FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+      [email]
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Mirrors the main app's own signup transaction (admin-auth.repository.ts#createWithOrganization):
+   * admin (if new) + organization at onboarding step IDENTITY + OWNER membership, all-or-nothing.
+   * A brand-new owner gets a random, unusable password; they set a real one through the main
+   * app's "Forgot password" flow (the welcome email says so).
+   */
+  async createOrganizationWithOwner(input: CreateOrgWithOwnerInput) {
+    const existing = await this.findAdminByEmail(input.ownerEmail);
+    if (existing && (existing.isDeleted || !existing.isActive)) {
+      throw new Error('An account with this email exists but is inactive');
+    }
+
+    const orgId = generateUlid();
+    const memberId = generateUlid();
+    const adminId = existing?.id ?? generateUlid();
+    const passwordHash = existing ? null : await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+
+    const client = await mainDbPool.connect();
+    try {
+      await client.query('BEGIN');
+      if (!existing) {
+        await client.query(
+          `INSERT INTO admins (id, email, "passwordHash", "firstName", "lastName", "isActive", "isDeleted",
+                               "emailVerified", "emailVerifiedAt", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5, true, false, true, NOW(), NOW(), NOW())`,
+          [adminId, input.ownerEmail, passwordHash, input.ownerFirstName, input.ownerLastName]
+        );
+      }
+      await client.query(
+        `INSERT INTO organizations (id, name, slug, "isActive", "isDeleted", "onboardingStep", "onboardingCompleted", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, true, false, 'IDENTITY', false, NOW(), NOW())`,
+        [orgId, input.name, input.slug]
+      );
+      await client.query(
+        `INSERT INTO org_members (id, "organizationId", "adminId", role, "invitedAt", "acceptedAt", "isActive", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, 'OWNER', NOW(), NOW(), true, NOW(), NOW())`,
+        [memberId, orgId, adminId]
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    return { organizationId: orgId, adminId, createdAdmin: !existing };
+  }
+
+  async updateMainDbOrganization(orgId: string, fields: { name?: string; logoUrl?: string | null }): Promise<void> {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (fields.name !== undefined) {
+      params.push(fields.name);
+      sets.push(`name = $${params.length}`);
+    }
+    if (fields.logoUrl !== undefined) {
+      params.push(fields.logoUrl);
+      sets.push(`"logoUrl" = $${params.length}`);
+    }
+    if (sets.length === 0) return;
+    params.push(orgId);
+    await queryMainDb(`UPDATE organizations SET ${sets.join(', ')}, "updatedAt" = NOW() WHERE id = $${params.length}`, params);
+  }
+
+  async setMainDbOrganizationDeleted(orgId: string, deleted: boolean, isActiveAfter: boolean): Promise<void> {
+    await queryMainDb(
+      `UPDATE organizations SET "isDeleted" = $1, "isActive" = $2, "updatedAt" = NOW() WHERE id = $3`,
+      [deleted, isActiveAfter, orgId]
+    );
+  }
+
+  async hasOpenSuspension(orgId: string): Promise<boolean> {
+    const open = await prisma.organizationSuspension.findFirst({ where: { organizationId: orgId, liftedAt: null }, select: { id: true } });
+    return !!open;
   }
 
   /**
@@ -186,7 +315,13 @@ export class OrganizationsRepository implements IOrganizationsRepository {
         c.slug,
         c.status,
         c."startTime",
+        c."endTime",
+        c."registrationDeadline",
         c.duration,
+        c."maxParticipants",
+        c."timingMode",
+        c.audience,
+        c."questionSelection",
         COALESCE(pc.amount, 0) as "registrationFee",
         c."createdAt",
         (SELECT COUNT(*)::int FROM participants WHERE "contestId" = c.id) as "participantCount"
@@ -214,7 +349,13 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       slug: r.slug,
       status: r.status,
       startTime: new Date(r.startTime).toISOString(),
+      endTime: new Date(r.endTime).toISOString(),
+      registrationDeadline: new Date(r.registrationDeadline).toISOString(),
       duration: r.duration,
+      maxParticipants: r.maxParticipants ?? null,
+      timingMode: r.timingMode,
+      audience: r.audience,
+      questionSelection: r.questionSelection,
       // PaymentConfig.amount is stored in whole rupees (not paise) — see
       // contest.validator.ts / payment.service.ts's `* 100` conversion when
       // building the Razorpay order. No conversion needed here; dividing by
@@ -226,42 +367,62 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     }));
   }
 
-  async getOrganizationParticipants(orgId: string): Promise<OrgParticipantDetail[]> {
-    const rows = await queryMainDb(`
-      SELECT
-        p.id,
-        p."contestId",
-        p."registrationRef",
-        c."firstName",
-        c."lastName",
-        c.email,
-        c.phone,
-        p.status,
-        pay.status as "paymentStatus",
-        COALESCE(pay.amount, 0) as "paymentAmount",
-        p."createdAt" as "registeredAt"
+  async getOrganizationParticipants(orgId: string, params: OrgParticipantsParams) {
+    const where = new SqlWhere().and('p."organizationId" = ?', orgId);
+    if (params.contestId) where.and('p."contestId" = ?', params.contestId);
+    if (params.status) where.and('p.status = ?::"ParticipantStatus"', params.status);
+    if (params.paymentStatus === 'FREE') where.and('pay.id IS NULL');
+    else if (params.paymentStatus) where.and('pay.status = ?::"PaymentStatus"', params.paymentStatus);
+    if (params.search) {
+      where.search(
+        ['c."firstName" || \' \' || COALESCE(c."lastName", \'\')', 'c.email', 'c.phone', 'p."registrationRef"', 'ct.title'],
+        params.search
+      );
+    }
+
+    const from = `
       FROM participants p
       JOIN contacts c ON p."contactId" = c.id
+      JOIN contests ct ON p."contestId" = ct.id
       LEFT JOIN payments pay ON pay."participantId" = p.id
-      WHERE p."organizationId" = $1
-      ORDER BY p."createdAt" DESC
-    `, [orgId]);
+      ${where.sql}
+    `;
 
-    return rows.map(r => ({
-      id: r.id,
-      contestId: r.contestId,
-      registrationRef: r.registrationRef,
-      firstName: r.firstName,
-      lastName: r.lastName || '',
-      email: r.email,
-      phone: r.phone || '',
-      status: r.status,
-      paymentStatus: r.paymentStatus || 'FREE',
-      // payments.amount (this Payment row, distinct from PaymentConfig) is
-      // genuinely stored in paise — this conversion is correct as-is.
-      paymentAmount: r.paymentAmount / 100, // paise to INR
-      registeredAt: new Date(r.registeredAt).toISOString(),
-    }));
+    const [countRows, rows] = await Promise.all([
+      queryMainDb(`SELECT COUNT(*)::int AS count ${from}`, where.params),
+      queryMainDb(
+        `
+        SELECT
+          p.id, p."contestId", ct.title AS "contestTitle", p."registrationRef",
+          c."firstName", c."lastName", c.email, c.phone,
+          p.status, pay.status AS "paymentStatus", COALESCE(pay.amount, 0) AS "paymentAmount",
+          p."createdAt" AS "registeredAt"
+        ${from}
+        ORDER BY p."createdAt" DESC, p.id ASC
+        LIMIT ${params.limit} OFFSET ${pageOffset(params.page, params.limit)}
+        `,
+        where.params
+      ),
+    ]);
+
+    return {
+      total: countRows[0]?.count ?? 0,
+      rows: rows.map((r) => ({
+        id: r.id,
+        contestId: r.contestId,
+        contestTitle: r.contestTitle,
+        registrationRef: r.registrationRef,
+        firstName: r.firstName,
+        lastName: r.lastName || '',
+        email: r.email,
+        phone: r.phone || '',
+        status: r.status,
+        paymentStatus: r.paymentStatus || 'FREE',
+        // payments.amount is stored in paise.
+        paymentAmount: paiseToRupees(r.paymentAmount),
+        registeredAt: new Date(r.registeredAt).toISOString(),
+      })),
+    };
   }
 
   async getOrganizationPayments(orgId: string): Promise<any[]> {

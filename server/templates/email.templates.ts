@@ -116,6 +116,7 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
     html: wrap(`
       <p>Hi ${escape(p.adminName)},</p>
       <p>Your organization has been suspended. Reason: ${escape(p.reason || 'not specified')}.</p>
+      <p>Until the suspension is lifted, your team can't sign in or use the dashboard (they will see a &quot;suspended&quot; message), and public registration and joining for your contests are paused.</p>
       <p>Contact support if you believe this is a mistake.</p>
     `),
   }),
@@ -124,6 +125,18 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
     html: wrap(`
       <p>Hi ${escape(p.adminName)},</p>
       <p>Your organization has been reactivated and all features are available again.</p>
+    `),
+  }),
+  ORG_CREATED: (p) => ({
+    subject: `Your organization ${escape(p.organizationName)} is ready on QuizBuzz`,
+    html: wrap(`
+      <p>Hi ${escape(p.adminName)},</p>
+      <p>The organization <strong>${escape(p.organizationName)}</strong> has been created for you on QuizBuzz.</p>
+      ${
+        p.newAccount
+          ? `<p>An account was created for <strong>${escape(p.ownerEmail)}</strong> with no password yet. Open <a href="${escape(p.forgotPasswordUrl)}">the password reset page</a>, enter this email address and set your own password, then sign in.</p>`
+          : `<p>Sign in with your existing account at <a href="${escape(p.loginUrl)}">${escape(p.loginUrl)}</a> and switch to the new organization from the organization menu.</p>`
+      }
     `),
   }),
   CUSTOM: (p) => ({

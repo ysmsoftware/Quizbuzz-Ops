@@ -13,7 +13,8 @@ import PlanChangeHistoryTable from './organization-subscription/PlanChangeHistor
 import ChangePlanModal from './organization-subscription/ChangePlanModal';
 import AddOverrideModal from './organization-subscription/AddOverrideModal';
 import RevokeOverrideModal from './organization-subscription/RevokeOverrideModal';
-import { Layers, AlertTriangle, Plus } from 'lucide-react';
+import { AlertTriangle, Plus } from 'lucide-react';
+import { errorMessage } from '@/lib/errors';
 
 interface OrganizationSubscriptionTabProps {
   organization: Organization;
@@ -95,8 +96,8 @@ export default function OrganizationSubscriptionTab({
               toast('Plan Assigned', `Assigned "${nextPlan?.name || selectedPlanId}" plan to ${organization.name}.`, 'success');
               setIsChangePlanOpen(false);
               if (onPlanChanged) onPlanChanged();
-            } catch (err: any) {
-              toast('Assignment Failed', err.message || 'Failed to assign plan.', 'error');
+            } catch (err) {
+              toast('Assignment Failed', errorMessage(err) || 'Failed to assign plan.', 'error');
             }
           }}
           plans={plans}
@@ -110,15 +111,15 @@ export default function OrganizationSubscriptionTab({
   const currentPlan = plans.find((p) => p.id === subscription.planId || p.slug === subscription.planId);
 
   // Change Plan submit
-  const handleChangePlanSubmit = async (selectedPlanId: string, reason: string) => {
+  const handleChangePlanSubmit = async (selectedPlanId: string) => {
     try {
-      await changePlan({ planId: selectedPlanId, adminName: 'Super Admin' });
+      await changePlan({ planId: selectedPlanId });
       const nextPlan = plans.find((p) => p.id === selectedPlanId);
       toast('Plan Migrated', `Migrated ${organization.name} to "${nextPlan?.name || selectedPlanId}" plan.`, 'success');
       setIsChangePlanOpen(false);
       if (onPlanChanged) onPlanChanged();
-    } catch (err: any) {
-      toast('Migration Failed', err.message || 'Failed to change plan.', 'error');
+    } catch (err) {
+      toast('Migration Failed', errorMessage(err) || 'Failed to change plan.', 'error');
     }
   };
 
@@ -128,8 +129,8 @@ export default function OrganizationSubscriptionTab({
       await addOverride(override);
       toast('Override Granted', 'Custom limit override applied to organization immediately.', 'success');
       setIsAddOverrideOpen(false);
-    } catch (err: any) {
-      toast('Override Failed', err.message || 'Failed to apply override.', 'error');
+    } catch (err) {
+      toast('Override Failed', errorMessage(err) || 'Failed to apply override.', 'error');
     }
   };
 
@@ -143,8 +144,8 @@ export default function OrganizationSubscriptionTab({
         toast('Nothing Sent', 'No owner contact was found for this organization — the reminder was not sent.', 'warning');
       }
       return result;
-    } catch (err: any) {
-      toast('Resend Failed', err.message || 'Could not resend the renewal reminder.', 'error');
+    } catch (err) {
+      toast('Resend Failed', errorMessage(err) || 'Could not resend the renewal reminder.', 'error');
       throw err;
     }
   };
@@ -156,12 +157,11 @@ export default function OrganizationSubscriptionTab({
       await removeOverride({
         overrideId: revokingOverrideId,
         reason,
-        adminName: 'Super Admin',
       });
       toast('Override Revoked', 'Custom limit override removed.', 'success');
       setRevokingOverrideId(null);
-    } catch (err: any) {
-      toast('Revocation Failed', err.message || 'Failed to revoke override.', 'error');
+    } catch (err) {
+      toast('Revocation Failed', errorMessage(err) || 'Failed to revoke override.', 'error');
     }
   };
 

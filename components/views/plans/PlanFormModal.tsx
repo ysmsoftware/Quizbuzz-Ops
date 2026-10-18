@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { SubscriptionPlan } from '@/lib/types';
@@ -61,7 +61,7 @@ export default function PlanFormModal({
   isSubmitting,
 }: PlanFormModalProps) {
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<PlanFormValues>({
-    resolver: zodResolver(planSchema) as any,
+    resolver: zodResolver(planSchema) as unknown as Resolver<PlanFormValues>,
     defaultValues: {
       name: '',
       slug: '',

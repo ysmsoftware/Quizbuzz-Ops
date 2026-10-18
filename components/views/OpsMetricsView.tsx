@@ -18,6 +18,7 @@ import {
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { useOpsFleetSnapshot, useOpsLiveContests, useOpsContestSnapshot } from '@/lib/hooks/useOpsMetrics';
 import { OpsInstanceHeartbeat, OpsLiveParticipantRow } from '@/lib/types';
+import { formatNumber } from '@/lib/format';
 
 function StatTile({
   icon: Icon,
@@ -91,8 +92,8 @@ function InstanceRow({ instance, nowMs }: { instance: OpsInstanceHeartbeat; nowM
         {instance.ws ? (
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs font-bold text-foreground">
-              {instance.ws.activeConnections.toLocaleString()}
-              <span className="text-muted-foreground font-normal"> / {instance.ws.maxConnections.toLocaleString()}</span>
+              {formatNumber(instance.ws.activeConnections)}
+              <span className="text-muted-foreground font-normal"> / {formatNumber(instance.ws.maxConnections)}</span>
             </span>
             {instance.ws.draining && (
               <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-500/10 text-red-500">draining</span>
@@ -260,20 +261,20 @@ export default function OpsMetricsView() {
           <StatTile
             icon={Wifi}
             label="Active WS Connections"
-            value={(fleet?.totals.activeConnections ?? 0).toLocaleString()}
+            value={formatNumber((fleet?.totals.activeConnections ?? 0))}
             sub="fleet-wide, summed across backend instances"
             accent="text-emerald-500"
           />
           <StatTile
             icon={Cpu}
             label="Total RSS"
-            value={`${(fleet?.totals.rssMb ?? 0).toLocaleString()} MB`}
+            value={`${formatNumber((fleet?.totals.rssMb ?? 0))} MB`}
             sub="resident memory, summed across all processes"
           />
           <StatTile
             icon={Timer}
             label="Total Heap Used"
-            value={`${(fleet?.totals.heapUsedMb ?? 0).toLocaleString()} MB`}
+            value={`${formatNumber((fleet?.totals.heapUsedMb ?? 0))} MB`}
             sub="V8 heap, summed across all processes"
           />
         </div>

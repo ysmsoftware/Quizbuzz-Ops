@@ -14,7 +14,7 @@ export default function OrgMembersTab({ members, isLoadingMembers }: OrgMembersT
     <div className="bg-card border border-border/30 rounded-xl overflow-hidden shadow-sm font-sans">
       <div className="px-6 py-4 bg-secondary/10 border-b border-border/25">
         <h3 className="font-semibold text-sm">Tenant Authorized Administrators</h3>
-        <p className="text-[11px] text-muted-foreground">Staff members authorized to login to the tenant's own dashboard.</p>
+        <p className="text-[11px] text-muted-foreground">Staff members authorized to login to the tenant&apos;s own dashboard.</p>
       </div>
 
       <div className="overflow-x-auto">

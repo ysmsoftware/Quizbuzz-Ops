@@ -44,8 +44,7 @@ export function useSubscription(orgId: string) {
   });
 
   const changePlanMutation = useMutation({
-    mutationFn: ({ planId, adminName }: { planId: string; adminName: string }) =>
-      changeOrganizationPlan(orgId, planId, adminName),
+    mutationFn: ({ planId }: { planId: string }) => changeOrganizationPlan(orgId, planId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations'] });
       queryClient.invalidateQueries({ queryKey: ['plans'] });
@@ -64,8 +63,8 @@ export function useSubscription(orgId: string) {
   });
 
   const removeOverrideMutation = useMutation({
-    mutationFn: ({ overrideId, reason, adminName }: { overrideId: string; reason: string; adminName: string }) =>
-      removeSubscriptionOverride(orgId, overrideId, reason, adminName),
+    mutationFn: ({ overrideId, reason }: { overrideId: string; reason: string }) =>
+      removeSubscriptionOverride(orgId, overrideId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations', 'subscription', orgId] });
       queryClient.invalidateQueries({ queryKey: ['organizations', 'usage', orgId] });

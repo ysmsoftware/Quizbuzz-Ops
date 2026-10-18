@@ -1,4 +1,5 @@
 import { queryMainDb } from '../../db/main-db-pool';
+import { SqlWhere, pageOffset } from '../../db/sql';
 import { JobCheckpointListQuery } from './job-checkpoints.types';
 
 export interface IJobCheckpointsRepository {
@@ -22,42 +23,32 @@ export class JobCheckpointsRepository implements IJobCheckpointsRepository {
   async listScheduledJobs(params: JobCheckpointListQuery) {
     const { page, limit, jobId, requestId, queue, status, organizationId } = params;
 
-    const conditions: string[] = ['1=1'];
-    const sqlParams: any[] = [];
-    const addParam = (value: any) => {
-      sqlParams.push(value);
-      return `$${sqlParams.length}`;
-    };
-
-    if (jobId) conditions.push(`"bullJobId" = ${addParam(jobId)}`);
+    const where = new SqlWhere();
+    if (jobId) where.and('"bullJobId" = ?', jobId);
     // Case-insensitive + trimmed — the frontend now offers a dropdown of exact
     // queue names, but this stays forgiving as a safety net for any other
     // caller (deep link, future free-text search) instead of silently
     // returning zero rows on a case/whitespace mismatch.
-    if (queue) conditions.push(`LOWER("queue") = LOWER(${addParam(queue.trim())})`);
-    if (status) conditions.push(`"status" = ${addParam(status)}::"JobStatus"`);
-    if (organizationId) conditions.push(`"organizationId" = ${addParam(organizationId)}`);
+    if (queue) where.and('LOWER("queue") = LOWER(?)', queue.trim());
+    if (status) where.and('"status" = ?::"JobStatus"', status);
+    if (organizationId) where.and('"organizationId" = ?', organizationId);
     if (requestId) {
-      conditions.push(
-        `"bullJobId" IN (SELECT DISTINCT "jobId" FROM job_checkpoints WHERE "requestId" = ${addParam(requestId)})`
-      );
+      where.and('"bullJobId" IN (SELECT DISTINCT "jobId" FROM job_checkpoints WHERE "requestId" = ?)', requestId);
     }
 
-    const whereClause = conditions.join(' AND ');
-
-    const countQuery = `SELECT COUNT(*)::int as count FROM scheduled_jobs WHERE ${whereClause}`;
+    const countQuery = `SELECT COUNT(*)::int as count FROM scheduled_jobs ${where.sql}`;
     const dataQuery = `
       SELECT id, "organizationId", "contestId", "bullJobId", queue, name, status,
         "scheduledFor", "startedAt", "completedAt", "failedAt", error, "retryCount", "createdAt"
       FROM scheduled_jobs
-      WHERE ${whereClause}
+      ${where.sql}
       ORDER BY "createdAt" DESC
-      LIMIT ${limit} OFFSET ${(page - 1) * limit}
+      LIMIT ${limit} OFFSET ${pageOffset(page, limit)}
     `;
 
     const [countResult, dataResult] = await Promise.all([
-      queryMainDb(countQuery, sqlParams),
-      queryMainDb(dataQuery, sqlParams),
+      queryMainDb(countQuery, where.params),
+      queryMainDb(dataQuery, where.params),
     ]);
 
     return { rows: dataResult, total: countResult[0]?.count || 0 };

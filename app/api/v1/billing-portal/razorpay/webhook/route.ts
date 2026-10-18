@@ -44,7 +44,14 @@ export async function POST(req: Request) {
       return errorResponse('Invalid webhook signature', 'INVALID_SIGNATURE', null, 400);
     }
 
-    let body: any;
+    interface RazorpayPaymentEntity {
+      id?: string;
+      order_id?: string;
+      amount?: number;
+      error_description?: string;
+      notes?: { adminEmail?: string; adminName?: string };
+    }
+    let body: { event?: string; payload?: { payment?: { entity?: RazorpayPaymentEntity } } };
     try {
       body = JSON.parse(rawBody);
     } catch {
@@ -101,8 +108,8 @@ export async function POST(req: Request) {
             razorpaySignature: signature,
           },
         });
-      } catch (e: any) {
-        if (e?.code === 'P2025') {
+      } catch (e) {
+        if ((e as { code?: string })?.code === 'P2025') {
           // Already PAID. If the plan was already assigned (subscriptionId
           // set), a concurrent delivery fully handled this — true no-op. If
           // not, a prior delivery marked PAID but failed before finishing
@@ -131,7 +138,7 @@ export async function POST(req: Request) {
       // linkedPaymentId makes the subscription upsert + this payment's
       // subscriptionId backfill one atomic transaction — see the comment on
       // assignPlan() for why that matters on webhook retry.
-      const sub = await subscriptionsService.assignPlan(
+      await subscriptionsService.assignPlan(
         updatedPayment.organizationId,
         updatedPayment.planId,
         actor,
@@ -206,8 +213,8 @@ export async function POST(req: Request) {
           where: { razorpayOrderId, status: { notIn: ['PAID', 'FAILED'] } },
           data: { status: 'FAILED' },
         });
-      } catch (e: any) {
-        if (e?.code === 'P2025') {
+      } catch (e) {
+        if ((e as { code?: string })?.code === 'P2025') {
           return okResponse(null, 'Already processed');
         }
         throw e;
@@ -244,7 +251,7 @@ export async function POST(req: Request) {
     }
 
     return okResponse(null, 'Event acknowledged');
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in Razorpay webhook handler:', error);
     return errorResponse('Internal server error handling webhook', 'INTERNAL_SERVER_ERROR', null, 500);
   }

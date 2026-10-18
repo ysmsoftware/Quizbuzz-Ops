@@ -1,31 +1,31 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState  } from 'react';
 import { 
   CalendarClock, 
   Search, 
-  Filter, 
+  
   X, 
   Plus, 
   ArrowLeft, 
   CheckCircle2, 
   Lock, 
-  Trash2, 
-  Clock, 
+  
+  
   Coins, 
-  User, 
-  Mail, 
-  Tag, 
+  
+  
+  
   Check, 
   Loader2, 
   Ban,
   Activity,
-  ServerCrash,
+  
   ChevronRight,
   Database,
   Building2,
   Calendar,
-  AlertCircle
+  
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -34,6 +34,10 @@ import { useOrganizations } from '@/lib/hooks/useOrganizations';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { ContestBooking } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatInr, formatNumber } from '@/lib/format';
+import { useResetOnChange } from '@/lib/hooks/useResetOnChange';
+import { errorMessage } from '@/lib/errors';
 
 export default function BookingsView() {
   const { toast } = useToast();
@@ -42,7 +46,7 @@ export default function BookingsView() {
   const searchParams = useSearchParams();
   const bookingIdFromUrl = searchParams.get('bookingId');
   const { organizations = [] } = useOrganizations({ limit: 1000 });
-  const { bookings, isLoading: listLoading, refetch } = useBookings();
+  const { bookings, isLoading: listLoading } = useBookings();
 
   // Selected Booking state (determines list vs detail view)
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
@@ -69,11 +73,9 @@ export default function BookingsView() {
   const [cancellationReason, setCancellationReason] = useState('');
 
   // Read the booking to auto-open from the ?bookingId= URL query param
-  useEffect(() => {
-    if (bookingIdFromUrl) {
-      setSelectedBookingId(bookingIdFromUrl);
-    }
-  }, [bookingIdFromUrl]);
+  useResetOnChange(bookingIdFromUrl ?? '', () => {
+    if (bookingIdFromUrl) setSelectedBookingId(bookingIdFromUrl);
+  });
 
   // Selected Booking Detail Query
   const { 
@@ -129,8 +131,8 @@ export default function BookingsView() {
         }
       });
       toast('Cluster Launched', `Contest "${booking.contestName}" has been successfully provisioned.`, 'success');
-    } catch (e: any) {
-      toast('Provisioning Error', e.message || 'Failed to complete cluster provisioning.', 'error');
+    } catch (e) {
+      toast('Provisioning Error', errorMessage(e) || 'Failed to complete cluster provisioning.', 'error');
     } finally {
       setIsProvisioning(false);
       setProvisioningProgress(0);
@@ -156,11 +158,11 @@ export default function BookingsView() {
           adminRole: admin?.role,
         }
       });
-      toast('Payment Applied', `Successfully reconciled ₹${booking.pricingBreakdown.total.toLocaleString('en-IN')} via ${paymentMethod}.`, 'success');
+      toast('Payment Applied', `Successfully reconciled ${formatInr(booking.pricingBreakdown.total)} via ${paymentMethod}.`, 'success');
       setShowPaymentModal(false);
       setPaymentRef('');
-    } catch (err: any) {
-      toast('Reconciliation Failed', err.message || 'Failed to update ledger status.', 'error');
+    } catch (err) {
+      toast('Reconciliation Failed', errorMessage(err) || 'Failed to update ledger status.', 'error');
     }
   };
 
@@ -184,8 +186,8 @@ export default function BookingsView() {
       toast('Booking Terminated', `Booking quote for "${booking.contestName}" has been cancelled.`, 'info');
       setShowCancelModal(false);
       setCancellationReason('');
-    } catch (err: any) {
-      toast('Cancellation Failed', err.message || 'Failed to cancel the booking.', 'error');
+    } catch (err) {
+      toast('Cancellation Failed', errorMessage(err) || 'Failed to cancel the booking.', 'error');
     }
   };
 
@@ -201,8 +203,8 @@ export default function BookingsView() {
         }
       });
       toast('Contest Completed', 'The on-demand contest was flagged as completed. SLA fully met.', 'success');
-    } catch (e: any) {
-      toast('Update Failed', e.message || 'Failed to complete contest.', 'error');
+    } catch (e) {
+      toast('Update Failed', errorMessage(e) || 'Failed to complete contest.', 'error');
     }
   };
 
@@ -239,23 +241,7 @@ export default function BookingsView() {
     return true;
   });
 
-  // Helpers for Status Colors
-  const getStatusBadge = (status: ContestBooking['status']) => {
-    const configs: Record<ContestBooking['status'], { label: string; style: string }> = {
-      quoted: { label: 'Quoted', style: 'bg-blue-500/10 text-blue-500 border-blue-500/20' },
-      paid: { label: 'Paid', style: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 font-bold' },
-      provisioned: { label: 'Provisioned', style: 'bg-amber-500/10 text-amber-500 border-amber-500/20 font-bold' },
-      completed: { label: 'Completed', style: 'bg-slate-500/10 text-slate-400 border-slate-500/20' },
-      cancelled: { label: 'Cancelled', style: 'bg-destructive/10 text-destructive border-destructive/20' },
-    };
-
-    const config = configs[status] || { label: status, style: 'bg-secondary text-muted-foreground' };
-    return (
-      <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${config.style}`}>
-        {config.label}
-      </span>
-    );
-  };
+  const getStatusBadge = (status: ContestBooking['status']) => <StatusBadge kind="booking" value={status} />;
 
   return (
     <div className="space-y-6 font-sans">
@@ -340,7 +326,7 @@ export default function BookingsView() {
                 <select
                   id="booking-date-mode-select"
                   value={dateFilterMode}
-                  onChange={(e) => setDateFilterMode(e.target.value as any)}
+                  onChange={(e) => setDateFilterMode(e.target.value as typeof dateFilterMode)}
                   className="w-full h-10 px-3 text-xs rounded-lg border border-border/60 bg-secondary/20 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-muted-foreground"
                 >
                   <option value="all">Created (Quoted) Date</option>
@@ -425,12 +411,12 @@ export default function BookingsView() {
 
                           {/* Candidate size */}
                           <td className="p-4 text-right font-mono text-muted-foreground">
-                            {b.participantCount.toLocaleString('en-IN')}
+                            {formatNumber(b.participantCount)}
                           </td>
 
                           {/* Contract Value */}
                           <td className="p-4 text-right font-bold text-foreground font-mono">
-                            ₹{b.pricingBreakdown.total.toLocaleString('en-IN')}
+                            {formatInr(b.pricingBreakdown.total)}
                           </td>
 
                           {/* Status */}
@@ -573,7 +559,7 @@ export default function BookingsView() {
                     <div className="text-left md:text-right text-xs">
                       <span className="text-muted-foreground block">Proposed Contract Contract Value:</span>
                       <span className="text-2xl font-black text-amber-500 font-mono mt-0.5 block">
-                        ₹{booking.pricingBreakdown.total.toLocaleString('en-IN')}
+                        {formatInr(booking.pricingBreakdown.total)}
                       </span>
                     </div>
                   </div>
@@ -591,7 +577,7 @@ export default function BookingsView() {
                           </p>
                           {booking.cancellationReason && (
                             <p className="text-xs font-mono bg-background/50 p-2 rounded border border-destructive/10 mt-2 text-foreground">
-                              <strong>Reason specified:</strong> "{booking.cancellationReason}"
+                              <strong>Reason specified:</strong> &quot;{booking.cancellationReason}&quot;
                             </p>
                           )}
                         </div>
@@ -709,7 +695,7 @@ export default function BookingsView() {
                         </div>
                         <div className="p-3 bg-secondary/10 border border-border/40 rounded-lg text-center space-y-1">
                           <span className="text-[9px] text-muted-foreground block uppercase leading-none">Candidates</span>
-                          <span className="text-sm font-black font-mono text-amber-500 block">{(booking.participantCount).toLocaleString('en-IN')}</span>
+                          <span className="text-sm font-black font-mono text-amber-500 block">{formatNumber((booking.participantCount))}</span>
                         </div>
                       </div>
 
@@ -785,7 +771,7 @@ export default function BookingsView() {
                         {/* Base booking fee */}
                         <div className="flex justify-between leading-none">
                           <span>Base reservation fee:</span>
-                          <span className="font-bold text-foreground">₹{booking.pricingBreakdown.baseFee.toLocaleString('en-IN')}</span>
+                          <span className="font-bold text-foreground">{formatInr(booking.pricingBreakdown.baseFee)}</span>
                         </div>
 
                         {/* Compute */}
@@ -793,28 +779,28 @@ export default function BookingsView() {
                           <div className="space-y-0.5">
                             <span>Compute Overheads:</span>
                             <span className="block text-[9px] text-muted-foreground font-semibold">
-                              (Capacity allocated for {booking.participantCount.toLocaleString('en-IN')} concurrent users)
+                              (Capacity allocated for {formatNumber(booking.participantCount)} concurrent users)
                             </span>
                           </div>
-                          <span className="font-bold text-foreground">₹{booking.pricingBreakdown.computeCost.toLocaleString('en-IN')}</span>
+                          <span className="font-bold text-foreground">{formatInr(booking.pricingBreakdown.computeCost)}</span>
                         </div>
 
                         {/* Cache */}
                         <div className="flex justify-between leading-none">
                           <span>Cache session infrastructure:</span>
-                          <span className="font-bold text-foreground">₹{booking.pricingBreakdown.cacheCost.toLocaleString('en-IN')}</span>
+                          <span className="font-bold text-foreground">{formatInr(booking.pricingBreakdown.cacheCost)}</span>
                         </div>
 
                         {/* Question */}
                         <div className="flex justify-between leading-none">
                           <span>Question processing pipelines:</span>
-                          <span className="font-bold text-foreground">₹{booking.pricingBreakdown.questionCost.toLocaleString('en-IN')}</span>
+                          <span className="font-bold text-foreground">{formatInr(booking.pricingBreakdown.questionCost)}</span>
                         </div>
 
                         {/* Add-ons */}
                         <div className="flex justify-between leading-none items-start">
                           <span>Activated premium add-ons:</span>
-                          <span className="font-bold text-foreground">₹{booking.pricingBreakdown.addOnsCost.toLocaleString('en-IN')}</span>
+                          <span className="font-bold text-foreground">{formatInr(booking.pricingBreakdown.addOnsCost)}</span>
                         </div>
                       </div>
 
@@ -822,15 +808,15 @@ export default function BookingsView() {
                       <div className="space-y-2 pb-2">
                         <div className="flex justify-between text-xs text-muted-foreground">
                           <span>Subtotal cost:</span>
-                          <span>₹{booking.pricingBreakdown.subtotal.toLocaleString('en-IN')}</span>
+                          <span>{formatInr(booking.pricingBreakdown.subtotal)}</span>
                         </div>
                         <div className="flex justify-between text-xs text-muted-foreground">
                           <span>Markup SLA margin:</span>
-                          <span>₹{booking.pricingBreakdown.margin.toLocaleString('en-IN')}</span>
+                          <span>{formatInr(booking.pricingBreakdown.margin)}</span>
                         </div>
                         <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 font-black rounded-lg flex justify-between items-center text-sm font-sans select-all">
                           <span>Contract Total (₹):</span>
-                          <span className="font-mono text-base font-black">₹{booking.pricingBreakdown.total.toLocaleString('en-IN')}</span>
+                          <span className="font-mono text-base font-black">{formatInr(booking.pricingBreakdown.total)}</span>
                         </div>
                       </div>
                     </div>
@@ -870,7 +856,7 @@ export default function BookingsView() {
               {/* Amount preview */}
               <div className="flex justify-between text-xs select-none">
                 <span>Contract Due Amount:</span>
-                <span className="font-bold text-foreground">₹{booking.pricingBreakdown.total.toLocaleString('en-IN')}</span>
+                <span className="font-bold text-foreground">{formatInr(booking.pricingBreakdown.total)}</span>
               </div>
 
               {/* Payment Method Select */}

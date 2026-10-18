@@ -1,108 +1,127 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Search } from 'lucide-react';
+import React from 'react';
+import { Search, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
-import { Participant, Contest } from '@/lib/types';
-import TablePagination from '../TablePagination';
+import { Contest } from '@/lib/types';
+import Pagination from '@/components/ui/Pagination';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { statusOptions } from '@/lib/constants/status';
+import { formatInr } from '@/lib/format';
+import { useTableQuery } from '@/lib/hooks/useTableQuery';
+import { useOrgParticipants } from '@/lib/hooks/useOrganizations';
 
 interface OrgParticipantsTabProps {
-  participants: Participant[];
+  orgId: string;
+  /** For the contest filter. */
   contests: Contest[];
-  isLoadingParticipants: boolean;
 }
 
-export default function OrgParticipantsTab({
-  participants,
-  contests,
-  isLoadingParticipants,
-}: OrgParticipantsTabProps) {
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [paymentFilter, setPaymentFilter] = useState('all');
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
+const PAGE_SIZE = 10;
 
-  const filteredParticipants = participants.filter(p => {
-    const term = search.toLowerCase();
-    const quizTitle = contests.find(c => c.id === p.contestId)?.title || p.contestId;
+// SUCCESS is shown as "Paid"; FREE = no payment row (free or assigned contest).
+const paymentFilterOptions = statusOptions('payment', 'All payments').filter(
+  (o) => !['CREATED', 'CANCELLED'].includes(o.value)
+);
 
-    const matchName = `${p.firstName} ${p.lastName}`.toLowerCase().includes(term);
-    const matchContact = p.email.toLowerCase().includes(term) || p.phone.includes(term);
-    const matchQuiz = quizTitle.toLowerCase().includes(term) || p.contestId.toLowerCase().includes(term);
-    const matchSearch = matchName || matchContact || matchQuiz;
+const selectClass =
+  'px-2 py-1.5 text-xs bg-secondary/35 border border-border/40 rounded outline-none text-foreground cursor-pointer font-medium max-w-[180px]';
+const labelClass = 'text-[10px] font-bold text-muted-foreground uppercase tracking-wide';
 
-    const matchStatus = statusFilter === 'all' || p.status === statusFilter;
-    const matchPayment = paymentFilter === 'all' || p.paymentStatus === paymentFilter;
+/**
+ * Participants of one organization. Filtering, searching and paging run on the server, so an org
+ * with tens of thousands of registrations loads one page of 10 — not the whole register.
+ */
+export default function OrgParticipantsTab({ orgId, contests }: OrgParticipantsTabProps) {
+  const query = useTableQuery(
+    { search: '', contest: 'all', status: 'all', payment: 'all' },
+    { debounce: ['search'] }
+  );
 
-    return matchSearch && matchStatus && matchPayment;
+  const { data, isLoading, isFetching, isError, error, refetch } = useOrgParticipants(orgId, {
+    page: query.page,
+    limit: PAGE_SIZE,
+    search: query.params.search,
+    contestId: query.params.contest,
+    status: query.params.status,
+    paymentStatus: query.params.payment,
   });
 
-  const paginatedParticipants = filteredParticipants.slice((page - 1) * pageSize, page * pageSize);
+  const participants = data?.data ?? [];
 
   return (
     <div className="space-y-4 font-sans">
       {/* Search & Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 justify-between items-center bg-card p-3 border border-border/30 rounded-xl shadow-sm">
-        <div className="relative w-full sm:max-w-xs">
+      <div className="flex flex-col lg:flex-row gap-3 justify-between items-center bg-card p-3 border border-border/30 rounded-xl shadow-sm">
+        <div className="relative w-full lg:max-w-xs">
           <Search className="absolute inset-y-0 left-2.5 my-auto h-3.5 w-3.5 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search name, email, phone, quiz..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
+            placeholder="Search name, email, phone, ref, quiz..."
+            value={query.filters.search}
+            onChange={(e) => query.setFilter('search', e.target.value)}
             className="w-full pl-8 pr-3 py-1.5 text-xs bg-secondary/35 focus:bg-card border border-border/40 rounded-md outline-none text-foreground font-sans"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Quiz Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              className="px-2 py-1.5 text-xs bg-secondary/35 border border-border/40 rounded outline-none text-foreground cursor-pointer font-medium"
-            >
-              <option value="all">All Statuses</option>
-              <option value="REGISTERED">Registered</option>
-              <option value="IN_QUIZ">In Quiz</option>
-              <option value="SUBMITTED">Submitted</option>
+        <div className="flex flex-wrap items-center gap-3 shrink-0 w-full lg:w-auto">
+          <label className="flex items-center gap-1.5">
+            <span className={labelClass}>Quiz:</span>
+            <select value={query.filters.contest} onChange={(e) => query.setFilter('contest', e.target.value)} className={selectClass}>
+              <option value="all">All quizzes</option>
+              {contests.map((c) => (
+                <option key={c.id} value={c.id}>{c.title}</option>
+              ))}
             </select>
-          </div>
+          </label>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Payment:</span>
-            <select
-              value={paymentFilter}
-              onChange={(e) => {
-                setPaymentFilter(e.target.value);
-                setPage(1);
-              }}
-              className="px-2 py-1.5 text-xs bg-secondary/35 border border-border/40 rounded outline-none text-foreground cursor-pointer font-medium"
-            >
-              <option value="all">All Payments</option>
-              <option value="PAID">Paid</option>
-              <option value="PENDING">Pending</option>
-              <option value="REFUNDED">Refunded</option>
-              <option value="FAILED">Failed</option>
+          <label className="flex items-center gap-1.5">
+            <span className={labelClass}>Status:</span>
+            <select value={query.filters.status} onChange={(e) => query.setFilter('status', e.target.value)} className={selectClass}>
+              {statusOptions('participant', 'All statuses').map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
             </select>
-          </div>
+          </label>
+
+          <label className="flex items-center gap-1.5">
+            <span className={labelClass}>Payment:</span>
+            <select value={query.filters.payment} onChange={(e) => query.setFilter('payment', e.target.value)} className={selectClass}>
+              {paymentFilterOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+
+          {query.hasActiveFilters && (
+            <button
+              onClick={query.reset}
+              className="px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground rounded-md hover:bg-secondary/40 cursor-pointer"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-card border border-border/30 rounded-xl overflow-hidden shadow-sm">
+      <div className={`bg-card border border-border/30 rounded-xl overflow-hidden shadow-sm transition-opacity ${isFetching && !isLoading ? 'opacity-70' : ''}`}>
         <div className="overflow-x-auto">
-          {isLoadingParticipants ? (
+          {isLoading ? (
             <div className="p-12 text-center text-xs text-muted-foreground animate-pulse">Loading registration rolls...</div>
-          ) : filteredParticipants.length === 0 ? (
-            <div className="p-12 text-center text-xs text-muted-foreground">No participants found matching details.</div>
+          ) : isError ? (
+            <div className="p-12 text-center text-xs space-y-2">
+              <AlertTriangle className="h-6 w-6 text-destructive/70 mx-auto" />
+              <p className="font-semibold text-foreground">Couldn&apos;t load participants</p>
+              <p className="text-muted-foreground">{error?.message}</p>
+              <button onClick={() => refetch()} className="px-3 py-1.5 font-semibold rounded-md border border-border/50 bg-card hover:bg-secondary cursor-pointer">
+                Retry
+              </button>
+            </div>
+          ) : participants.length === 0 ? (
+            <div className="p-12 text-center text-xs text-muted-foreground">
+              {query.hasActiveFilters ? 'No participants match these filters.' : 'This organization has no participants yet.'}
+            </div>
           ) : (
             <table className="w-full text-xs text-left">
               <thead>
@@ -117,64 +136,41 @@ export default function OrgParticipantsTab({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/25 font-sans">
-                {paginatedParticipants.map(p => {
-                  const quizTitle = contests.find(c => c.id === p.contestId)?.title || p.contestId;
-                  
-                  return (
-                    <tr key={p.id} className="hover:bg-secondary/15 transition-all">
-                      <td className="py-3 px-4 font-semibold text-foreground">
-                        {p.firstName} {p.lastName}
-                      </td>
-                      <td className="py-3 px-4 space-y-0.5">
-                        <span className="block font-mono text-muted-foreground text-[10px]">{p.email}</span>
-                        <span className="block text-muted-foreground/80 font-mono text-[10px]">{p.phone}</span>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-slate-700 truncate max-w-[150px]" title={quizTitle}>
-                        {quizTitle}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase border tracking-wide ${
-                          p.status === 'SUBMITTED' 
-                            ? 'bg-teal-50 text-teal-700 border-teal-200' 
-                            : p.status === 'IN_QUIZ' 
-                            ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' 
-                            : p.status === 'REGISTERED' 
-                            ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                            : 'bg-slate-50 text-slate-600 border-slate-200'
-                        }`}>
-                          {p.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${
-                          p.paymentStatus === 'PAID' 
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                            : p.paymentStatus === 'PENDING' 
-                            ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                            : 'bg-red-50 text-red-700 border-red-200'
-                        }`}>
-                          {p.paymentStatus}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-semibold text-foreground/80">₹{p.paymentAmount}</td>
-                      <td className="py-3 px-4 text-right text-muted-foreground font-mono">
-                        {format(new Date(p.registeredAt), 'dd MMM, hh:mm')}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {participants.map((p) => (
+                  <tr key={p.id} className="hover:bg-secondary/15 transition-all">
+                    <td className="py-3 px-4 font-semibold text-foreground">
+                      {p.firstName} {p.lastName}
+                      {p.registrationRef && <span className="block font-mono text-[10px] font-normal text-muted-foreground">{p.registrationRef}</span>}
+                    </td>
+                    <td className="py-3 px-4 space-y-0.5">
+                      <span className="block font-mono text-muted-foreground text-[10px]">{p.email}</span>
+                      <span className="block text-muted-foreground/80 font-mono text-[10px]">{p.phone}</span>
+                    </td>
+                    <td className="py-3 px-4 font-medium text-foreground/80 truncate max-w-[180px]" title={p.contestTitle}>
+                      {p.contestTitle}
+                    </td>
+                    <td className="py-3 px-4">
+                      <StatusBadge kind="participant" value={p.status} />
+                    </td>
+                    <td className="py-3 px-4">
+                      <StatusBadge kind="payment" value={p.paymentStatus} />
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono font-semibold text-foreground/80">{formatInr(p.paymentAmount)}</td>
+                    <td className="py-3 px-4 text-right text-muted-foreground font-mono">{format(new Date(p.registeredAt), 'dd MMM, hh:mm')}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}
         </div>
 
-        {/* Pagination Footer */}
-        <TablePagination
-          currentPage={page}
-          totalItems={filteredParticipants.length}
-          pageSize={pageSize}
+        <Pagination
+          currentPage={query.page}
+          totalItems={data?.total ?? 0}
+          pageSize={PAGE_SIZE}
           itemLabel="participants"
-          onPageChange={setPage}
+          onPageChange={query.setPage}
+          isLoading={isFetching}
         />
       </div>
     </div>

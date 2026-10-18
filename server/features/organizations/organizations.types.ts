@@ -6,6 +6,9 @@ export interface OrgListMember {
   slug: string;
   ownerName: string;
   ownerEmail: string;
+  logoUrl: string;
+  /** Institution flags this organization effectively has (grant active, global on). */
+  features: string[];
   memberCount: number;
   contestCount: number;
   participantCount: number;
@@ -14,6 +17,8 @@ export interface OrgListMember {
     slug: string;
     name: string;
     status: string;
+    /** false = no OrganizationSubscription row; the plan shown is only the free default. */
+    hasSubscription: boolean;
   };
   createdAt: string;
 }
@@ -23,6 +28,8 @@ export interface OrgProfileDetail {
   name: string;
   slug: string;
   logoUrl: string | null;
+  /** False when logoUrl is only the generated avatar fallback (nothing uploaded/set). */
+  hasCustomLogo: boolean;
   isActive: boolean;
   isDeleted: boolean;
   createdAt: string;
@@ -37,6 +44,8 @@ export interface OrgProfileDetail {
     slug: string;
     name: string;
     status: string;
+    /** false = no OrganizationSubscription row; the plan shown is only the free default. */
+    hasSubscription: boolean;
   };
   suspension?: {
     reason: string;
@@ -60,16 +69,27 @@ export interface OrgContestDetail {
   slug: string;
   status: string;
   startTime: string;
+  /** WINDOW contests: when the attempt window closes. SCHEDULED: startTime + duration. */
+  endTime: string;
+  registrationDeadline: string;
   duration: number;
+  maxParticipants: number | null;
   registrationFee: number;
   participantCount: number;
   revenueCollected: number;
+  /** SCHEDULED: everyone starts together. WINDOW: each participant starts within [startTime, endTime]. */
+  timingMode: 'SCHEDULED' | 'WINDOW';
+  /** PUBLIC: listed. PRIVATE_LINK: link only. ASSIGNED: only learners the org assigns. */
+  audience: 'PUBLIC' | 'PRIVATE_LINK' | 'ASSIGNED';
+  /** ALL questions, one of several SETS, or a difficulty POOL draw. */
+  questionSelection: 'ALL' | 'SETS' | 'POOL';
   createdAt: string;
 }
 
 export interface OrgParticipantDetail {
   id: string;
   contestId: string;
+  contestTitle: string;
   registrationRef: string;
   firstName: string;
   lastName: string;

@@ -3,9 +3,11 @@
 import React, { useState } from 'react';
 import { Search, CheckCircle2, Clock, AlertCircle, Mail, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
-import TablePagination from '../TablePagination';
+import Pagination from '@/components/ui/Pagination';
 import { OrgPayment } from '@/lib/api/organizations';
 import { useToast } from '@/components/ui/Toast';
+import { formatInr, formatNumber } from '@/lib/format';
+import { errorMessage } from '@/lib/errors';
 
 interface OrgPaymentsTabProps {
   payments: OrgPayment[];
@@ -59,8 +61,8 @@ export default function OrgPaymentsTab({
       } else {
         toast('Nothing Sent', 'No owner contact was found for this organization — the receipt was not sent.', 'warning');
       }
-    } catch (err: any) {
-      toast('Resend Failed', err.message || 'Could not resend the receipt.', 'error');
+    } catch (err) {
+      toast('Resend Failed', errorMessage(err) || 'Could not resend the receipt.', 'error');
     }
   };
 
@@ -73,7 +75,7 @@ export default function OrgPaymentsTab({
             <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block">Total Collected</span>
             <h3 className="text-xl font-bold font-mono text-emerald-700 flex items-baseline">
               <span className="text-sm mr-0.5 font-sans">₹</span>
-              {paymentAggregates.collected.toLocaleString('en-IN')}
+              {formatNumber(paymentAggregates.collected)}
             </h3>
           </div>
           <CheckCircle2 className="h-7 w-7 text-emerald-600/70" />
@@ -84,7 +86,7 @@ export default function OrgPaymentsTab({
             <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">Pending / Unpaid</span>
             <h3 className="text-xl font-bold font-mono text-amber-700 flex items-baseline">
               <span className="text-sm mr-0.5 font-sans">₹</span>
-              {paymentAggregates.pending.toLocaleString('en-IN')}
+              {formatNumber(paymentAggregates.pending)}
             </h3>
           </div>
           <Clock className="h-7 w-7 text-amber-600/70 animate-pulse" />
@@ -95,7 +97,7 @@ export default function OrgPaymentsTab({
             <span className="text-[10px] text-slate-800 font-bold uppercase tracking-wider block">Refunds Paid</span>
             <h3 className="text-xl font-bold font-mono text-slate-700 flex items-baseline">
               <span className="text-sm mr-0.5 font-sans">₹</span>
-              {paymentAggregates.refunded.toLocaleString('en-IN')}
+              {formatNumber(paymentAggregates.refunded)}
             </h3>
           </div>
           <AlertCircle className="h-7 w-7 text-slate-600/70" />
@@ -190,7 +192,7 @@ export default function OrgPaymentsTab({
                     <td className="py-3.5 px-5 text-slate-700 font-medium max-w-[180px] truncate">{p.description}</td>
                     <td className="py-3.5 px-5 font-mono text-muted-foreground text-[10px]">{p.referenceId}</td>
                     <td className="py-3.5 px-5 text-muted-foreground">{p.paymentMethod}</td>
-                    <td className="py-3.5 px-5 text-right font-mono font-bold text-foreground">₹{p.amount.toLocaleString('en-IN')}</td>
+                    <td className="py-3.5 px-5 text-right font-mono font-bold text-foreground">{formatInr(p.amount)}</td>
                     <td className="py-3.5 px-5">
                       <span className={`inline-flex px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wide ${
                         p.status === 'PAID' 
@@ -232,7 +234,7 @@ export default function OrgPaymentsTab({
         </div>
 
         {/* Pagination Footer */}
-        <TablePagination
+        <Pagination
           currentPage={page}
           totalItems={filteredPayments.length}
           pageSize={pageSize}

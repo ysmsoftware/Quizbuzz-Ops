@@ -1,7 +1,10 @@
 'use client';
 
 import { apiRequest } from '@/lib/api/utils';
+import { orgLogoFallback } from '@/lib/format';
 import { ContestStatus } from '@/lib/types';
+import type { InstitutionPlatformStats } from '@/server/features/institution/institution.types';
+import type { PlatformOverviewStats, OrgGrowthPoint, UpcomingContest, RecentOrg } from '@/server/features/overview/overview.types';
 
 export interface PlatformStats {
   organizations: {
@@ -16,11 +19,14 @@ export interface PlatformStats {
   };
   participants: {
     total: number;
+    byStatus: Record<string, number>;
   };
   revenue: {
     totalAllTime: number;
     thisMonth: number;
   };
+  /** Institution-mode adoption across the platform; null if it couldn't be computed. */
+  institution: InstitutionPlatformStats | null;
   growthTrend: Array<{ week: string; orgs: number }>;
   upcomingContests: Array<{
     id: string;
@@ -28,8 +34,10 @@ export interface PlatformStats {
     orgName: string;
     orgId: string;
     startTime: string;
+    endTime: string;
     participantCount: number;
     status: ContestStatus;
+    timingMode: 'SCHEDULED' | 'WINDOW';
   }>;
   recentOrganizations: Array<{
     id: string;
@@ -43,10 +51,10 @@ export interface PlatformStats {
 
 export async function getPlatformStats(): Promise<PlatformStats> {
   const [statsData, growthData, upcomingData, recentData] = await Promise.all([
-    apiRequest<any>('/api/v1/ops/overview/stats'),
-    apiRequest<any[]>('/api/v1/ops/overview/org-growth'),
-    apiRequest<any[]>('/api/v1/ops/overview/upcoming-contests'),
-    apiRequest<any[]>('/api/v1/ops/overview/recent-orgs'),
+    apiRequest<PlatformOverviewStats>('/api/v1/ops/overview/stats'),
+    apiRequest<OrgGrowthPoint[]>('/api/v1/ops/overview/org-growth'),
+    apiRequest<UpcomingContest[]>('/api/v1/ops/overview/upcoming-contests'),
+    apiRequest<RecentOrg[]>('/api/v1/ops/overview/recent-orgs'),
   ]);
 
   const defaultStatusBreakdown: Record<ContestStatus, number> = {
@@ -65,27 +73,29 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     ...(statsData.contests?.byStatus || {}),
   };
 
-  const growthTrend = (growthData || []).map((point: any) => ({
+  const growthTrend = (growthData || []).map((point) => ({
     week: point.week,
     orgs: point.count,
   }));
 
-  const upcomingContests = (upcomingData || []).map((contest: any) => ({
+  const upcomingContests = (upcomingData || []).map((contest) => ({
     id: contest.id,
     title: contest.title,
     orgName: contest.organizationName || 'Unknown Org',
     orgId: contest.organizationId || '',
     startTime: contest.startTime,
+    endTime: contest.endTime,
     participantCount: contest.participantCount || 0,
-    status: 'PUBLISHED' as ContestStatus,
+    status: contest.status as ContestStatus,
+    timingMode: (contest.timingMode ?? 'SCHEDULED') as 'SCHEDULED' | 'WINDOW',
   }));
 
-  const recentOrganizations = (recentData || []).map((org: any) => ({
+  const recentOrganizations = (recentData || []).map((org) => ({
     id: org.id,
     name: org.name,
     slug: org.slug,
-    planId: 'starter',
-    logoUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(org.name)}&backgroundColor=0d9488`,
+    planId: org.planSlug ?? 'starter',
+    logoUrl: org.logoUrl || orgLogoFallback(org.name),
     createdAt: org.createdAt,
   }));
 
@@ -95,11 +105,12 @@ export async function getPlatformStats(): Promise<PlatformStats> {
       total: statsData.contests.total,
       statusBreakdown,
     },
-    participants: statsData.participants,
+    participants: { total: statsData.participants.total, byStatus: statsData.participants.byStatus ?? {} },
     revenue: {
       totalAllTime: statsData.revenue.allTime,
       thisMonth: statsData.revenue.thisMonth,
     },
+    institution: statsData.institution ?? null,
     growthTrend,
     upcomingContests,
     recentOrganizations,

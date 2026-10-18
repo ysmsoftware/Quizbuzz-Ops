@@ -1,6 +1,7 @@
 import { IOverviewRepository, OverviewRepository } from './overview.repository';
 import { cache } from '../../cache/cache';
 import { PlatformOverviewStats, OrgGrowthPoint, UpcomingContest, RecentOrg } from './overview.types';
+import type { InstitutionPlatformStats } from '../institution/institution.types';
 
 export interface IOverviewService {
   getStats(): Promise<PlatformOverviewStats>;
@@ -10,18 +11,29 @@ export interface IOverviewService {
 }
 
 export class OverviewService implements IOverviewService {
-  constructor(private repo: IOverviewRepository = new OverviewRepository()) {}
+  constructor(
+    private repo: IOverviewRepository = new OverviewRepository(),
+    // Institution adoption lives in its own feature module; injected so Overview stays decoupled from it.
+    private institutionStats: () => Promise<InstitutionPlatformStats> = async () => {
+      throw new Error('institution stats not wired');
+    }
+  ) {}
 
   async getStats(): Promise<PlatformOverviewStats> {
     const cacheKey = 'ops:cache:overview:stats';
     const cached = await cache.get<PlatformOverviewStats>(cacheKey);
     if (cached) return cached;
 
-    const [orgs, contests, participants, revenue] = await Promise.all([
+    const [orgs, contests, participants, revenue, institution] = await Promise.all([
       this.repo.getOrgStats(),
       this.repo.getContestStats(),
       this.repo.getParticipantStats(),
       this.repo.getRevenueStats(),
+      // A failure here must not blank the whole Overview.
+      this.institutionStats().catch((err) => {
+        console.error('Institution stats unavailable:', err);
+        return null;
+      }),
     ]);
 
     const stats: PlatformOverviewStats = {
@@ -29,6 +41,7 @@ export class OverviewService implements IOverviewService {
       contests: contests,
       participants: participants,
       revenue: revenue,
+      institution,
       computedAt: new Date().toISOString(),
     };
 

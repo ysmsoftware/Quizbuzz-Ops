@@ -9,6 +9,7 @@ import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
 import { Shield, Sparkles, KeyRound, Mail } from 'lucide-react';
 import { motion } from 'motion/react';
+import { errorMessage } from '@/lib/errors';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Enter a valid corporate email address.' }),
@@ -62,8 +63,8 @@ export default function LoginView() {
           'success'
         );
       }
-    } catch (e: any) {
-      toast('Login Failed', e.message || 'Incorrect password.', 'error');
+    } catch (e) {
+      toast('Login Failed', errorMessage(e) || 'Incorrect password.', 'error');
     }
   };
 
@@ -87,8 +88,8 @@ export default function LoginView() {
       );
 
       router.push('/dashboard');
-    } catch (e: any) {
-      toast('Verification Failed', e.message || 'Incorrect OTP code.', 'error');
+    } catch (e) {
+      toast('Verification Failed', errorMessage(e) || 'Incorrect OTP code.', 'error');
     }
   };
 
@@ -200,7 +201,7 @@ export default function LoginView() {
                 />
               </div>
               <p className="text-[11px] text-muted-foreground/70 mt-1">
-                Check your inbox for the 6-digit verification code. It expires shortly, so request a new one if it doesn't arrive in a few minutes.
+                Check your inbox for the 6-digit verification code. It expires shortly, so request a new one if it doesn&apos;t arrive in a few minutes.
               </p>
             </div>
 

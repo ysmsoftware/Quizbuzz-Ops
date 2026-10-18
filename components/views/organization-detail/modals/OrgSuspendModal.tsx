@@ -42,8 +42,9 @@ export default function OrgSuspendModal({
         </div>
 
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Applying operational freeze to <span className="font-bold text-foreground">{orgName}</span>. 
-          Staff access, hosted quiz portals, and participant entries will be frozen immediately.
+          Suspending <span className="font-bold text-foreground">{orgName}</span>. Its team can&apos;t sign in or use the dashboard — they
+          see a &ldquo;suspended&rdquo; message instead — and public registration and joining for its contests are paused. The owner is
+          emailed the reason. The organization&apos;s data is kept.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-3">

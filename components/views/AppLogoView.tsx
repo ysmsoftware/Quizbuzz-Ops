@@ -5,6 +5,7 @@ import { useAppSettings } from '@/lib/hooks/useAppSettings';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
 import { ImageIcon, Upload, X, Lock, Loader2 } from 'lucide-react';
+import { errorMessage } from '@/lib/errors';
 
 const MAX_SIZE_MB = 2;
 const ACCEPT = 'image/png,image/jpeg,image/svg+xml';
@@ -36,8 +37,8 @@ export default function AppLogoView() {
       try {
         await uploadAppLogo({ fileData: dataUrl, fileName: file.name });
         toast('App Logo Updated', 'The QuizBuzz application logo has been updated.', 'success');
-      } catch (err: any) {
-        toast('Failed to Upload Logo', err?.message || 'Could not upload the app logo.', 'error');
+      } catch (err) {
+        toast('Failed to Upload Logo', errorMessage(err) || 'Could not upload the app logo.', 'error');
       }
     };
     reader.readAsDataURL(file);
@@ -47,8 +48,8 @@ export default function AppLogoView() {
     try {
       await removeAppLogo();
       toast('App Logo Removed', 'The main app now falls back to its default bundled logo.', 'success');
-    } catch (err: any) {
-      toast('Failed to Remove Logo', err?.message || 'Could not remove the app logo.', 'error');
+    } catch (err) {
+      toast('Failed to Remove Logo', errorMessage(err) || 'Could not remove the app logo.', 'error');
     }
   };
 

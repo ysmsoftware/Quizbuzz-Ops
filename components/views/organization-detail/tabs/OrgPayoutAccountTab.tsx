@@ -7,6 +7,7 @@ import {
   useAttachLinkedAccount,
   useUpdatePayoutStatus,
 } from '@/lib/hooks/usePayouts';
+import type { RouteTransfersListQueryParams } from '@/server/features/payouts/payouts.types';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
 import {
@@ -22,6 +23,8 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatInr, formatNumber } from '@/lib/format';
+import { errorMessage } from '@/lib/errors';
 
 interface OrgPayoutAccountTabProps {
   orgId: string;
@@ -42,7 +45,7 @@ export default function OrgPayoutAccountTab({ orgId, orgName }: OrgPayoutAccount
   const { data: transfersData, isLoading: isLoadingTransfers } = useOrgRouteTransfers(orgId, {
     page: transfersPage,
     limit: 10,
-    status: transfersStatus as any,
+    status: transfersStatus as RouteTransfersListQueryParams['status'],
   });
 
   const attachMutation = useAttachLinkedAccount();
@@ -87,8 +90,8 @@ export default function OrgPayoutAccountTab({ orgId, orgName }: OrgPayoutAccount
       setIsAttachModalOpen(false);
       setLinkedAccountId('');
       setAttachError('');
-    } catch (err: any) {
-      setAttachError(err.message || 'Failed to attach linked account');
+    } catch (err) {
+      setAttachError(errorMessage(err) || 'Failed to attach linked account');
     }
   };
 
@@ -108,8 +111,8 @@ export default function OrgPayoutAccountTab({ orgId, orgName }: OrgPayoutAccount
       setIsStatusModalOpen(false);
       setStatusReason('');
       setStatusError('');
-    } catch (err: any) {
-      setStatusError(err.message || 'Failed to update status');
+    } catch (err) {
+      setStatusError(errorMessage(err) || 'Failed to update status');
     }
   };
 
@@ -230,7 +233,7 @@ export default function OrgPayoutAccountTab({ orgId, orgName }: OrgPayoutAccount
 
                 <button
                   onClick={() => {
-                    setNewStatus(account.status as any);
+                    setNewStatus(account.status as typeof newStatus);
                     setStatusReason(account.statusReason || '');
                     setStatusError('');
                     setIsStatusModalOpen(true);
@@ -254,7 +257,7 @@ export default function OrgPayoutAccountTab({ orgId, orgName }: OrgPayoutAccount
               <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Total Transferred</span>
               <div className="text-lg font-bold font-mono text-foreground flex items-baseline">
                 <IndianRupee className="h-4 w-4 mr-0.5" />
-                {summary.totalTransferredAllTime.toLocaleString('en-IN')}
+                {formatNumber(summary.totalTransferredAllTime)}
               </div>
             </div>
             <div className="p-2.5 bg-emerald-500/10 text-emerald-600 rounded-lg">
@@ -354,11 +357,11 @@ export default function OrgPayoutAccountTab({ orgId, orgName }: OrgPayoutAccount
                       <td className="py-2.5 px-4 text-foreground/90 font-medium max-w-[140px] truncate">
                         {t.contestTitle}
                       </td>
-                      <td className="py-2.5 px-4 font-mono font-bold text-foreground">₹{t.grossAmount}</td>
-                      <td className="py-2.5 px-4 font-mono text-muted-foreground">₹{t.platformFeeAmount}</td>
-                      <td className="py-2.5 px-4 font-mono text-muted-foreground">₹{t.gatewayFeeAmount}</td>
-                      <td className="py-2.5 px-4 font-mono text-muted-foreground">₹{t.gstAmount}</td>
-                      <td className="py-2.5 px-4 font-mono font-bold text-emerald-600">₹{t.transferAmount}</td>
+                      <td className="py-2.5 px-4 font-mono font-bold text-foreground">{formatInr(t.grossAmount)}</td>
+                      <td className="py-2.5 px-4 font-mono text-muted-foreground">{formatInr(t.platformFeeAmount)}</td>
+                      <td className="py-2.5 px-4 font-mono text-muted-foreground">{formatInr(t.gatewayFeeAmount)}</td>
+                      <td className="py-2.5 px-4 font-mono text-muted-foreground">{formatInr(t.gstAmount)}</td>
+                      <td className="py-2.5 px-4 font-mono font-bold text-emerald-600">{formatInr(t.transferAmount)}</td>
                       <td className="py-2.5 px-4">
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -456,7 +459,7 @@ export default function OrgPayoutAccountTab({ orgId, orgName }: OrgPayoutAccount
                 <label className="text-xs font-semibold text-foreground">Target Status</label>
                 <select
                   value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value as any)}
+                  onChange={(e) => setNewStatus(e.target.value as typeof newStatus)}
                   className="w-full text-xs font-sans p-2.5 rounded-lg border border-border/40 bg-secondary/10 focus:outline-none focus:border-primary"
                 >
                   <option value="ACTIVE">ACTIVE — Normal Payout Operation</option>

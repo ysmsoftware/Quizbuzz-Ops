@@ -149,7 +149,17 @@ export async function activateOrganization(orgId: string): Promise<void> {
 }
 
 export async function deleteOrganization(orgId: string): Promise<void> {
-  await suspendOrganization(orgId, 'Soft-deleted by platform operator');
+  await apiRequest(`/api/v1/ops/organizations/${orgId}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ reason: 'Deleted by platform operator' }),
+  });
+}
+
+export async function restoreOrganization(orgId: string, reason?: string): Promise<void> {
+  await apiRequest(`/api/v1/ops/organizations/${orgId}/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export async function bulkSuspendOrganizations(orgIds: string[], reason: string): Promise<void> {

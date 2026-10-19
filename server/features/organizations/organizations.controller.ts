@@ -1,6 +1,6 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseQueryParams, parseRequest } from '../../http/validation';
-import { orgListQuerySchema, createNoteSchema, suspendOrgSchema, reactivateOrgSchema } from './organizations.validator';
+import { orgListQuerySchema, createNoteSchema, suspendOrgSchema, reactivateOrgSchema, deleteOrgSchema } from './organizations.validator';
 import { IOrganizationsService, OrganizationsService } from './organizations.service';
 import { okResponse, errorResponse } from '../../http/envelope';
 import { PlatformAdminRole } from '@prisma/client';
@@ -100,6 +100,22 @@ export class OrganizationsController {
     };
     await this.service.reactivate(orgId, actor, input.reason);
     return okResponse(null, 'Organization reactivated successfully.');
+  }
+
+  async softDelete(req: Request, orgId: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
+    const input = await parseRequest(req, deleteOrgSchema);
+    const actor = { id: admin.id, email: admin.email, name: admin.name, role: admin.role };
+    await this.service.softDelete(orgId, actor, input.reason);
+    return okResponse(null, 'Organization deleted. It is hidden from lists and can be restored.');
+  }
+
+  async restore(req: Request, orgId: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
+    const input = await parseRequest(req, reactivateOrgSchema);
+    const actor = { id: admin.id, email: admin.email, name: admin.name, role: admin.role };
+    await this.service.restore(orgId, actor, input.reason);
+    return okResponse(null, 'Organization restored.');
   }
 }
 

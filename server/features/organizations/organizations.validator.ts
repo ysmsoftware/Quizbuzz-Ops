@@ -22,6 +22,10 @@ export const reactivateOrgSchema = z.object({
   reason: z.string().optional(),
 });
 
+export const deleteOrgSchema = z.object({
+  reason: z.string().trim().min(3, 'A reason is required for the audit trail'),
+});
+
 export type OrgListQueryInput = z.infer<typeof orgListQuerySchema>;
 export type CreateNoteInput = z.infer<typeof createNoteSchema>;
 export type SuspendOrgInput = z.infer<typeof suspendOrgSchema>;

@@ -10,7 +10,9 @@ export interface IOrganizationsRepository {
     search?: string;
     status: 'all' | 'active' | 'suspended' | 'deleted';
   }): Promise<{ rows: any[]; total: number }>;
-  getOrganizationDetail(orgId: string): Promise<any | null>;
+  getOrganizationDetail(orgId: string, opts?: { includeDeleted?: boolean }): Promise<any | null>;
+  hasOpenSuspension(orgId: string): Promise<boolean>;
+  setMainDbOrganizationDeleted(orgId: string, deleted: boolean, isActiveAfter: boolean): Promise<void>;
   getOwnerContact(orgId: string): Promise<{ name: string; email: string } | null>;
   getOrganizationMembers(orgId: string): Promise<OrgMemberDetail[]>;
   getOrganizationContests(orgId: string): Promise<OrgContestDetail[]>;
@@ -105,7 +107,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     };
   }
 
-  async getOrganizationDetail(orgId: string): Promise<any | null> {
+  async getOrganizationDetail(orgId: string, opts: { includeDeleted?: boolean } = {}): Promise<any | null> {
     const rows = await queryMainDb(`
       SELECT 
         o.id, o.name, o.slug, o."createdAt", o."isActive", o."isDeleted", o."onboardingStep", o."onboardingCompleted",
@@ -123,9 +125,22 @@ export class OrganizationsRepository implements IOrganizationsRepository {
           'unknown@org.com'
         ) as "ownerEmail"
       FROM organizations o
-      WHERE o.id = $1 AND o."isDeleted" = false
+      WHERE o.id = $1 ${opts.includeDeleted ? '' : 'AND o."isDeleted" = false'}
     `, [orgId]);
     return rows[0] || null;
+  }
+
+  async hasOpenSuspension(orgId: string): Promise<boolean> {
+    const open = await prisma.organizationSuspension.findFirst({ where: { organizationId: orgId, liftedAt: null }, select: { id: true } });
+    return !!open;
+  }
+
+  /** Soft delete / restore in the main app's DB. isActive is set together so a restore can return to Suspended. */
+  async setMainDbOrganizationDeleted(orgId: string, deleted: boolean, isActiveAfter: boolean): Promise<void> {
+    await queryMainDb(
+      `UPDATE organizations SET "isDeleted" = $1, "isActive" = $2, "updatedAt" = NOW() WHERE id = $3`,
+      [deleted, isActiveAfter, orgId]
+    );
   }
 
   /**

@@ -1,6 +1,7 @@
 import { IOrganizationsRepository, OrganizationsRepository } from './organizations.repository';
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
+import { NotFoundError, ConflictError } from '../../http/errors';
 import { AuditTargetType } from '@prisma/client';
 import { OrgListMember, OrgProfileDetail, OrgMemberDetail, OrgContestDetail, OrgParticipantDetail, OrgPaymentDetail, SupportNoteDetail } from './organizations.types';
 
@@ -20,6 +21,8 @@ export interface IOrganizationsService {
   addNote(orgId: string, actor: AuditActor, body: string, tags: string[]): Promise<SupportNoteDetail>;
   suspend(orgId: string, actor: AuditActor, reason: string): Promise<void>;
   reactivate(orgId: string, actor: AuditActor, reason?: string): Promise<void>;
+  softDelete(orgId: string, actor: AuditActor, reason: string): Promise<void>;
+  restore(orgId: string, actor: AuditActor, reason?: string): Promise<void>;
   getUsage(orgId: string): Promise<{
     contestsUsedThisCycle: number;
     maxParticipantsInAContest: number;
@@ -256,6 +259,39 @@ export class OrganizationsService implements IOrganizationsService {
     );
 
     await orgOwnerNotifier.notify(orgId, 'ORG_REACTIVATED', {});
+  }
+
+  /**
+   * Soft delete: the organization disappears from every list, its admins can no longer sign in
+   * or act, and its public pages go dark — but no row is removed, so it can be restored.
+   * Unlike suspend, the owner is NOT emailed (operator decision).
+   */
+  async softDelete(orgId: string, actor: AuditActor, reason: string): Promise<void> {
+    const org = await this.repo.getOrganizationDetail(orgId, { includeDeleted: true });
+    if (!org) throw new NotFoundError('Organization not found');
+    if (org.isDeleted) throw new ConflictError('Organization is already deleted');
+
+    await this.repo.setMainDbOrganizationDeleted(orgId, true, false);
+
+    await writeAuditLogEntry(actor, 'org.deleted', AuditTargetType.ORGANIZATION, orgId, org.name, {
+      reason,
+      wasSuspended: !org.isActive,
+    });
+  }
+
+  /** Undo a soft delete. The org returns to Suspended if it had an open suspension, else Active. No email. */
+  async restore(orgId: string, actor: AuditActor, reason?: string): Promise<void> {
+    const org = await this.repo.getOrganizationDetail(orgId, { includeDeleted: true });
+    if (!org) throw new NotFoundError('Organization not found');
+    if (!org.isDeleted) throw new ConflictError('Organization is not deleted');
+
+    const stillSuspended = await this.repo.hasOpenSuspension(orgId);
+    await this.repo.setMainDbOrganizationDeleted(orgId, false, !stillSuspended);
+
+    await writeAuditLogEntry(actor, 'org.restored', AuditTargetType.ORGANIZATION, orgId, org.name, {
+      reason: reason ?? null,
+      restoredTo: stillSuspended ? 'SUSPENDED' : 'ACTIVE',
+    });
   }
 }
 

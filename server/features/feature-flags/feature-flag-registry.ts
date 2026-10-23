@@ -237,6 +237,17 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     requires: ['participant_portal'],
     accessModel: 'OPT_IN',
   },
+  {
+    key: 'ai_question_generation',
+    label: 'AI Question Generation',
+    description:
+      'Lets org staff upload material to a library and generate draft questions with AI (text, math, code, diagrams), filling gaps the question bank can\'t cover. Drafts need teacher review; usage is metered in AI credits.',
+    // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
 ] as const satisfies readonly FeatureFlagRegistryEntry[];
 
 // Fails the build (not just a runtime surprise) if a copy-paste ever

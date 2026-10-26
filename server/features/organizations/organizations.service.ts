@@ -1,4 +1,3 @@
-import { AI_CREDITS_BASE } from '../subscriptions/effective-limits';
 import { IOrganizationsRepository, OrganizationsRepository } from './organizations.repository';
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
@@ -361,7 +360,7 @@ export class OrganizationsService implements IOrganizationsService {
     const rawOrg = await this.repo.getOrganizationDetail(orgId);
     if (!rawOrg) throw new NotFoundError('Organization not found');
 
-    const balance = await this.repo.addMainDbAiBonusCredits(orgId, amount, AI_CREDITS_BASE);
+    const balance = await this.repo.addMainDbAiBonusCredits(orgId, amount);
     await writeAuditLogEntry(actor, 'org.ai_bonus_credits_granted', AuditTargetType.ORGANIZATION, orgId, rawOrg.name, { amount, reason, balanceAfter: balance });
     return { balance };
   }

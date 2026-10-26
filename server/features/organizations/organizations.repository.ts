@@ -72,7 +72,7 @@ export interface IOrganizationsRepository {
   createOrganizationSuspension(orgId: string, reason: string, suspendedById: string): Promise<any>;
   closeOrganizationSuspension(orgId: string, liftedById: string, liftReason?: string): Promise<any>;
   updateMainDbOrganizationStatus(orgId: string, isActive: boolean): Promise<void>;
-  addMainDbAiBonusCredits(orgId: string, amount: number, baseAllowance: number): Promise<number>;
+  addMainDbAiBonusCredits(orgId: string, amount: number): Promise<number>;
   getSubscriptionsForOrgs(orgIds: string[]): Promise<any[]>;
   getSubscriptionForOrg(orgId: string): Promise<any | null>;
   getPlatformAdmin(adminId: string): Promise<any | null>;
@@ -573,19 +573,19 @@ export class OrganizationsRepository implements IOrganizationsRepository {
 
   /**
    * Adds bonus credits to the main app's ai_credit_accounts.balance (the org's one
-   * AI credit pool). An org that has never used AI gets its row here, as the main
-   * app would create it (this month, base allowance, one month's credits) plus the
-   * bonus; the main app corrects the allowance from the plan on its next read.
-   * Returns the new balance.
+   * AI credit pool). An org that has never used AI gets its row here holding just
+   * the bonus, with allowance 0: the main app then tops it up with whatever the
+   * org's plan really grants this month on its next read (a plan with no AI
+   * credits stays at the bonus). Returns the new balance.
    */
-  async addMainDbAiBonusCredits(orgId: string, amount: number, baseAllowance: number): Promise<number> {
+  async addMainDbAiBonusCredits(orgId: string, amount: number): Promise<number> {
     const rows = await queryMainDb(`
       INSERT INTO ai_credit_accounts ("organizationId", "periodStart", allowance, balance, "updatedAt")
-      VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC'), $2, $2::numeric + $3::numeric, NOW())
+      VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC'), 0, $2::numeric, NOW())
       ON CONFLICT ("organizationId") DO UPDATE
-        SET balance = ai_credit_accounts.balance + $3::numeric, "updatedAt" = NOW()
+        SET balance = ai_credit_accounts.balance + $2::numeric, "updatedAt" = NOW()
       RETURNING balance::float AS balance
-    `, [orgId, baseAllowance, amount]);
+    `, [orgId, amount]);
     return rows[0]?.balance ?? amount;
   }
 

@@ -21,6 +21,7 @@ const limitLabels: Record<LimitField, string> = {
   maxParticipantsPerContest: 'Max Participants per Quiz',
   maxQuestionsPerContest: 'Max Questions per Quiz',
   maxOrgMembers: 'Max Team Members',
+  aiCreditsPerMonth: 'AI Credits per Month',
 };
 
 /** Pure preview of what this one override would resolve to, given the field's current effective value. Mirrors (for a single override) the same fold rule effective-limits.ts applies for all of them. */
@@ -51,7 +52,9 @@ export default function AddOverrideModal({
   if (!isOpen) return null;
 
   const currentValue = effectiveLimits[field].value;
-  const enteredValue = isUnlimited ? null : parseInt(value, 10);
+  // AI credits cost real money per call: never unlimited.
+  const canBeUnlimited = field !== 'aiCreditsPerMonth';
+  const enteredValue = isUnlimited && canBeUnlimited ? null : parseInt(value, 10);
   const previewValue = previewNewValue(currentValue, mode, Number.isNaN(enteredValue as number) ? 0 : enteredValue);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -128,7 +131,7 @@ export default function AddOverrideModal({
                 <label className="block font-semibold text-foreground">
                   {mode === 'ADDITIVE' ? 'Amount to Add' : 'New Override Limit'}
                 </label>
-                <label className="flex items-center space-x-1.5 cursor-pointer text-muted-foreground">
+                {canBeUnlimited && <label className="flex items-center space-x-1.5 cursor-pointer text-muted-foreground">
                   <input
                     type="checkbox"
                     checked={isUnlimited}
@@ -136,10 +139,10 @@ export default function AddOverrideModal({
                     className="h-3.5 w-3.5 rounded border-input text-amber-500"
                   />
                   <span>Unlimited Quota</span>
-                </label>
+                </label>}
               </div>
 
-              {!isUnlimited && (
+              {enteredValue !== null && (
                 <input
                   type="number"
                   value={value}

@@ -2,15 +2,16 @@
 
 import React from 'react';
 import { OrganizationSubscription, UsageSnapshot } from '@/lib/types';
-import { Trophy, Users, HelpCircle, Layers, ShieldAlert } from 'lucide-react';
+import { Trophy, Users, HelpCircle, Layers, ShieldAlert, Sparkles } from 'lucide-react';
 
 interface QuotaUsageGridProps {
   /** Only `effectiveLimits` is read — already computed server-side (see effective-limits.ts), never re-derived here. */
   subscription: OrganizationSubscription;
   usage: UsageSnapshot | null;
+  onGiveAiCredits: () => void;
 }
 
-export default function QuotaUsageGrid({ subscription, usage }: QuotaUsageGridProps) {
+export default function QuotaUsageGrid({ subscription, usage, onGiveAiCredits }: QuotaUsageGridProps) {
   const { effectiveLimits } = subscription;
 
   const quotas = [
@@ -48,6 +49,29 @@ export default function QuotaUsageGrid({ subscription, usage }: QuotaUsageGridPr
       color: 'text-purple-500',
       used: usage?.memberCountUsed ?? 1,
       limitInfo: effectiveLimits.maxOrgMembers,
+    },
+    {
+      key: 'aiCreditsPerMonth' as const,
+      label: 'AI Credits per Month',
+      icon: Sparkles,
+      color: 'text-pink-500',
+      used: usage?.aiCreditsUsed ?? 0,
+      limitInfo: effectiveLimits.aiCreditsPerMonth,
+      // One pool: unused credits carry over (up to 3 months' worth) and bonuses add to it.
+      footer: (
+        <div className="flex items-center justify-between pt-1 text-xs">
+          <span className="text-muted-foreground">
+            Balance: <span className="font-bold text-foreground">{usage?.aiCreditsBalance ?? 0}</span>
+          </span>
+          <button
+            type="button"
+            onClick={onGiveAiCredits}
+            className="px-2.5 py-1 text-[11px] font-semibold rounded-md border border-pink-500/40 text-pink-600 hover:bg-pink-500/10 transition-colors"
+          >
+            Give bonus credits
+          </button>
+        </div>
+      ),
     },
   ];
 
@@ -93,7 +117,7 @@ export default function QuotaUsageGrid({ subscription, usage }: QuotaUsageGridPr
 
             <div className="space-y-1.5 pt-1">
               <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Used / Quota</span>
+                <span className="text-muted-foreground">{quota.key === 'aiCreditsPerMonth' ? 'Used this month / Monthly top-up' : 'Used / Quota'}</span>
                 <span className="font-bold text-foreground">
                   {quota.used} / {isUnlimited ? 'Unlimited' : maxVal}
                 </span>
@@ -109,6 +133,7 @@ export default function QuotaUsageGrid({ subscription, usage }: QuotaUsageGridPr
                   />
                 </div>
               )}
+              {'footer' in quota && quota.footer}
             </div>
           </div>
         );

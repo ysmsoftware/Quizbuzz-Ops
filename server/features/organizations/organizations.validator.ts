@@ -67,6 +67,11 @@ export const suspendOrgSchema = z.object({
   reason: z.string().min(3, 'Suspension reason is required'),
 });
 
+export const grantAiBonusSchema = z.object({
+  amount: z.coerce.number().int().min(1, 'Give at least 1 credit').max(100000),
+  reason: z.string().min(3, 'Reason is required'),
+});
+
 export const reactivateOrgSchema = z.object({
   reason: z.string().optional(),
 });

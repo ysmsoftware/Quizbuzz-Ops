@@ -5,7 +5,7 @@ import { generateUlid } from '../../utils/ulid';
 import { ISubscriptionsRepository, SubscriptionsRepository } from './subscriptions.repository';
 import { IEntitlementsService, EntitlementsService } from '../entitlements/entitlements.service';
 import { periodMonthsForCycle } from '../../../lib/pricing/subscriptionPricing';
-import { computeEffectiveLimits } from './effective-limits';
+import { AI_CREDITS_BASE, computeEffectiveLimits } from './effective-limits';
 import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
 
 /** Human-readable labels for override/limit-change emails — display only. */
@@ -14,6 +14,7 @@ const FIELD_LABELS: Record<string, string> = {
   maxParticipantsPerContest: 'Participants per Contest',
   maxQuestionsPerContest: 'Questions per Contest',
   maxOrgMembers: 'Organization Members',
+  aiCreditsPerMonth: 'AI Credits per Month',
   featureProctoring: 'Advanced Proctoring',
   featureCertBranding: 'Custom Certificate Branding',
   featureAnalyticsExport: 'Analytics Export',
@@ -74,6 +75,7 @@ export class SubscriptionsService implements ISubscriptionsService {
         maxParticipantsPerContest: sub.plan.maxParticipantsPerContest,
         maxQuestionsPerContest: sub.plan.maxQuestionsPerContest,
         maxOrgMembers: sub.plan.maxOrgMembers,
+        aiCreditsPerMonth: AI_CREDITS_BASE,
       },
       sub.overrides,
     );

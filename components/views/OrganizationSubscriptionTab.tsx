@@ -13,6 +13,7 @@ import PlanChangeHistoryTable from './organization-subscription/PlanChangeHistor
 import ChangePlanModal from './organization-subscription/ChangePlanModal';
 import AddOverrideModal from './organization-subscription/AddOverrideModal';
 import RevokeOverrideModal from './organization-subscription/RevokeOverrideModal';
+import GiveAiCreditsModal from './organization-subscription/GiveAiCreditsModal';
 import { AlertTriangle, Plus } from 'lucide-react';
 import { errorMessage } from '@/lib/errors';
 
@@ -45,12 +46,15 @@ export default function OrganizationSubscriptionTab({
     isRemovingOverride,
     resendReminder,
     isResendingReminder,
+    grantAiBonus,
+    isGrantingAiBonus,
   } = useSubscription(organization.id);
 
   // Modals
   const [isChangePlanOpen, setIsChangePlanOpen] = useState(false);
   const [isAddOverrideOpen, setIsAddOverrideOpen] = useState(false);
   const [revokingOverrideId, setRevokingOverrideId] = useState<string | null>(null);
+  const [isGiveAiCreditsOpen, setIsGiveAiCreditsOpen] = useState(false);
 
   if (isSubLoading) {
     return (
@@ -134,6 +138,17 @@ export default function OrganizationSubscriptionTab({
     }
   };
 
+  // Give bonus AI credits
+  const handleGiveAiCreditsSubmit = async (amount: number, reason: string) => {
+    try {
+      const { balance } = await grantAiBonus({ amount, reason });
+      toast('Credits Added', `Added ${amount} AI credits to ${organization.name}. Balance is now ${balance}.`, 'success');
+      setIsGiveAiCreditsOpen(false);
+    } catch (err) {
+      toast('Could Not Add Credits', errorMessage(err) || 'Failed to add AI credits.', 'error');
+    }
+  };
+
   // Resend renewal reminder
   const handleResendReminder = async () => {
     try {
@@ -181,6 +196,7 @@ export default function OrganizationSubscriptionTab({
         <QuotaUsageGrid
           subscription={subscription}
           usage={usage}
+          onGiveAiCredits={() => setIsGiveAiCreditsOpen(true)}
         />
       </div>
 
@@ -213,6 +229,14 @@ export default function OrganizationSubscriptionTab({
         onSubmit={handleAddOverrideSubmit}
         isSubmitting={isAddingOverride}
         effectiveLimits={subscription.effectiveLimits}
+      />
+
+      <GiveAiCreditsModal
+        isOpen={isGiveAiCreditsOpen}
+        onClose={() => setIsGiveAiCreditsOpen(false)}
+        onSubmit={handleGiveAiCreditsSubmit}
+        isSubmitting={isGrantingAiBonus}
+        balance={usage?.aiCreditsBalance ?? 0}
       />
 
       <RevokeOverrideModal

@@ -10,6 +10,7 @@ import {
   getPlanChangeHistory,
   getUsageSnapshot,
   resendRenewalReminder,
+  grantAiBonusCredits,
 } from '@/lib/api/organizations';
 import { SubscriptionOverride } from '@/lib/types';
 
@@ -72,6 +73,14 @@ export function useSubscription(orgId: string) {
     }
   });
 
+  const grantAiBonusMutation = useMutation({
+    mutationFn: ({ amount, reason }: { amount: number; reason: string }) => grantAiBonusCredits(orgId, amount, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizations', 'usage', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+    },
+  });
+
   const resendReminderMutation = useMutation({
     mutationFn: () => resendRenewalReminder(orgId),
     onSuccess: () => {
@@ -98,6 +107,9 @@ export function useSubscription(orgId: string) {
 
     removeOverride: removeOverrideMutation.mutateAsync,
     isRemovingOverride: removeOverrideMutation.isPending,
+
+    grantAiBonus: grantAiBonusMutation.mutateAsync,
+    isGrantingAiBonus: grantAiBonusMutation.isPending,
 
     resendReminder: resendReminderMutation.mutateAsync,
     isResendingReminder: resendReminderMutation.isPending,

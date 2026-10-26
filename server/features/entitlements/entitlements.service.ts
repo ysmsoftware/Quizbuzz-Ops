@@ -1,5 +1,5 @@
 import { IEntitlementsRepository, EntitlementsRepository } from './entitlements.repository';
-import { computeEffectiveLimits, LIMIT_FIELDS } from '../subscriptions/effective-limits';
+import { AI_CREDITS_BASE, computeEffectiveLimits, LIMIT_FIELDS } from '../subscriptions/effective-limits';
 
 export interface IEntitlementsService {
   syncOrgPlanLimitsCache(orgId: string): Promise<void>;
@@ -22,6 +22,7 @@ export class EntitlementsService implements IEntitlementsService {
         maxParticipantsPerContest: sub.plan.maxParticipantsPerContest,
         maxQuestionsPerContest: sub.plan.maxQuestionsPerContest,
         maxOrgMembers: sub.plan.maxOrgMembers,
+        aiCreditsPerMonth: AI_CREDITS_BASE,
       },
       sub.overrides,
     );
@@ -50,6 +51,7 @@ export class EntitlementsService implements IEntitlementsService {
       maxParticipantsPerContest: effective.maxParticipantsPerContest.value,
       maxQuestionsPerContest: effective.maxQuestionsPerContest.value,
       maxOrgMembers: effective.maxOrgMembers.value,
+      aiCreditsPerMonth: effective.aiCreditsPerMonth.value,
       features: {
         proctoring: featureOverrideMap.has('featureProctoring')
           ? Boolean(featureOverrideMap.get('featureProctoring'))

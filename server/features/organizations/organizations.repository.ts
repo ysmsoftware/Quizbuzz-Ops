@@ -72,6 +72,7 @@ export interface IOrganizationsRepository {
   createOrganizationSuspension(orgId: string, reason: string, suspendedById: string): Promise<any>;
   closeOrganizationSuspension(orgId: string, liftedById: string, liftReason?: string): Promise<any>;
   updateMainDbOrganizationStatus(orgId: string, isActive: boolean): Promise<void>;
+  addMainDbAiBonusCredits(orgId: string, amount: number, baseAllowance: number): Promise<number>;
   getSubscriptionsForOrgs(orgIds: string[]): Promise<any[]>;
   getSubscriptionForOrg(orgId: string): Promise<any | null>;
   getPlatformAdmin(adminId: string): Promise<any | null>;
@@ -84,6 +85,8 @@ export interface IOrganizationsRepository {
     maxParticipantsInAContest: number;
     maxQuestionsInAContest: number;
     memberCountUsed: number;
+    aiCreditsUsed: number;
+    aiCreditsBalance: number;
   }>;
 }
 
@@ -568,6 +571,24 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     `, [isActive, orgId]);
   }
 
+  /**
+   * Adds bonus credits to the main app's ai_credit_accounts.balance (the org's one
+   * AI credit pool). An org that has never used AI gets its row here, as the main
+   * app would create it (this month, base allowance, one month's credits) plus the
+   * bonus; the main app corrects the allowance from the plan on its next read.
+   * Returns the new balance.
+   */
+  async addMainDbAiBonusCredits(orgId: string, amount: number, baseAllowance: number): Promise<number> {
+    const rows = await queryMainDb(`
+      INSERT INTO ai_credit_accounts ("organizationId", "periodStart", allowance, balance, "updatedAt")
+      VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC'), $2, $2::numeric + $3::numeric, NOW())
+      ON CONFLICT ("organizationId") DO UPDATE
+        SET balance = ai_credit_accounts.balance + $3::numeric, "updatedAt" = NOW()
+      RETURNING balance::float AS balance
+    `, [orgId, baseAllowance, amount]);
+    return rows[0]?.balance ?? amount;
+  }
+
   async getSubscriptionsForOrgs(orgIds: string[]): Promise<any[]> {
     return prisma.organizationSubscription.findMany({
       where: { organizationId: { in: orgIds } },
@@ -604,6 +625,10 @@ export class OrganizationsRepository implements IOrganizationsRepository {
    *    earlier cycle can still be actively accepting registrations.
    *  - memberCountUsed: same `isActive: true` count
    *    assertCanInviteMember() uses (includes pending invites).
+   *  - aiCreditsUsed: this calendar month's spend (AI credits top up monthly,
+   *    not per billing cycle); a stale month's row counts as 0.
+   *  - aiCreditsBalance: the org's whole AI credit pool (carried-over credits,
+   *    monthly top-ups and bonuses, less spend).
    */
   async getUsageSnapshot(
     orgId: string,
@@ -614,6 +639,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     maxParticipantsInAContest: number;
     maxQuestionsInAContest: number;
     memberCountUsed: number;
+    aiCreditsUsed: number;
+    aiCreditsBalance: number;
   }> {
     const rows = await queryMainDb(
       `
@@ -644,7 +671,14 @@ export class OrganizationsRepository implements IOrganizationsRepository {
         (
           SELECT COUNT(*)::int FROM org_members
           WHERE "organizationId" = $1 AND "isActive" = true
-        ) AS "memberCountUsed"
+        ) AS "memberCountUsed",
+        (
+          SELECT COALESCE(SUM(used), 0)::float FROM ai_credit_accounts
+          WHERE "organizationId" = $1 AND "periodStart" >= date_trunc('month', now() AT TIME ZONE 'UTC')
+        ) AS "aiCreditsUsed",
+        (
+          SELECT COALESCE(SUM(balance), 0)::float FROM ai_credit_accounts WHERE "organizationId" = $1
+        ) AS "aiCreditsBalance"
       `,
       [orgId, periodStart, periodEnd]
     );
@@ -655,6 +689,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       maxParticipantsInAContest: row.maxParticipantsInAContest ?? 0,
       maxQuestionsInAContest: row.maxQuestionsInAContest ?? 0,
       memberCountUsed: row.memberCountUsed ?? 0,
+      aiCreditsUsed: row.aiCreditsUsed ?? 0,
+      aiCreditsBalance: row.aiCreditsBalance ?? 0,
     };
   }
 }

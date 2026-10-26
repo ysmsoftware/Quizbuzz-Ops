@@ -1,3 +1,4 @@
+import { AI_CREDITS_BASE } from '../subscriptions/effective-limits';
 import { IOrganizationsRepository, OrganizationsRepository } from './organizations.repository';
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
@@ -26,11 +27,14 @@ export interface IOrganizationsService {
   addNote(orgId: string, actor: AuditActor, body: string, tags: string[]): Promise<SupportNoteDetail>;
   suspend(orgId: string, actor: AuditActor, reason: string): Promise<void>;
   reactivate(orgId: string, actor: AuditActor, reason?: string): Promise<void>;
+  grantAiBonusCredits(orgId: string, actor: AuditActor, amount: number, reason: string): Promise<{ balance: number }>;
   getUsage(orgId: string): Promise<{
     contestsUsedThisCycle: number;
     maxParticipantsInAContest: number;
     maxQuestionsInAContest: number;
     memberCountUsed: number;
+    aiCreditsUsed: number;
+    aiCreditsBalance: number;
     periodStart: string | null;
     periodEnd: string | null;
   }>;
@@ -165,6 +169,8 @@ export class OrganizationsService implements IOrganizationsService {
     maxParticipantsInAContest: number;
     maxQuestionsInAContest: number;
     memberCountUsed: number;
+    aiCreditsUsed: number;
+    aiCreditsBalance: number;
     periodStart: string | null;
     periodEnd: string | null;
   }> {
@@ -349,6 +355,15 @@ export class OrganizationsService implements IOrganizationsService {
     );
 
     await orgOwnerNotifier.notify(orgId, 'ORG_SUSPENDED', { reason });
+  }
+
+  async grantAiBonusCredits(orgId: string, actor: AuditActor, amount: number, reason: string): Promise<{ balance: number }> {
+    const rawOrg = await this.repo.getOrganizationDetail(orgId);
+    if (!rawOrg) throw new NotFoundError('Organization not found');
+
+    const balance = await this.repo.addMainDbAiBonusCredits(orgId, amount, AI_CREDITS_BASE);
+    await writeAuditLogEntry(actor, 'org.ai_bonus_credits_granted', AuditTargetType.ORGANIZATION, orgId, rawOrg.name, { amount, reason, balanceAfter: balance });
+    return { balance };
   }
 
   async reactivate(orgId: string, actor: AuditActor, reason?: string): Promise<void> {

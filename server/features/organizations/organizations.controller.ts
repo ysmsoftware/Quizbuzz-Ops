@@ -1,6 +1,6 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseQueryParams, parseRequest } from '../../http/validation';
-import { orgListQuerySchema, createNoteSchema, suspendOrgSchema, reactivateOrgSchema, createOrgSchema, updateOrgSchema, deleteOrgSchema, orgParticipantsQuerySchema } from './organizations.validator';
+import { orgListQuerySchema, createNoteSchema, suspendOrgSchema, reactivateOrgSchema, grantAiBonusSchema, createOrgSchema, updateOrgSchema, deleteOrgSchema, orgParticipantsQuerySchema } from './organizations.validator';
 import type { ISubscriptionsService } from '../subscriptions/subscriptions.service';
 import type { AuditActor } from '../../audit/audit-writer';
 import { IOrganizationsService, OrganizationsService } from './organizations.service';
@@ -151,6 +151,13 @@ export class OrganizationsController {
     };
     await this.service.suspend(orgId, actor, input.reason);
     return okResponse(null, 'Organization suspended successfully.');
+  }
+
+  async grantAiBonusCredits(req: Request, orgId: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN]);
+    const input = await parseRequest(req, grantAiBonusSchema);
+    const result = await this.service.grantAiBonusCredits(orgId, this.actorOf(admin), input.amount, input.reason);
+    return okResponse(result, 'Bonus AI credits added.');
   }
 
   async reactivate(req: Request, orgId: string) {

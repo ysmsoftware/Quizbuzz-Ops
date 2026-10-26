@@ -187,7 +187,7 @@ export interface EffectiveLimit {
 }
 
 export type EffectiveLimits = Record<
-  'maxContestsPerCycle' | 'maxParticipantsPerContest' | 'maxQuestionsPerContest' | 'maxOrgMembers',
+  'maxContestsPerCycle' | 'maxParticipantsPerContest' | 'maxQuestionsPerContest' | 'maxOrgMembers' | 'aiCreditsPerMonth',
   EffectiveLimit
 >;
 
@@ -211,6 +211,10 @@ export interface UsageSnapshot {
   /** The org's single fullest contest's question count — same per-contest reasoning as above. */
   maxQuestionsInAContest: number;
   memberCountUsed: number;
+  /** AI credits spent this calendar month (the main app's ai_credit_accounts). */
+  aiCreditsUsed: number;
+  /** The org's whole AI credit pool: carried-over credits, monthly top-ups and bonuses, less spend. */
+  aiCreditsBalance: number;
   periodStart: string | null;
   periodEnd: string | null;
 }

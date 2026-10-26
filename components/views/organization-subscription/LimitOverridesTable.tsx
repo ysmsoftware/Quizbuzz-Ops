@@ -16,6 +16,7 @@ const limitLabels: Record<string, string> = {
   maxParticipantsPerContest: 'Max Participants per Quiz',
   maxQuestionsPerContest: 'Max Questions per Quiz',
   maxOrgMembers: 'Max Team Members',
+  aiCreditsPerMonth: 'AI Credits per Month',
 };
 
 export default function LimitOverridesTable({

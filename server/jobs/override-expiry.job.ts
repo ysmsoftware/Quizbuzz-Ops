@@ -9,6 +9,7 @@ const FIELD_LABELS: Record<string, string> = {
   maxParticipantsPerContest: 'Participants per Contest',
   maxQuestionsPerContest: 'Questions per Contest',
   maxOrgMembers: 'Organization Members',
+  aiCreditsPerMonth: 'AI Credits per Month',
   featureProctoring: 'Advanced Proctoring',
   featureCertBranding: 'Custom Certificate Branding',
   featureAnalyticsExport: 'Analytics Export',

@@ -483,6 +483,14 @@ export async function getUsageSnapshot(orgId: string): Promise<UsageSnapshot> {
   return apiRequest<UsageSnapshot>(`/api/v1/ops/organizations/${orgId}/usage`);
 }
 
+/** Adds bonus AI credits to the org's pool; they stay until used. */
+export async function grantAiBonusCredits(orgId: string, amount: number, reason: string): Promise<{ balance: number }> {
+  return apiRequest<{ balance: number }>(`/api/v1/ops/organizations/${orgId}/ai-credits`, {
+    method: 'POST',
+    body: JSON.stringify({ amount, reason }),
+  });
+}
+
 /** id → name for a set of organizations, in one request. */
 export async function getOrganizationNames(ids: string[]): Promise<Record<string, string>> {
   if (ids.length === 0) return {};

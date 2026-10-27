@@ -16,6 +16,8 @@ export const ORG_PROFILE_TYPE_VALUES = ORG_PROFILE_TYPES.map((t) => t.value) as 
 
 const INSTITUTION_PRESET = ['institution_mode', 'participant_portal', 'gradebook', 'window_contests', 'question_pools'];
 const COMPANY_PRESET = ['participant_portal', 'window_contests', 'question_pools'];
+// Employees are organised in teams, so groups too (decision D5).
+const EMPLOYEE_PRESET = [...COMPANY_PRESET, 'institution_mode'];
 const COMPANY_DENIED = ['razorpay_gateway_active', 'ambassador_program_enabled'];
 
 /** OPT_IN flags the type turns on when the org has no override. */
@@ -24,7 +26,7 @@ export const TYPE_FLAG_PRESET: Record<OrgProfileType, readonly string[]> = {
   COACHING: INSTITUTION_PRESET,
   EDUCATIONAL: INSTITUTION_PRESET,
   COMPANY_HIRING: COMPANY_PRESET,
-  COMPANY_INTERNAL: COMPANY_PRESET,
+  COMPANY_INTERNAL: EMPLOYEE_PRESET,
 };
 
 /** Flags the type always turns off in the main app, whatever the override says. */

@@ -213,7 +213,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       }
       await client.query(
         `INSERT INTO organizations (id, name, slug, "isActive", "isDeleted", "onboardingStep", "onboardingCompleted", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, true, false, 'IDENTITY', false, NOW(), NOW())`,
+         VALUES ($1, $2, $3, true, false, 'USE_CASE', false, NOW(), NOW())`,
         [orgId, input.name, input.slug]
       );
       await client.query(

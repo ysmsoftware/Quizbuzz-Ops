@@ -17,13 +17,20 @@ const inputClass = 'h-8 px-2 text-xs rounded-md bg-background border border-bord
 
 /** Plain-language state of one feature for this organization. */
 function describeState(f: OrgFeatureAccess): { badge: React.ReactNode; detail: string } {
-  if (f.usable) return { badge: <StatusBadge tone="success">Has it</StatusBadge>, detail: f.effective.reason === 'override' ? 'Granted to this organization.' : 'On for every organization.' };
+  if (f.usable) {
+    const detail = f.effective.reason === 'override' ? 'Granted to this organization.'
+      : f.effective.reason === 'type_preset' ? "On by default for this organization's type. An override can still turn it off."
+      : 'On for every organization.';
+    return { badge: <StatusBadge tone="success">Has it</StatusBadge>, detail };
+  }
   if (f.effective.value && f.blockedBy.length > 0) {
     return { badge: <StatusBadge tone="warning">Granted, but blocked</StatusBadge>, detail: 'It will not appear until the prerequisite below is also on for this organization.' };
   }
   switch (f.effective.reason) {
     case 'kill_switch':
       return { badge: <StatusBadge tone="danger">Off for everyone</StatusBadge>, detail: 'Switched off globally (kill switch). Any grant is ignored until the global switch is back on.' };
+    case 'type_denied':
+      return { badge: <StatusBadge tone="neutral">Not for this type</StatusBadge>, detail: "This organization's type never has it (for example, companies don't take registration fees). Change the type to allow it." };
     case 'not_granted':
       return { badge: <StatusBadge tone="neutral">Not granted</StatusBadge>, detail: 'Opt-in feature this organization has not been granted.' };
     case 'override':

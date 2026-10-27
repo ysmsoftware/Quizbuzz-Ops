@@ -144,7 +144,7 @@ export function useOrganizationDetail(orgId: string) {
   });
 
   const updateOrgMutation = useMutation({
-    mutationFn: (data: { name?: string; logoUrl?: string | null }) => updateOrganization(orgId, data),
+    mutationFn: (data: Parameters<typeof updateOrganization>[1]) => updateOrganization(orgId, data),
     onSuccess: () => invalidateOrgData(queryClient),
   });
 

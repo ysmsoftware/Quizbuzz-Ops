@@ -1,3 +1,4 @@
+import type { FlagStateReason } from './flag-state';
 import { FeatureFlagSeverity } from '@prisma/client';
 import type { FeatureFlagAccessModel } from './feature-flag-registry';
 
@@ -90,7 +91,7 @@ export interface OrgFeatureAccess {
     isExpired: boolean;
   } | null;
   /** What the main app (which enforces flags) will answer for this organization. */
-  effective: { value: boolean; reason: 'kill_switch' | 'override' | 'not_granted' | 'global' };
+  effective: { value: boolean; reason: FlagStateReason };
   /** Prerequisite flags that are NOT effective for this org, so the feature still won't appear. */
   blockedBy: string[];
   /** Effective AND nothing blocking it: the org really has the feature. */

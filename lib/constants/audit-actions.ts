@@ -19,7 +19,7 @@ export const OPS_AUDIT_GROUPS: AuditActionGroup[] = [
     domain: 'org',
     label: 'Organization',
     actions: [
-      'org.created', 'org.updated', 'org.suspended', 'org.reactivated', 'org.deleted', 'org.restored',
+      'org.created', 'org.updated', 'org.type_changed', 'org.suspended', 'org.reactivated', 'org.deleted', 'org.restored',
       'org.note_added', 'org.message_sent', 'org.message_retried',
       'org.payout_account_linked', 'org.payout_account_status_changed', 'org.payout_transfer_retry_requested',
     ],

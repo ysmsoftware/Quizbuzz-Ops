@@ -1,3 +1,4 @@
+import type { OrgProfileType } from '@/lib/constants/org-profile-types';
 'use client';
 
 import { ContestStatus, ParticipantStatus, ParticipantPaymentStatus, Organization, Contest, Participant, SupportNote, OrganizationSubscription, SubscriptionOverride, PlanChangeEvent, UsageSnapshot } from '@/lib/types';
@@ -149,6 +150,7 @@ export async function getOrganizationDetail(orgId: string): Promise<Organization
       hasCustomLogo: raw.hasCustomLogo,
       contestCount: raw.contestCount,
       participantCount: raw.participantCount,
+      profileType: raw.profileType,
       suspendReason: raw.suspension?.reason,
       suspendedAt: raw.suspension?.suspendedAt,
       notes: notes,
@@ -175,7 +177,7 @@ export async function createOrganization(input: CreateOrganizationInput): Promis
   });
 }
 
-export async function updateOrganization(orgId: string, input: { name?: string; logoUrl?: string | null }): Promise<void> {
+export async function updateOrganization(orgId: string, input: { name?: string; logoUrl?: string | null; profileType?: OrgProfileType }): Promise<void> {
   await apiRequest(`/api/v1/ops/organizations/${orgId}`, {
     method: 'PATCH',
     body: JSON.stringify(input),

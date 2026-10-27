@@ -1,3 +1,4 @@
+import type { OrgProfileType } from '../../../lib/constants/org-profile-types';
 import { PlatformAdminRole } from '@prisma/client';
 
 export interface OrgListMember {
@@ -40,6 +41,8 @@ export interface OrgProfileDetail {
   participantCount: number;
   onboardingStep: string;
   onboardingCompleted: boolean;
+  /** Main app OrgProfileType; not set = INDIVIDUAL (orgs from before types). */
+  profileType: OrgProfileType;
   plan: {
     slug: string;
     name: string;

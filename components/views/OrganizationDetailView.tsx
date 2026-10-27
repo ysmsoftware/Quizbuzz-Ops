@@ -20,7 +20,7 @@ import OrgInstitutionTab from './organization-detail/tabs/OrgInstitutionTab';
 import OrgFeaturesTab from './organization-detail/tabs/OrgFeaturesTab';
 import OrganizationSubscriptionTab from './OrganizationSubscriptionTab';
 
-import OrgEditModal from './organization-detail/modals/OrgEditModal';
+import OrgEditModal, { type OrgEditFields } from './organization-detail/modals/OrgEditModal';
 import OrgSuspendModal from './organization-detail/modals/OrgSuspendModal';
 import OrgDeleteModal from './organization-detail/modals/OrgDeleteModal';
 import { useResetOnChange } from '@/lib/hooks/useResetOnChange';
@@ -74,17 +74,19 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
   const [suspendReason, setSuspendReason] = useState('');
 
   // Edit Form Fields State
-  const [editFields, setEditFields] = useState({
+  const [editFields, setEditFields] = useState<OrgEditFields>({
     name: '',
     logoUrl: '',
+    profileType: 'INDIVIDUAL',
   });
 
   // Populate Edit Fields when organization is loaded
-  useResetOnChange(`${organization?.id}|${organization?.name}|${organization?.logoUrl}|${organization?.hasCustomLogo}`, () => {
+  useResetOnChange(`${organization?.id}|${organization?.name}|${organization?.logoUrl}|${organization?.hasCustomLogo}|${organization?.profileType}`, () => {
     if (organization) {
       setEditFields({
         name: organization.name,
         logoUrl: organization.hasCustomLogo ? organization.logoUrl : '',
+        profileType: organization.profileType ?? 'INDIVIDUAL',
       });
     }
   });
@@ -136,7 +138,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateOrg({ name: editFields.name.trim(), logoUrl: editFields.logoUrl.trim() || null });
+      await updateOrg({ name: editFields.name.trim(), logoUrl: editFields.logoUrl.trim() || null, profileType: editFields.profileType });
       toast('Profile Updated', 'Organization modifications have been saved.', 'success');
       setIsEditOpen(false);
     } catch (err) {

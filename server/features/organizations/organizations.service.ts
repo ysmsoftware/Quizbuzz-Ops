@@ -143,6 +143,7 @@ export class OrganizationsService implements IOrganizationsService {
       participantCount: rawOrg.participantCount,
       onboardingStep: rawOrg.onboardingStep,
       onboardingCompleted: rawOrg.onboardingCompleted,
+      profileType: rawOrg.profileType ?? 'INDIVIDUAL',
       plan: planInfo,
       suspension: suspensionInfo,
     };
@@ -290,12 +291,23 @@ export class OrganizationsService implements IOrganizationsService {
     if (input.name !== undefined) fields.name = input.name;
     if (input.logoUrl !== undefined) fields.logoUrl = input.logoUrl === '' ? null : input.logoUrl;
 
-    await this.repo.updateMainDbOrganization(orgId, fields);
+    if (Object.keys(fields).length > 0) {
+      await this.repo.updateMainDbOrganization(orgId, fields);
+      await writeAuditLogEntry(actor, 'org.updated', AuditTargetType.ORGANIZATION, orgId, fields.name ?? org.name, {
+        before: { name: org.name, logoUrl: org.logoUrl ?? null },
+        after: fields,
+      });
+    }
 
-    await writeAuditLogEntry(actor, 'org.updated', AuditTargetType.ORGANIZATION, orgId, fields.name ?? org.name, {
-      before: { name: org.name, logoUrl: org.logoUrl ?? null },
-      after: fields,
-    });
+    // The main app picks the new type up within about two minutes (its type and flag caches).
+    const currentType = org.profileType ?? 'INDIVIDUAL';
+    if (input.profileType !== undefined && input.profileType !== currentType) {
+      await this.repo.setMainDbProfileType(orgId, input.profileType);
+      await writeAuditLogEntry(actor, 'org.type_changed', AuditTargetType.ORGANIZATION, orgId, fields.name ?? org.name, {
+        before: currentType,
+        after: input.profileType,
+      });
+    }
   }
 
   /**

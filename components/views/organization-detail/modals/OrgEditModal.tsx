@@ -3,20 +3,19 @@
 import React from 'react';
 import { Edit3, X } from 'lucide-react';
 import { motion } from 'motion/react';
+import { ORG_PROFILE_TYPES, type OrgProfileType } from '@/lib/constants/org-profile-types';
+
+export interface OrgEditFields {
+  name: string;
+  logoUrl: string;
+  profileType: OrgProfileType;
+}
 
 interface OrgEditModalProps {
   isOpen: boolean;
   onClose: () => void;
-  editFields: {
-    name: string;
-    logoUrl: string;
-  };
-  setEditFields: React.Dispatch<
-    React.SetStateAction<{
-      name: string;
-      logoUrl: string;
-    }>
-  >;
+  editFields: OrgEditFields;
+  setEditFields: React.Dispatch<React.SetStateAction<OrgEditFields>>;
   isUpdating: boolean;
   onSubmit: (e: React.FormEvent) => void;
 }
@@ -68,6 +67,21 @@ export default function OrgEditModal({
               onChange={(e) => setEditFields(prev => ({ ...prev, logoUrl: e.target.value }))}
               className="w-full px-3 py-2 text-xs bg-secondary/20 focus:bg-card border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground font-mono"
             />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Organization type</label>
+            <select
+              value={editFields.profileType}
+              onChange={(e) => setEditFields(prev => ({ ...prev, profileType: e.target.value as OrgProfileType }))}
+              className="w-full px-3 py-2 text-xs bg-secondary/20 focus:bg-card border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground cursor-pointer"
+            >
+              {ORG_PROFILE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+            <p className="text-[10px] text-muted-foreground">
+              Changes which features they get by default, their labels, and what they can do (companies can&apos;t take fees,
+              give cash prizes or list contests publicly). Takes effect within about two minutes.
+            </p>
           </div>
 
           <p className="text-[10px] text-muted-foreground">The URL slug is fixed. Change the plan from the Subscription tab.</p>

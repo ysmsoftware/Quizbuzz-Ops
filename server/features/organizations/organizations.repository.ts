@@ -1,3 +1,4 @@
+import type { OrgProfileType } from '../../../lib/constants/org-profile-types';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { queryMainDb, mainDbPool } from '../../db/main-db-pool';
@@ -60,6 +61,7 @@ export interface IOrganizationsRepository {
   createOrganizationWithOwner(input: CreateOrgWithOwnerInput): Promise<{ organizationId: string; adminId: string; createdAdmin: boolean }>;
   updateMainDbOrganization(orgId: string, fields: { name?: string; logoUrl?: string | null }): Promise<void>;
   setMainDbOrganizationDeleted(orgId: string, deleted: boolean, isActiveAfter: boolean): Promise<void>;
+  setMainDbProfileType(orgId: string, profileType: OrgProfileType): Promise<void>;
   hasOpenSuspension(orgId: string): Promise<boolean>;
   getOwnerContact(orgId: string): Promise<{ name: string; email: string } | null>;
   getOrganizationMembers(orgId: string): Promise<OrgMemberDetail[]>;
@@ -146,6 +148,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     const rows = await queryMainDb(`
       SELECT 
         o.id, o.name, o.slug, o."logoUrl", o."planSlug", o."createdAt", o."isActive", o."isDeleted", o."onboardingStep", o."onboardingCompleted",
+        (SELECT "profileType" FROM organization_profiles WHERE "organizationId" = o.id) as "profileType",
         (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id) as "memberCount",
         (SELECT COUNT(*)::int FROM contests WHERE "organizationId" = o.id AND "isDeleted" = false) as "contestCount",
         (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id) as "participantCount",
@@ -243,6 +246,16 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     if (sets.length === 0) return;
     params.push(orgId);
     await queryMainDb(`UPDATE organizations SET ${sets.join(', ')}, "updatedAt" = NOW() WHERE id = $${params.length}`, params);
+  }
+
+  /** Set the org's type (creates the profile row if onboarding never did). Needs grant 007. */
+  async setMainDbProfileType(orgId: string, profileType: OrgProfileType): Promise<void> {
+    await queryMainDb(
+      `INSERT INTO organization_profiles (id, "organizationId", "profileType", "updatedAt")
+       VALUES ($1, $2, $3::"OrgProfileType", NOW())
+       ON CONFLICT ("organizationId") DO UPDATE SET "profileType" = EXCLUDED."profileType", "updatedAt" = NOW()`,
+      [generateUlid(), orgId, profileType]
+    );
   }
 
   async setMainDbOrganizationDeleted(orgId: string, deleted: boolean, isActiveAfter: boolean): Promise<void> {

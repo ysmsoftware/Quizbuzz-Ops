@@ -17,6 +17,8 @@ export type FlagStateReason =
   | 'kill_switch' // OPT_IN flag turned off globally: off for everyone, overrides ignored
   | 'override' // an active per-org override decided the value
   | 'not_granted' // OPT_IN flag, global on, but this org was never granted it
+  | 'type_preset' // OPT_IN flag on by default for the org's type (no override set)
+  | 'type_denied' // the org's type always turns this flag off in the main app
   | 'global'; // GLOBAL flag following the global switch
 
 export interface EffectiveFlagState {
@@ -32,13 +34,17 @@ export function computeEffectiveFlagState(
   accessModel: FeatureFlagAccessModel,
   globalValue: boolean,
   override: OrgOverrideInput | null,
-  now: Date = new Date()
+  now: Date = new Date(),
+  /** The org's type (main app only): 'preset' = on unless overridden, 'denied' = always off. */
+  typeRule: 'preset' | 'denied' | null = null
 ): EffectiveFlagState {
   const active = override && isOverrideActive(override, now) ? override : null;
 
+  if (typeRule === 'denied') return { value: false, reason: 'type_denied' };
   if (accessModel === 'OPT_IN') {
     if (!globalValue) return { value: false, reason: 'kill_switch' };
-    return active ? { value: active.isEnabled, reason: 'override' } : { value: false, reason: 'not_granted' };
+    if (active) return { value: active.isEnabled, reason: 'override' };
+    return typeRule === 'preset' ? { value: true, reason: 'type_preset' } : { value: false, reason: 'not_granted' };
   }
 
   // GLOBAL: an active override wins outright (matches the main app's code, even though the

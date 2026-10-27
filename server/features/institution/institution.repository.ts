@@ -1,23 +1,34 @@
+import { TYPE_FLAG_PRESET } from '../../../lib/constants/org-profile-types';
 import { queryMainDb } from '../../db/main-db-pool';
 import { INSTITUTION_FLAG_KEYS } from '../../../lib/constants/institution';
 import { OrgInstitutionSummary, InstitutionPlatformStats } from './institution.types';
 
+// The org's type as the main app reads it (not set = INDIVIDUAL, which has no preset).
+const orgTypeSql = (orgRef: string): string =>
+  `(SELECT p."profileType"::text FROM organization_profiles p WHERE p."organizationId" = ${orgRef})`;
+
+// The type's preset flags as a SQL array, built from the shared constant (static values, no input).
+const typePresetSql = (orgRef: string): string => `(CASE ${orgTypeSql(orgRef)}
+    ${Object.entries(TYPE_FLAG_PRESET).filter(([, keys]) => keys.length > 0)
+      .map(([type, keys]) => `WHEN '${type}' THEN ARRAY[${keys.map((k) => `'${k}'`).join(',')}]::text[]`).join(' ')}
+    ELSE ARRAY[]::text[] END)`;
+
 /**
- * SQL for "an organization effectively has OPT_IN flag X": the global switch is on AND the org has a
- * live (enabled, not expired) override. Evaluated on the main app's mirrored tables — the ones it
- * actually enforces — so it is also correct for grants written outside Ops (e.g. a seed script).
- * All five institution flags are OPT_IN.
+ * SQL for "an organization effectively has OPT_IN flag X": the global switch is on AND either the org
+ * has a live (not expired) override that is enabled, or it has none and X is in its type's preset.
+ * Evaluated on the main app's mirrored tables — the ones it actually enforces — so it is also correct
+ * for grants written outside Ops (e.g. a seed script). All five institution flags are OPT_IN.
  */
 export const effectiveOptInKeysSql = (orgRef: string, keysParam: string): string => `
   ARRAY(
-    SELECT f.key
-    FROM organization_feature_flag_overrides f
-    JOIN platform_feature_flags g ON g.key = f.key
-    WHERE f."organizationId" = ${orgRef}
-      AND f.key = ANY(${keysParam}::text[])
-      AND f."isEnabled" AND g."isEnabled"
+    SELECT g.key
+    FROM platform_feature_flags g
+    LEFT JOIN organization_feature_flag_overrides f
+      ON f.key = g.key AND f."organizationId" = ${orgRef}
       AND (f."expiresAt" IS NULL OR f."expiresAt" > (NOW() AT TIME ZONE 'UTC'))
-    ORDER BY f.key
+    WHERE g.key = ANY(${keysParam}::text[]) AND g."isEnabled"
+      AND COALESCE(f."isEnabled", g.key = ANY(${typePresetSql(orgRef)}))
+    ORDER BY g.key
   )`;
 
 const toInt = (v: unknown) => Number(v ?? 0);

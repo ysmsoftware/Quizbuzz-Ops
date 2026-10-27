@@ -14,6 +14,7 @@ import {
 } from './feature-flags.types';
 import { dependentsOf, requiresOf } from './feature-flag-registry';
 import { accessModelOf, computeEffectiveFlagState } from './flag-state';
+import { TYPE_DENIED_FLAGS, TYPE_FLAG_PRESET, type OrgProfileType } from '../../../lib/constants/org-profile-types';
 
 type OrgNameLookup = (ids: string[]) => Promise<Record<string, string>>;
 
@@ -327,10 +328,16 @@ export class FeatureFlagsService implements IFeatureFlagsService {
 
     let mainGlobals: Map<string, boolean> | null = null;
     let mainByKey: Map<string, { isEnabled: boolean; expiresAt: Date | null }> | null = null;
+    let orgType: OrgProfileType = 'INDIVIDUAL';
     try {
-      const [g, rows] = await Promise.all([this.repo.getMainGlobalFlags(), this.repo.getMainOverridesForOrg(organizationId)]);
+      const [g, rows, type] = await Promise.all([
+        this.repo.getMainGlobalFlags(),
+        this.repo.getMainOverridesForOrg(organizationId),
+        this.repo.getMainOrgProfileType(organizationId),
+      ]);
       mainGlobals = g;
       mainByKey = new Map(rows.map((r) => [r.key, r]));
+      orgType = type;
     } catch (err) {
       console.error('Could not read the main app flag tables for org features:', err);
     }
@@ -339,7 +346,11 @@ export class FeatureFlagsService implements IFeatureFlagsService {
     const stateOf = (flag: FeatureFlag, source: 'main' | 'ops') => {
       const override = source === 'main' ? (mainByKey?.get(flag.key) ?? null) : (opsByKey.get(flag.key) ?? null);
       const global = source === 'main' ? (mainGlobals?.get(flag.key) ?? false) : flag.isEnabled;
-      return computeEffectiveFlagState(accessModelOf(flag.key), global, override, now);
+      // The org's type changes what the main app does, so it's part of the main app's answer.
+      const typeRule = source !== 'main' ? null
+        : TYPE_DENIED_FLAGS[orgType].includes(flag.key) ? 'denied'
+        : TYPE_FLAG_PRESET[orgType].includes(flag.key) ? 'preset' : null;
+      return computeEffectiveFlagState(accessModelOf(flag.key), global, override, now, typeRule);
     };
 
     const settable = flags.filter((f) => f.supportsOrgOverride);

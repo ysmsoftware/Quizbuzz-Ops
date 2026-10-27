@@ -17,6 +17,8 @@ export const orgListQuerySchema = z.object({
   planSlug: z.string().trim().optional(),
   // Only organizations that effectively have this institution feature ('any' = at least one of them).
   feature: z.enum([...INSTITUTION_FLAG_KEYS, 'any']).optional(),
+  // 'unset' = orgs that never got a type (they act as Individual).
+  type: z.enum([...ORG_PROFILE_TYPE_VALUES, 'unset']).optional(),
   sort: z.enum(ORG_SORT_FIELDS).default('createdAt'),
   order: z.enum(['asc', 'desc']).default('desc'),
 });
@@ -45,7 +47,11 @@ export const createOrgSchema = z.object({
   ownerEmail: z.string().trim().toLowerCase().email('A valid owner email is required'),
   // Ops subscription plan id; defaults to the free "starter" plan when omitted.
   planId: z.string().trim().optional(),
+  // Optional: the owner then sees it read-only in onboarding instead of choosing.
+  profileType: z.enum(ORG_PROFILE_TYPE_VALUES).optional(),
 });
+
+export const typeChangePreviewSchema = z.object({ to: z.enum(ORG_PROFILE_TYPE_VALUES) });
 
 export const updateOrgSchema = z
   .object({

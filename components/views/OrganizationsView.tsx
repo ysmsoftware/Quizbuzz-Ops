@@ -12,6 +12,7 @@ import Pagination from '@/components/ui/Pagination';
 import OrgCreateModal from '@/components/views/organization-detail/modals/OrgCreateModal';
 import OrgDeleteModal from '@/components/views/organization-detail/modals/OrgDeleteModal';
 import { ORG_STATUS_FILTERS } from '@/lib/constants/status';
+import { ORG_PROFILE_TYPES, orgTypeLabel } from '@/lib/constants/org-profile-types';
 import { formatNumber } from '@/lib/format';
 import { INSTITUTION_FLAGS, institutionFlagShort } from '@/lib/constants/institution';
 import type { Organization } from '@/lib/types';
@@ -42,7 +43,7 @@ export default function OrganizationsView() {
   const { plans } = usePlans();
 
   // Filters + page. Search is debounced; every filter change returns to page 1.
-  const query = useTableQuery({ search: '', status: 'all', plan: 'all', feature: 'all' }, { debounce: ['search'] });
+  const query = useTableQuery({ search: '', status: 'all', plan: 'all', feature: 'all', type: 'all' }, { debounce: ['search'] });
   const { page, setPage } = query;
 
   // Sorting is done by the server so it orders the whole directory, not just the visible page.
@@ -56,6 +57,7 @@ export default function OrganizationsView() {
     status: query.params.status,
     planSlug: query.params.plan,
     feature: query.params.feature,
+    type: query.params.type,
     sort: sortBy,
     order: sortOrder,
   });
@@ -76,7 +78,7 @@ export default function OrganizationsView() {
   const canManage = hasPermission('ORG_MANAGE');
   const isDeletedView = query.params.status === 'deleted';
 
-  const changeFilter = (key: 'search' | 'status' | 'plan' | 'feature', value: string) => {
+  const changeFilter = (key: 'search' | 'status' | 'plan' | 'feature' | 'type', value: string) => {
     query.setFilter(key, value);
     clearSelection();
   };
@@ -280,6 +282,20 @@ export default function OrganizationsView() {
             </div>
 
             <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground font-sans">Type:</span>
+              <select
+                id="filter-type-select"
+                value={query.filters.type}
+                onChange={(e) => changeFilter('type', e.target.value)}
+                className="px-2.5 py-1.5 text-xs bg-secondary/30 hover:bg-secondary/50 border border-border/40 rounded-md outline-none text-foreground cursor-pointer font-medium"
+              >
+                <option value="all">Any</option>
+                {ORG_PROFILE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                <option value="unset">Not set</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
               <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground font-sans">Feature:</span>
               <select
                 id="filter-feature-select"
@@ -330,6 +346,7 @@ export default function OrganizationsView() {
                 </th>
                 <th className="py-3.5 px-4">Owner Email</th>
                 <th className="py-3.5 px-4">Plan</th>
+                <th className="py-3.5 px-4">Type</th>
                 <th className="py-3.5 px-4">Institution</th>
                 <th className="py-3.5 px-4 cursor-pointer hover:text-foreground select-none text-center" onClick={() => toggleSort('memberCount')}>
                   <div className="flex items-center justify-center gap-1"><span>Staff</span>{sortIcon('memberCount')}</div>
@@ -351,7 +368,7 @@ export default function OrganizationsView() {
               {isLoading ? (
                 [1, 2, 3, 4, 5].map((i) => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={11} className="py-4.5 px-4">
+                    <td colSpan={12} className="py-4.5 px-4">
                       <div className="flex gap-4 items-center">
                         <div className="h-4 w-4 bg-secondary rounded" />
                         <div className="h-8 w-8 bg-secondary rounded-full" />
@@ -364,7 +381,7 @@ export default function OrganizationsView() {
                 ))
               ) : isError ? (
                 <tr>
-                  <td colSpan={11} className="py-16 text-center">
+                  <td colSpan={12} className="py-16 text-center">
                     <div className="flex flex-col items-center gap-2 max-w-sm mx-auto">
                       <AlertTriangle className="h-8 w-8 text-destructive/70" />
                       <span className="font-semibold text-foreground">Couldn&apos;t load organizations</span>
@@ -380,7 +397,7 @@ export default function OrganizationsView() {
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-20 text-center text-muted-foreground font-sans">
+                  <td colSpan={12} className="py-20 text-center text-muted-foreground font-sans">
                     <div className="flex flex-col items-center gap-2 max-w-xs mx-auto">
                       <Globe className="h-8 w-8 text-muted-foreground/60" />
                       <span className="font-semibold text-foreground">No Organizations Found</span>
@@ -445,6 +462,7 @@ export default function OrganizationsView() {
                           </span>
                         )}
                       </td>
+                      <td className="py-4 px-4 text-xs text-muted-foreground whitespace-nowrap">{orgTypeLabel(org.profileType)}</td>
                       <td className="py-4 px-4">
                         {org.features && org.features.length > 0 ? (
                           <div className="flex flex-wrap gap-1 max-w-[190px]">

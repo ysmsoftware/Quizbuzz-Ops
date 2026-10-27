@@ -310,6 +310,8 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
 
       {/* Modals */}
       <OrgEditModal
+        orgId={orgId}
+        savedType={organization.profileType ?? null}
         isOpen={isEditOpen}
         onClose={() => setIsEditOpen(false)}
         editFields={editFields}

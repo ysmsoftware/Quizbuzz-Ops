@@ -10,6 +10,8 @@ export interface OrgListMember {
   logoUrl: string;
   /** Institution flags this organization effectively has (grant active, global on). */
   features: string[];
+  /** null = never set (acts as Individual). */
+  profileType: OrgProfileType | null;
   memberCount: number;
   contestCount: number;
   participantCount: number;
@@ -41,8 +43,8 @@ export interface OrgProfileDetail {
   participantCount: number;
   onboardingStep: string;
   onboardingCompleted: boolean;
-  /** Main app OrgProfileType; not set = INDIVIDUAL (orgs from before types). */
-  profileType: OrgProfileType;
+  /** Main app OrgProfileType; null = never set (acts as Individual). */
+  profileType: OrgProfileType | null;
   plan: {
     slug: string;
     name: string;

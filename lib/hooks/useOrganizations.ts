@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { GetOrganizationsParams, OrgParticipantsParams } from '@/lib/api/organizations';
+import type { OrgProfileType } from '@/lib/constants/org-profile-types';
 import {
   getOrganizations,
   getOrganizationDetail,
@@ -18,6 +19,7 @@ import {
   getOrganizationParticipants,
   getOrganizationNames,
   getOrganizationInstitution,
+  getTypeChangePreview,
   getOrganizationFeatures,
   getOrganizationPayments,
   resendPaymentReceipt,
@@ -238,4 +240,13 @@ export function useOrganizationNames(organizationIds: string[]): Record<string, 
   });
 
   return data ?? {};
+}
+
+/** What a type change would do; fetched once ops picks a different type in the edit modal. */
+export function useTypeChangePreview(orgId: string, to: OrgProfileType | null) {
+  return useQuery({
+    queryKey: ['organizations', 'type-change', orgId, to],
+    queryFn: () => getTypeChangePreview(orgId, to!),
+    enabled: !!orgId && !!to,
+  });
 }

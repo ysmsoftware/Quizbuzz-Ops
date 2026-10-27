@@ -1,6 +1,6 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseQueryParams, parseRequest } from '../../http/validation';
-import { orgListQuerySchema, createNoteSchema, suspendOrgSchema, reactivateOrgSchema, createOrgSchema, updateOrgSchema, deleteOrgSchema, orgParticipantsQuerySchema } from './organizations.validator';
+import { orgListQuerySchema, createNoteSchema, suspendOrgSchema, reactivateOrgSchema, createOrgSchema, typeChangePreviewSchema, updateOrgSchema, deleteOrgSchema, orgParticipantsQuerySchema } from './organizations.validator';
 import type { ISubscriptionsService } from '../subscriptions/subscriptions.service';
 import type { AuditActor } from '../../audit/audit-writer';
 import { IOrganizationsService, OrganizationsService } from './organizations.service';
@@ -48,6 +48,12 @@ export class OrganizationsController {
     const input = await parseRequest(req, updateOrgSchema);
     await this.service.updateOrganization(orgId, this.actorOf(admin), input);
     return okResponse(null, 'Organization updated successfully.');
+  }
+
+  async previewTypeChange(req: Request, orgId: string) {
+    await getSessionAdmin();
+    const { to } = parseQueryParams(req, typeChangePreviewSchema);
+    return okResponse(await this.service.previewTypeChange(orgId, to), 'Type change preview.');
   }
 
   async softDelete(req: Request, orgId: string) {

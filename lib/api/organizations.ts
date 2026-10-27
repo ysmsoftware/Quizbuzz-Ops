@@ -1,5 +1,5 @@
-import type { OrgProfileType } from '@/lib/constants/org-profile-types';
 'use client';
+import type { OrgProfileType } from '@/lib/constants/org-profile-types';
 
 import { ContestStatus, ParticipantStatus, ParticipantPaymentStatus, Organization, Contest, Participant, SupportNote, OrganizationSubscription, SubscriptionOverride, PlanChangeEvent, UsageSnapshot } from '@/lib/types';
 import { apiRequest } from '@/lib/api/utils';
@@ -52,6 +52,8 @@ export interface GetOrganizationsParams {
   planSlug?: string;
   /** Only organizations that effectively have this institution feature ('any' = at least one). */
   feature?: string;
+  /** An org type, or 'unset'. */
+  type?: string;
   sort?: OrgSortField;
   order?: 'asc' | 'desc';
 }
@@ -64,6 +66,7 @@ export async function getOrganizations(params: GetOrganizationsParams = {}): Pro
   if (params.status && params.status !== 'all') query.append('status', params.status);
   if (params.planSlug && params.planSlug !== 'all') query.append('planSlug', params.planSlug);
   if (params.feature && params.feature !== 'all') query.append('feature', params.feature);
+  if (params.type && params.type !== 'all') query.append('type', params.type);
   if (params.sort) query.append('sort', params.sort);
   if (params.order) query.append('order', params.order);
 
@@ -82,6 +85,7 @@ export async function getOrganizations(params: GetOrganizationsParams = {}): Pro
     planId: item.plan.slug,
     hasSubscription: item.plan.hasSubscription,
     features: item.features ?? [],
+    profileType: item.profileType,
     createdAt: item.createdAt,
     updatedAt: item.createdAt,
     memberCount: item.memberCount,
@@ -168,13 +172,23 @@ export interface CreateOrganizationInput {
   ownerEmail: string;
   /** Ops subscription plan id; the free starter plan when omitted. */
   planId?: string;
+  /** Set now, the owner sees it read-only in onboarding; omit to let them choose. */
+  profileType?: OrgProfileType;
 }
 
 export async function createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string; createdAccount: boolean; planAssigned: boolean }> {
   return apiRequest(`/api/v1/ops/organizations`, {
     method: 'POST',
-    body: JSON.stringify({ ...input, slug: input.slug || undefined, planId: input.planId || undefined }),
+    body: JSON.stringify({ ...input, slug: input.slug || undefined, planId: input.planId || undefined, profileType: input.profileType || undefined }),
   });
+}
+
+import type { TypeChangePreview } from '@/server/features/organizations/organizations.service';
+export type { TypeChangePreview };
+
+/** What switching the org to `to` would change; read-only. */
+export async function getTypeChangePreview(orgId: string, to: OrgProfileType) {
+  return apiRequest<TypeChangePreview>(`/api/v1/ops/organizations/${orgId}/type-change?to=${to}`);
 }
 
 export async function updateOrganization(orgId: string, input: { name?: string; logoUrl?: string | null; profileType?: OrgProfileType }): Promise<void> {

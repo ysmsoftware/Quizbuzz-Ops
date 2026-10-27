@@ -6,14 +6,27 @@ import { orgLogoFallback } from '../../../lib/format';
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../../http/errors';
 import { env } from '../../config/env';
 import { RESERVED_ORG_SLUGS, slugify } from './org-slug';
+import { TYPE_FLAG_PRESET, TYPE_DENIED_FLAGS, type OrgProfileType } from '../../../lib/constants/org-profile-types';
 import type { CreateOrgInput, UpdateOrgInput, OrgParticipantsQueryInput } from './organizations.validator';
 import type { OrgListParams } from './organizations.repository';
 import { OrgListMember, OrgProfileDetail, OrgMemberDetail, OrgContestDetail, OrgParticipantDetail, OrgPaymentDetail, SupportNoteDetail } from './organizations.types';
+
+export interface TypeChangePreview {
+  from: OrgProfileType;
+  to: OrgProfileType;
+  flagsGained: string[];
+  flagsLost: string[];
+  flagsDenied: string[];
+  openPublicContests: number;
+  openPaidContests: number;
+  liveAssignedContests: number;
+}
 
 export interface IOrganizationsService {
   getOrganizationsList(params: OrgListParams): Promise<{ data: OrgListMember[]; total: number; page: number; limit: number }>;
   createOrganization(actor: AuditActor, input: CreateOrgInput): Promise<{ id: string; slug: string; createdAccount: boolean }>;
   updateOrganization(orgId: string, actor: AuditActor, input: UpdateOrgInput): Promise<void>;
+  previewTypeChange(orgId: string, to: OrgProfileType): Promise<TypeChangePreview>;
   softDelete(orgId: string, actor: AuditActor, reason: string): Promise<void>;
   restore(orgId: string, actor: AuditActor, reason?: string): Promise<void>;
   getOrganizationDetail(orgId: string): Promise<OrgProfileDetail | null>;
@@ -75,6 +88,7 @@ export class OrganizationsService implements IOrganizationsService {
         ownerEmail: r.ownerEmail,
         logoUrl: r.logoUrl || orgLogoFallback(r.name),
         features: r.features ?? [],
+        profileType: r.profileType ?? null,
         memberCount: r.memberCount,
         contestCount: r.contestCount,
         participantCount: r.participantCount,
@@ -143,7 +157,7 @@ export class OrganizationsService implements IOrganizationsService {
       participantCount: rawOrg.participantCount,
       onboardingStep: rawOrg.onboardingStep,
       onboardingCompleted: rawOrg.onboardingCompleted,
-      profileType: rawOrg.profileType ?? 'INDIVIDUAL',
+      profileType: rawOrg.profileType ?? null,
       plan: planInfo,
       suspension: suspensionInfo,
     };
@@ -258,6 +272,7 @@ export class OrganizationsService implements IOrganizationsService {
         ownerFirstName: firstName,
         ownerLastName: rest.join(' '),
         ownerEmail: input.ownerEmail,
+        profileType: input.profileType,
       });
     } catch (err: any) {
       if (err?.code === '23505') throw new ConflictError('An organization or account with these details already exists');
@@ -299,7 +314,7 @@ export class OrganizationsService implements IOrganizationsService {
       });
     }
 
-    // The main app picks the new type up within about two minutes (its type and flag caches).
+    // The main app picks the new type up within a minute (its type and flag caches).
     const currentType = org.profileType ?? 'INDIVIDUAL';
     if (input.profileType !== undefined && input.profileType !== currentType) {
       await this.repo.setMainDbProfileType(orgId, input.profileType);
@@ -308,6 +323,28 @@ export class OrganizationsService implements IOrganizationsService {
         after: input.profileType,
       });
     }
+  }
+
+  /** What switching to `to` changes, so ops can confirm before saving. Flags with an org override are not listed. */
+  async previewTypeChange(orgId: string, to: OrgProfileType) {
+    const org = await this.repo.getOrganizationDetail(orgId);
+    if (!org) throw new NotFoundError('Organization not found');
+    const from: OrgProfileType = org.profileType ?? 'INDIVIDUAL';
+    const on = (t: OrgProfileType) => new Set(TYPE_FLAG_PRESET[t].filter((k) => !TYPE_DENIED_FLAGS[t].includes(k)));
+    const [before, after] = [on(from), on(to)];
+    const impact = await this.repo.getTypeChangeImpact(orgId);
+    const toCompany = TYPE_DENIED_FLAGS[to].length > 0;
+    return {
+      from,
+      to,
+      flagsGained: [...after].filter((k) => !before.has(k)),
+      flagsLost: [...before].filter((k) => !after.has(k)),
+      // Denied flags turn off whatever the override says.
+      flagsDenied: TYPE_DENIED_FLAGS[to].filter((k) => !TYPE_DENIED_FLAGS[from].includes(k)),
+      openPublicContests: toCompany ? impact.openPublicContests : 0,
+      openPaidContests: toCompany ? impact.openPaidContests : 0,
+      liveAssignedContests: before.has('participant_portal') && !after.has('participant_portal') ? impact.liveAssignedContests : 0,
+    };
   }
 
   /**

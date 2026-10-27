@@ -37,3 +37,7 @@ export const TYPE_DENIED_FLAGS: Record<OrgProfileType, readonly string[]> = {
   COMPANY_HIRING: COMPANY_DENIED,
   COMPANY_INTERNAL: COMPANY_DENIED,
 };
+
+/** Label for a stored type; null = never set, which acts as Individual. */
+export const orgTypeLabel = (type: OrgProfileType | null | undefined) =>
+  type ? ORG_PROFILE_TYPES.find((t) => t.value === type)?.label ?? type : 'Not set';

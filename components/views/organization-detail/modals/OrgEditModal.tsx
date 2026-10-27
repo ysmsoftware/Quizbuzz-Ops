@@ -4,6 +4,7 @@ import React from 'react';
 import { Edit3, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { ORG_PROFILE_TYPES, type OrgProfileType } from '@/lib/constants/org-profile-types';
+import TypeChangeNotice from './TypeChangeNotice';
 
 export interface OrgEditFields {
   name: string;
@@ -12,6 +13,9 @@ export interface OrgEditFields {
 }
 
 interface OrgEditModalProps {
+  orgId: string;
+  /** The saved type; null = never set (acts as Individual). */
+  savedType: OrgProfileType | null;
   isOpen: boolean;
   onClose: () => void;
   editFields: OrgEditFields;
@@ -21,6 +25,8 @@ interface OrgEditModalProps {
 }
 
 export default function OrgEditModal({
+  orgId,
+  savedType,
   isOpen,
   onClose,
   editFields,
@@ -80,8 +86,9 @@ export default function OrgEditModal({
             </select>
             <p className="text-[10px] text-muted-foreground">
               Changes which features they get by default, their labels, and what they can do (companies can&apos;t take fees,
-              give cash prizes or list contests publicly). Takes effect within about two minutes.
+              give cash prizes or list contests publicly). The main app picks it up within a minute.
             </p>
+            {editFields.profileType !== (savedType ?? 'INDIVIDUAL') && <TypeChangeNotice orgId={orgId} to={editFields.profileType} />}
           </div>
 
           <p className="text-[10px] text-muted-foreground">The URL slug is fixed. Change the plan from the Subscription tab.</p>
@@ -99,7 +106,7 @@ export default function OrgEditModal({
               disabled={isUpdating}
               className="px-4 py-2 text-xs font-semibold rounded-md bg-primary text-primary-foreground hover:bg-primary/95 transition-all cursor-pointer"
             >
-              {isUpdating ? 'Saving profile...' : 'Save Changes'}
+              {isUpdating ? 'Saving profile...' : editFields.profileType !== (savedType ?? 'INDIVIDUAL') ? 'Confirm type change' : 'Save Changes'}
             </button>
           </div>
         </form>

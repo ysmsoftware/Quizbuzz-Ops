@@ -58,7 +58,8 @@ export interface Organization {
   /** false = the plan shown is only the free default (no subscription record). */
   hasSubscription?: boolean;
   /** Main app org type (detail view only). */
-  profileType?: OrgProfileType;
+  /** null = never set (acts as Individual). */
+  profileType?: OrgProfileType | null;
   /** Institution flags this organization effectively has (list view only). */
   features?: string[];
   notes: SupportNote[];

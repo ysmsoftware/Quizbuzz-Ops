@@ -21,6 +21,8 @@ export interface OrgListParams {
   planSlug?: string;
   /** Institution flag key, or 'any'. */
   feature?: string;
+  /** An OrgProfileType, or 'unset'. */
+  type?: string;
   sort?: OrgSortField;
   order?: 'asc' | 'desc';
 }
@@ -35,12 +37,23 @@ export interface OrgParticipantsParams {
   paymentStatus?: string;
 }
 
+/** Contests a type change would leave in an odd state (running contests are never blocked). */
+export interface TypeChangeImpact {
+  /** Not draft/finished, listed publicly. */
+  openPublicContests: number;
+  /** Not draft/finished, with paid registration. */
+  openPaidContests: number;
+  /** Not draft/finished, assigned to named people (they sign in through the portal). */
+  liveAssignedContests: number;
+}
+
 export interface CreateOrgWithOwnerInput {
   name: string;
   slug: string;
   ownerFirstName: string;
   ownerLastName: string;
   ownerEmail: string;
+  profileType?: OrgProfileType;
 }
 
 // Whitelist: the only strings that ever reach ORDER BY.
@@ -62,6 +75,7 @@ export interface IOrganizationsRepository {
   updateMainDbOrganization(orgId: string, fields: { name?: string; logoUrl?: string | null }): Promise<void>;
   setMainDbOrganizationDeleted(orgId: string, deleted: boolean, isActiveAfter: boolean): Promise<void>;
   setMainDbProfileType(orgId: string, profileType: OrgProfileType): Promise<void>;
+  getTypeChangeImpact(orgId: string): Promise<TypeChangeImpact>;
   hasOpenSuspension(orgId: string): Promise<boolean>;
   getOwnerContact(orgId: string): Promise<{ name: string; email: string } | null>;
   getOrganizationMembers(orgId: string): Promise<OrgMemberDetail[]>;
@@ -105,6 +119,12 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       else where.and('o."planSlug" = ?', params.planSlug);
     }
 
+    if (params.type === 'unset') {
+      where.and(`NOT EXISTS (SELECT 1 FROM organization_profiles op WHERE op."organizationId" = o.id AND op."profileType" IS NOT NULL)`);
+    } else if (params.type) {
+      where.and(`EXISTS (SELECT 1 FROM organization_profiles op WHERE op."organizationId" = o.id AND op."profileType" = ?::"OrgProfileType")`, params.type);
+    }
+
     if (params.feature) {
       const has = effectiveOptInKeysSql('o.id', where.bind(INSTITUTION_FLAG_KEYS));
       if (params.feature === 'any') where.and(`cardinality(${has}) > 0`);
@@ -124,6 +144,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
         (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id) as "memberCount",
         (SELECT COUNT(*)::int FROM contests WHERE "organizationId" = o.id AND "isDeleted" = false) as "contestCount",
         (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id) as "participantCount",
+        (SELECT "profileType" FROM organization_profiles WHERE "organizationId" = o.id) as "profileType",
         ${ownerNameSql('o')} as "ownerName",
         ${ownerEmailSql('o')} as "ownerEmail",
         ${effectiveOptInKeysSql('o.id', dataKeysParam)} as features
@@ -221,6 +242,13 @@ export class OrganizationsRepository implements IOrganizationsRepository {
          VALUES ($1, $2, $3, 'OWNER', NOW(), NOW(), true, NOW(), NOW())`,
         [memberId, orgId, adminId]
       );
+      if (input.profileType) {
+        await client.query(
+          `INSERT INTO organization_profiles (id, "organizationId", "profileType", "updatedAt")
+           VALUES ($1, $2, $3::"OrgProfileType", NOW())`,
+          [generateUlid(), orgId, input.profileType]
+        );
+      }
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -249,6 +277,20 @@ export class OrganizationsRepository implements IOrganizationsRepository {
   }
 
   /** Set the org's type (creates the profile row if onboarding never did). Needs grant 007. */
+  async getTypeChangeImpact(orgId: string): Promise<TypeChangeImpact> {
+    const rows = await queryMainDb<TypeChangeImpact>(
+      `SELECT
+         COUNT(*) FILTER (WHERE audience = 'PUBLIC')::int AS "openPublicContests",
+         COUNT(*) FILTER (WHERE "paymentEnabled" = true)::int AS "openPaidContests",
+         COUNT(*) FILTER (WHERE audience = 'ASSIGNED')::int AS "liveAssignedContests"
+       FROM contests
+       WHERE "organizationId" = $1 AND "isDeleted" = false
+         AND status IN ('PUBLISHED', 'REGISTRATION_CLOSED', 'LIVE', 'EVALUATION')`,
+      [orgId]
+    );
+    return rows[0] ?? { openPublicContests: 0, openPaidContests: 0, liveAssignedContests: 0 };
+  }
+
   async setMainDbProfileType(orgId: string, profileType: OrgProfileType): Promise<void> {
     await queryMainDb(
       `INSERT INTO organization_profiles (id, "organizationId", "profileType", "updatedAt")

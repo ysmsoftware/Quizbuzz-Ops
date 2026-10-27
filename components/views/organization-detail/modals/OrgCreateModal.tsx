@@ -6,6 +6,7 @@ import { motion } from 'motion/react';
 import { SubscriptionPlan } from '@/lib/types';
 import { formatInr } from '@/lib/format';
 import type { CreateOrganizationInput } from '@/lib/api/organizations';
+import { ORG_PROFILE_TYPES } from '@/lib/constants/org-profile-types';
 
 interface OrgCreateModalProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ const labelClass = 'text-[10px] font-bold uppercase tracking-wider text-muted-fo
 /** Onboard a tenant from Ops: creates the organization and its owner account, then emails the owner. */
 export default function OrgCreateModal({ isOpen, onClose, plans, isCreating, onSubmit }: OrgCreateModalProps) {
   const starterId = useMemo(() => plans.find((p) => p.slug === 'starter')?.id ?? '', [plans]);
-  const [form, setForm] = useState({ name: '', slug: '', ownerName: '', ownerEmail: '', planId: '' });
+  const [form, setForm] = useState({ name: '', slug: '', ownerName: '', ownerEmail: '', planId: '', profileType: '' });
   const [slugTouched, setSlugTouched] = useState(false);
 
   if (!isOpen) return null;
@@ -57,7 +58,7 @@ export default function OrgCreateModal({ isOpen, onClose, plans, isCreating, onS
         <form
           onSubmit={async (e) => {
             e.preventDefault();
-            await onSubmit({ ...form, planId });
+            await onSubmit({ ...form, planId, profileType: form.profileType || undefined } as CreateOrganizationInput);
           }}
           className="space-y-3"
         >
@@ -118,6 +119,15 @@ export default function OrgCreateModal({ isOpen, onClose, plans, isCreating, onS
                 className={`${inputClass} font-mono`}
               />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className={labelClass}>Organization type</label>
+            <select value={form.profileType} onChange={(e) => setForm((prev) => ({ ...prev, profileType: e.target.value }))} className={inputClass}>
+              <option value="">Let the owner choose in onboarding</option>
+              {ORG_PROFILE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+            <p className="text-[10px] text-muted-foreground">If set here, the owner sees it read-only during setup.</p>
           </div>
 
           <div className="space-y-1">

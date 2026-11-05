@@ -342,6 +342,7 @@ export default function PlanFormModal({
             {/* Feature Flags */}
             <div className="space-y-3">
               <h3 className="font-semibold text-sm text-foreground border-b pb-1">Feature Entitlements</h3>
+              <p className="text-xs text-muted-foreground">Listed on the plan only — the main app doesn't enforce these yet.</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <label className="flex items-center space-x-2 cursor-pointer p-2 rounded-md hover:bg-muted/40 border border-border/30">
                   <input type="checkbox" {...register('features.proctoring')} className="h-4 w-4 rounded text-primary" />

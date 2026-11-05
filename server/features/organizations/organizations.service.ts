@@ -24,7 +24,7 @@ export interface TypeChangePreview {
 
 export interface IOrganizationsService {
   getOrganizationsList(params: OrgListParams): Promise<{ data: OrgListMember[]; total: number; page: number; limit: number }>;
-  createOrganization(actor: AuditActor, input: CreateOrgInput): Promise<{ id: string; slug: string; createdAccount: boolean }>;
+  createOrganization(actor: AuditActor, input: CreateOrgInput): Promise<{ id: string; slug: string; createdAccount: boolean; ownerNotified: boolean }>;
   updateOrganization(orgId: string, actor: AuditActor, input: UpdateOrgInput): Promise<void>;
   previewTypeChange(orgId: string, to: OrgProfileType): Promise<TypeChangePreview>;
   softDelete(orgId: string, actor: AuditActor, reason: string): Promise<void>;
@@ -92,6 +92,7 @@ export class OrganizationsService implements IOrganizationsService {
         memberCount: r.memberCount,
         contestCount: r.contestCount,
         participantCount: r.participantCount,
+        registrations: r.registrations,
         status: r.isDeleted ? 'DELETED' : r.isActive ? 'ACTIVE' : 'SUSPENDED',
         plan: planInfo,
         createdAt: new Date(r.createdAt).toISOString(),
@@ -155,6 +156,7 @@ export class OrganizationsService implements IOrganizationsService {
       memberCount: rawOrg.memberCount,
       contestCount: rawOrg.contestCount,
       participantCount: rawOrg.participantCount,
+      registrations: rawOrg.registrations,
       onboardingStep: rawOrg.onboardingStep,
       onboardingCompleted: rawOrg.onboardingCompleted,
       profileType: rawOrg.profileType ?? null,
@@ -287,7 +289,7 @@ export class OrganizationsService implements IOrganizationsService {
     });
 
     const frontend = env.MAIN_APP_FRONTEND_URL.replace(/\/$/, '');
-    await orgOwnerNotifier.notify(created.organizationId, 'ORG_CREATED', {
+    const ownerNotified = await orgOwnerNotifier.notify(created.organizationId, 'ORG_CREATED', {
       organizationName: input.name,
       ownerEmail: input.ownerEmail,
       newAccount: created.createdAdmin,
@@ -295,7 +297,7 @@ export class OrganizationsService implements IOrganizationsService {
       forgotPasswordUrl: `${frontend}/forgot-password`,
     });
 
-    return { id: created.organizationId, slug, createdAccount: created.createdAdmin };
+    return { id: created.organizationId, slug, createdAccount: created.createdAdmin, ownerNotified };
   }
 
   async updateOrganization(orgId: string, actor: AuditActor, input: UpdateOrgInput) {

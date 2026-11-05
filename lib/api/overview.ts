@@ -2,7 +2,7 @@
 
 import { apiRequest } from '@/lib/api/utils';
 import { orgLogoFallback } from '@/lib/format';
-import { ContestStatus } from '@/lib/types';
+import { ContestStatus, RegistrationCounts } from '@/lib/types';
 import type { InstitutionPlatformStats } from '@/server/features/institution/institution.types';
 import type { PlatformOverviewStats, OrgGrowthPoint, UpcomingContest, RecentOrg } from '@/server/features/overview/overview.types';
 
@@ -20,6 +20,7 @@ export interface PlatformStats {
   participants: {
     total: number;
     byStatus: Record<string, number>;
+    registrations?: RegistrationCounts;
   };
   revenue: {
     totalAllTime: number;
@@ -36,6 +37,7 @@ export interface PlatformStats {
     startTime: string;
     endTime: string;
     participantCount: number;
+    registrations?: RegistrationCounts;
     status: ContestStatus;
     timingMode: 'SCHEDULED' | 'WINDOW';
   }>;
@@ -86,6 +88,7 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     startTime: contest.startTime,
     endTime: contest.endTime,
     participantCount: contest.participantCount || 0,
+    registrations: contest.registrations,
     status: contest.status as ContestStatus,
     timingMode: (contest.timingMode ?? 'SCHEDULED') as 'SCHEDULED' | 'WINDOW',
   }));
@@ -105,7 +108,7 @@ export async function getPlatformStats(): Promise<PlatformStats> {
       total: statsData.contests.total,
       statusBreakdown,
     },
-    participants: { total: statsData.participants.total, byStatus: statsData.participants.byStatus ?? {} },
+    participants: { total: statsData.participants.total, byStatus: statsData.participants.byStatus ?? {}, registrations: statsData.participants.registrations },
     revenue: {
       totalAllTime: statsData.revenue.allTime,
       thisMonth: statsData.revenue.thisMonth,

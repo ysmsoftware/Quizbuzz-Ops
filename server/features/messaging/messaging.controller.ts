@@ -5,6 +5,7 @@ import { writeAuditLogEntry } from '../../audit/audit-writer';
 import { AuditTargetType, OpsMessageTemplate } from '@prisma/client';
 import { SendMessageSchema, PaginationQuerySchema, MessagingListQuerySchema, PreviewMessageSchema } from './messaging.validator';
 import { IMessagingService, MessagingService } from './messaging.service';
+import { assertOrgExists } from '../organizations/org-exists';
 
 /** Template metadata for a future compose UI — channel-agnostic; the channel itself is fixed to EMAIL by the service layer. */
 const TEMPLATE_CATALOG: { id: OpsMessageTemplate; name: string; variables: string[] }[] = [
@@ -36,6 +37,7 @@ export class MessagingController {
   async sendMessage(req: Request) {
     const admin = await getSessionAdmin();
     const input = await parseRequest(req, SendMessageSchema);
+    await assertOrgExists(input.organizationId);
 
     // `input.channel` is always 'EMAIL' here — SendMessageSchema rejects
     // anything else before this line is reached (see messaging.validator.ts).
@@ -106,8 +108,19 @@ export class MessagingController {
   }
 
   async retryFailedMessages(orgId: string) {
-    await getSessionAdmin();
+    const admin = await getSessionAdmin();
+    const orgName = await assertOrgExists(orgId);
     const result = await this.service.retryFailedMessages(orgId);
+
+    await writeAuditLogEntry(
+      { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
+      'org.messages_bulk_retried',
+      AuditTargetType.ORGANIZATION,
+      orgId,
+      orgName,
+      { count: result.count }
+    );
+
     return okResponse(result, `Queued ${result.count} failed messages for retry.`);
   }
 }

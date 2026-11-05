@@ -5,6 +5,8 @@ import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
 import { generateUlid } from '../../utils/ulid';
 import { SubscriptionPlanDetail } from './plans.types';
+import { ConflictError, NotFoundError, ValidationError } from '../../http/errors';
+import { liveOrgIds } from '../organizations/org-exists';
 
 export interface IPlansService {
   getPlans(includeInactive?: boolean): Promise<SubscriptionPlanDetail[]>;
@@ -24,6 +26,7 @@ export class PlansService implements IPlansService {
 
   async getPlans(includeInactive = false): Promise<SubscriptionPlanDetail[]> {
     const rawPlans = await this.repo.getPlans(includeInactive);
+    const live = await liveOrgIds(rawPlans.flatMap((p) => p.subscriptions.map((s: { organizationId: string }) => s.organizationId)));
     return rawPlans.map((p) => ({
       id: p.id,
       name: p.name,
@@ -46,13 +49,14 @@ export class PlansService implements IPlansService {
       featureCustomDomain: p.featureCustomDomain,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
-      organizationCount: p.subscriptions.length,
+      organizationCount: p.subscriptions.filter((s: { organizationId: string }) => live.has(s.organizationId)).length,
     }));
   }
 
   async getPlanById(id: string): Promise<SubscriptionPlanDetail | null> {
     const p = await this.repo.getPlanById(id);
     if (!p) return null;
+    const live = await liveOrgIds(p.subscriptions.map((s: { organizationId: string }) => s.organizationId));
     return {
       id: p.id,
       name: p.name,
@@ -75,7 +79,7 @@ export class PlansService implements IPlansService {
       featureCustomDomain: p.featureCustomDomain,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
-      organizationCount: p.subscriptions.length,
+      organizationCount: p.subscriptions.filter((s: { organizationId: string }) => live.has(s.organizationId)).length,
     };
   }
 
@@ -89,13 +93,13 @@ export class PlansService implements IPlansService {
     const allowsAnnual = !!input.allowsAnnual;
 
     if (!allowsMonthly && !allowsAnnual) {
-      throw new Error('A plan must offer at least one billing cycle (monthly or annual)');
+      throw new ValidationError(null, 'A plan must offer at least one billing cycle (monthly or annual)');
     }
     if (allowsMonthly && (input.monthlyPrice == null || input.monthlyPrice < 0)) {
-      throw new Error('monthlyPrice is required when the plan allows monthly billing');
+      throw new ValidationError(null, 'monthlyPrice is required when the plan allows monthly billing');
     }
     if (allowsAnnual && (input.annualPrice == null || input.annualPrice < 0)) {
-      throw new Error('annualPrice is required when the plan allows annual billing');
+      throw new ValidationError(null, 'annualPrice is required when the plan allows annual billing');
     }
 
     return {
@@ -111,11 +115,16 @@ export class PlansService implements IPlansService {
   async createPlan(input: any, actor: AuditActor) {
     const planId = `plan_${input.slug.toLowerCase().replace(/\s+/g, '_')}_${generateUlid().slice(-6)}`;
     const cyclePricing = this.validateCyclePricing(input);
-    const plan = await this.repo.createPlan({
-      id: planId,
-      ...input,
-      ...cyclePricing,
-    });
+    const plan = await this.repo
+      .createPlan({
+        id: planId,
+        ...input,
+        ...cyclePricing,
+      })
+      .catch((err: { code?: string }) => {
+        if (err.code === 'P2002') throw new ConflictError(`A plan with the slug "${input.slug}" already exists`);
+        throw err;
+      });
 
     await writeAuditLogEntry(
       actor,
@@ -131,7 +140,7 @@ export class PlansService implements IPlansService {
 
   async updatePlan(id: string, updates: any, actor: AuditActor) {
     const oldPlan = await this.repo.getPlanById(id);
-    if (!oldPlan) throw new Error('Subscription plan not found');
+    if (!oldPlan) throw new NotFoundError('Subscription plan not found');
 
     const cyclePricing = this.validateCyclePricing({
       allowsMonthly: updates.allowsMonthly ?? oldPlan.allowsMonthly,
@@ -163,7 +172,9 @@ export class PlansService implements IPlansService {
   }
 
   async getImpact(id: string) {
-    const activeSubs = await this.subscriptionsRepo.findActiveSubscriptionsByPlanId(id);
+    const subs = await this.subscriptionsRepo.findActiveSubscriptionsByPlanId(id);
+    const live = await liveOrgIds(subs.map((s) => s.organizationId));
+    const activeSubs = subs.filter((s) => live.has(s.organizationId));
     return {
       organizationCount: activeSubs.length,
       organizations: activeSubs.map((s) => ({ id: s.organizationId })),

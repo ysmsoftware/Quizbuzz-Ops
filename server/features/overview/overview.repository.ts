@@ -1,11 +1,12 @@
 import { queryMainDb } from '../../db/main-db-pool';
 import { ownerEmailSql } from '../organizations/org-owner.sql';
+import { confirmedRegistrationSql, registrationCountsSql } from '../organizations/confirmed-registration.sql';
 import { PlatformOverviewStats, OrgGrowthPoint, UpcomingContest, RecentOrg } from './overview.types';
 
 export interface IOverviewRepository {
   getOrgStats(): Promise<{ total: number; active: number; suspended: number; deleted: number }>;
   getContestStats(): Promise<{ total: number; byStatus: Record<string, number> }>;
-  getParticipantStats(): Promise<{ total: number; byStatus: Record<string, number> }>;
+  getParticipantStats(): Promise<PlatformOverviewStats['participants']>;
   getRevenueStats(): Promise<{ allTime: number; thisMonth: number; currency: string }>;
   getOrgGrowth(weeks?: number): Promise<OrgGrowthPoint[]>;
   getUpcomingContests(days?: number): Promise<UpcomingContest[]>;
@@ -48,14 +49,17 @@ export class OverviewRepository implements IOverviewRepository {
   }
 
   async getParticipantStats() {
-    const rows = await queryMainDb(`SELECT status, COUNT(*)::int as count FROM participants GROUP BY status`);
+    const [rows, registrationRows] = await Promise.all([
+      queryMainDb(`SELECT status, COUNT(*)::int as count FROM participants WHERE ${confirmedRegistrationSql()} GROUP BY status`),
+      queryMainDb(`SELECT ${registrationCountsSql('TRUE')} as registrations`),
+    ]);
     const byStatus: Record<string, number> = {};
     let total = 0;
     for (const r of rows) {
       byStatus[r.status] = r.count;
       total += r.count;
     }
-    return { total, byStatus };
+    return { total, byStatus, registrations: registrationRows[0]?.registrations };
   }
 
   async getRevenueStats() {
@@ -121,11 +125,12 @@ export class OverviewRepository implements IOverviewRepository {
       SELECT
         c.id, c.title, c.status, c."timingMode", c."startTime", c."endTime",
         o.id as "organizationId", o.name as "organizationName",
-        COALESCE(p.cnt, 0)::int as "participantCount"
+        COALESCE(p.cnt, 0)::int as "participantCount",
+        ${registrationCountsSql('p."contestId" = c.id')} as registrations
       FROM contests c
       JOIN organizations o ON c."organizationId" = o.id
       LEFT JOIN (
-        SELECT "contestId", COUNT(*)::int as cnt FROM participants GROUP BY "contestId"
+        SELECT "contestId", COUNT(*)::int as cnt FROM participants WHERE ${confirmedRegistrationSql()} GROUP BY "contestId"
       ) p ON c.id = p."contestId"
       WHERE c."isDeleted" = false
         AND o."isDeleted" = false
@@ -153,6 +158,7 @@ export class OverviewRepository implements IOverviewRepository {
       status: r.status,
       timingMode: r.timingMode,
       participantCount: r.participantCount,
+      registrations: r.registrations,
     }));
   }
 

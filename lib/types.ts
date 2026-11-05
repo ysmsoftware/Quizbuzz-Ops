@@ -37,6 +37,16 @@ export interface Member {
   joinedDate: string;
 }
 
+/** Everyone who started registering, split so support can see what didn't complete. */
+export interface RegistrationCounts {
+  total: number;
+  confirmed: number;
+  /** Unpaid: no attempt yet, or checkout still open. */
+  pending: number;
+  /** Unpaid: the last payment attempt failed or was cancelled. */
+  failed: number;
+}
+
 export interface Organization {
   id: string;
   name: string;
@@ -55,6 +65,7 @@ export interface Organization {
   hasCustomLogo?: boolean;
   contestCount?: number;
   participantCount?: number;
+  registrations?: RegistrationCounts;
   /** false = the plan shown is only the free default (no subscription record). */
   hasSubscription?: boolean;
   /** Main app org type (detail view only). */
@@ -89,6 +100,7 @@ export interface Contest {
   registrationFee: number;
   currency: string;
   participantCount: number;
+  registrations?: RegistrationCounts;
   revenueCollected: number;
   createdAt: string;
   // Real fields from the main DB (institution mode adds timing mode, audience and question selection).

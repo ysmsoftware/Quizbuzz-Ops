@@ -68,7 +68,7 @@ export const deleteOrgSchema = z.object({
 });
 
 export const createNoteSchema = z.object({
-  body: z.string().min(1, 'Note body cannot be empty'),
+  body: z.string().trim().min(1, 'Note body cannot be empty'),
   tags: z.array(z.string()).default([]),
 });
 

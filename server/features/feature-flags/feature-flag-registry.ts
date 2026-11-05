@@ -140,24 +140,6 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     accessModel: 'GLOBAL', // on for everyone; override carves out an exception
   },
   {
-    key: 'certificate_auto_delivery',
-    label: 'Certificate Auto-delivery',
-    description: 'Automatically deliver signed PDF certificates to participants completing a contest.',
-    defaultEnabled: true,
-    severity: FeatureFlagSeverity.STANDARD,
-    supportsOrgOverride: true,
-    accessModel: 'GLOBAL',
-  },
-  {
-    key: 'enhanced_analytics_pipeline',
-    label: 'Enhanced Analytics Pipeline',
-    description: 'Streams raw candidate responses to the high-concurrency analytical engine.',
-    defaultEnabled: true,
-    severity: FeatureFlagSeverity.STANDARD,
-    supportsOrgOverride: true,
-    accessModel: 'GLOBAL',
-  },
-  {
     key: 'razorpay_gateway_active',
     label: 'Razorpay Payment Gateway',
     description: 'Accept live candidate registration payments via Razorpay merchant portal.',

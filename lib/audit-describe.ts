@@ -33,9 +33,11 @@ export function describeAuditEntry(log: DescribableEntry): string {
     case 'org.note_added':
       return `Added operational support note to organization "${t}"`;
     case 'org.message_sent':
-      return `Sent a message to organization "${t}"`;
+      return `Sent a message to "${t}"`;
     case 'org.message_retried':
-      return `Retried a message to organization "${t}"`;
+      return `Retried a message to "${t}"`;
+    case 'org.messages_bulk_retried':
+      return `Retried ${m.count ?? 0} failed message(s) for organization "${t}"`;
     case 'org.payout_account_linked':
       return `Linked Razorpay account ${m.razorpayLinkedAccountId || ''} for organization "${t}"`;
     case 'org.payout_account_status_changed':

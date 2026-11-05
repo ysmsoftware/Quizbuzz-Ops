@@ -22,6 +22,7 @@ import OrganizationSubscriptionTab from './OrganizationSubscriptionTab';
 
 import OrgEditModal, { type OrgEditFields } from './organization-detail/modals/OrgEditModal';
 import OrgSuspendModal from './organization-detail/modals/OrgSuspendModal';
+import OrgReactivateModal from './organization-detail/modals/OrgReactivateModal';
 import OrgDeleteModal from './organization-detail/modals/OrgDeleteModal';
 import { useResetOnChange } from '@/lib/hooks/useResetOnChange';
 import { errorMessage } from '@/lib/errors';
@@ -69,6 +70,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
 
   // Dialog States
   const [isSuspendOpen, setIsSuspendOpen] = useState(false);
+  const [isReactivateOpen, setIsReactivateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
@@ -165,6 +167,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
   const handleReactivateClick = async () => {
     try {
       await activateOrg();
+      setIsReactivateOpen(false);
       toast('Organization Reactivated', `"${organization.name}" operations are restored.`, 'success');
     } catch (err) {
       toast('Activation Failed', errorMessage(err) || 'Operation failed.', 'error');
@@ -212,7 +215,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
         onBackClick={handleBackClick}
         onOpenEdit={() => setIsEditOpen(true)}
         onOpenSuspend={() => setIsSuspendOpen(true)}
-        onReactivate={handleReactivateClick}
+        onReactivate={() => setIsReactivateOpen(true)}
         onOpenDelete={() => setIsDeleteOpen(true)}
         onRestore={handleRestore}
         isActivating={isActivating}
@@ -318,6 +321,14 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
         setEditFields={setEditFields}
         isUpdating={isUpdating}
         onSubmit={handleEditSubmit}
+      />
+
+      <OrgReactivateModal
+        isOpen={isReactivateOpen}
+        onClose={() => setIsReactivateOpen(false)}
+        orgName={organization.name}
+        isActivating={isActivating}
+        onConfirm={handleReactivateClick}
       />
 
       <OrgSuspendModal

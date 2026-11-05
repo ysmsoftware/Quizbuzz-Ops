@@ -57,7 +57,7 @@ export default function OrgPaymentsTab({
     try {
       const result = await onResendReceipt(paymentId);
       if (result.sent) {
-        toast('Receipt Resent', 'The payment receipt email has been sent to the organization owner.', 'success');
+        toast('Receipt Queued', 'The payment receipt email is queued for the organization owner. Check Messaging for delivery.', 'success');
       } else {
         toast('Nothing Sent', 'No owner contact was found for this organization — the receipt was not sent.', 'warning');
       }
@@ -151,6 +151,7 @@ export default function OrgPaymentsTab({
               <option value="all">All Statuses</option>
               <option value="PAID">Paid</option>
               <option value="PENDING">Pending</option>
+              <option value="FAILED">Failed</option>
               <option value="REFUNDED">Refunded</option>
             </select>
           </div>

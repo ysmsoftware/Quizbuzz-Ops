@@ -1,6 +1,7 @@
 import { TYPE_FLAG_PRESET } from '../../../lib/constants/org-profile-types';
 import { queryMainDb } from '../../db/main-db-pool';
 import { INSTITUTION_FLAG_KEYS } from '../../../lib/constants/institution';
+import { confirmedRegistrationSql } from '../organizations/confirmed-registration.sql';
 import { OrgInstitutionSummary, InstitutionPlatformStats } from './institution.types';
 
 // The org's type as the main app reads it (not set = INDIVIDUAL, which has no preset).
@@ -62,7 +63,7 @@ export class InstitutionRepository {
       queryMainDb(
         `SELECT p.status, COUNT(*)::int AS n
          FROM participants p JOIN contests c ON c.id = p."contestId"
-         WHERE p."organizationId" = $1 AND c.audience = 'ASSIGNED' AND c."isDeleted" = false GROUP BY p.status`,
+         WHERE p."organizationId" = $1 AND c.audience = 'ASSIGNED' AND c."isDeleted" = false AND ${confirmedRegistrationSql('p')} GROUP BY p.status`,
         [orgId]
       ),
       queryMainDb(

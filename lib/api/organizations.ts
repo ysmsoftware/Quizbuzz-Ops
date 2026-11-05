@@ -92,6 +92,7 @@ export async function getOrganizations(params: GetOrganizationsParams = {}): Pro
     membersCount: item.memberCount,
     contestCount: item.contestCount,
     participantCount: item.participantCount,
+    registrations: item.registrations,
     ownerEmail: item.ownerEmail,
     ownerName: item.ownerName || item.ownerEmail.split('@')[0],
     contactPerson: {
@@ -154,6 +155,7 @@ export async function getOrganizationDetail(orgId: string): Promise<Organization
       hasCustomLogo: raw.hasCustomLogo,
       contestCount: raw.contestCount,
       participantCount: raw.participantCount,
+      registrations: raw.registrations,
       profileType: raw.profileType,
       suspendReason: raw.suspension?.reason,
       suspendedAt: raw.suspension?.suspendedAt,
@@ -176,7 +178,7 @@ export interface CreateOrganizationInput {
   profileType?: OrgProfileType;
 }
 
-export async function createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string; createdAccount: boolean; planAssigned: boolean }> {
+export async function createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string; createdAccount: boolean; planAssigned: boolean ; ownerNotified: boolean }> {
   return apiRequest(`/api/v1/ops/organizations`, {
     method: 'POST',
     body: JSON.stringify({ ...input, slug: input.slug || undefined, planId: input.planId || undefined, profileType: input.profileType || undefined }),
@@ -389,6 +391,7 @@ export async function getOrganizationContests(orgId: string): Promise<Contest[]>
     audience: c.audience,
     questionSelection: c.questionSelection,
     participantCount: c.participantCount,
+    registrations: c.registrations,
     revenueCollected: c.revenueCollected,
     createdAt: c.createdAt,
     updatedAt: c.createdAt,

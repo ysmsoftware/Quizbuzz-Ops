@@ -1,4 +1,5 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
+import { assertOrgExists } from '../organizations/org-exists';
 import { parseRequest } from '../../http/validation';
 import {
   ambassadorTypeCreateSchema,
@@ -61,6 +62,7 @@ export class AmbassadorTypesController {
   async setOrgAccess(req: Request, key: string, orgId: string) {
     const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
     const input = await parseRequest(req, orgAccessSetSchema);
+    await assertOrgExists(orgId);
     const result = await this.service.setOrgAccess(key, orgId, input.isEnabled, toActor(admin));
     return okResponse(result, 'Organization access updated.');
   }

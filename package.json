@@ -8,6 +8,7 @@
     "start": "next start -p 3010",
     "worker": "tsx --env-file=.env scripts/worker.ts",
     "lint": "eslint .",
+    "test": "tsx --test \"server/**/*.test.ts\"",
     "db:seed": "node prisma/seed.js",
     "seed:platform-admin": "tsx --env-file=.env scripts/seed-platform-admin.ts",
     "flags:sync": "tsx --env-file=.env scripts/sync-feature-flags.ts",

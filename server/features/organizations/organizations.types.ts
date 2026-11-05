@@ -1,3 +1,4 @@
+import type { RegistrationCounts } from '../../../lib/types';
 import type { OrgProfileType } from '../../../lib/constants/org-profile-types';
 import { PlatformAdminRole } from '@prisma/client';
 
@@ -15,6 +16,7 @@ export interface OrgListMember {
   memberCount: number;
   contestCount: number;
   participantCount: number;
+  registrations: RegistrationCounts;
   status: 'ACTIVE' | 'SUSPENDED' | 'DELETED';
   plan: {
     slug: string;
@@ -41,6 +43,7 @@ export interface OrgProfileDetail {
   memberCount: number;
   contestCount: number;
   participantCount: number;
+  registrations: RegistrationCounts;
   onboardingStep: string;
   onboardingCompleted: boolean;
   /** Main app OrgProfileType; null = never set (acts as Individual). */
@@ -81,6 +84,7 @@ export interface OrgContestDetail {
   maxParticipants: number | null;
   registrationFee: number;
   participantCount: number;
+  registrations: RegistrationCounts;
   revenueCollected: number;
   /** SCHEDULED: everyone starts together. WINDOW: each participant starts within [startTime, endTime]. */
   timingMode: 'SCHEDULED' | 'WINDOW';

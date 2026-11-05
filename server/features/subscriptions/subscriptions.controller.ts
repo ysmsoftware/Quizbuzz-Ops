@@ -4,6 +4,7 @@ import { assignPlanSchema, changePlanSchema, addOverrideSchema, removeOverrideSc
 import { ISubscriptionsService, SubscriptionsService } from './subscriptions.service';
 import { okResponse, errorResponse } from '../../http/envelope';
 import { PlatformAdminRole } from '@prisma/client';
+import { assertOrgExists } from '../organizations/org-exists';
 
 export class SubscriptionsController {
   constructor(private service: ISubscriptionsService = new SubscriptionsService()) {}
@@ -20,6 +21,7 @@ export class SubscriptionsController {
   async assignPlan(req: Request, orgId: string) {
     const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN]);
     const input = await parseRequest(req, assignPlanSchema);
+    await assertOrgExists(orgId);
 
     const actor = {
       id: admin.id,
@@ -34,6 +36,7 @@ export class SubscriptionsController {
   async changePlan(req: Request, orgId: string) {
     const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN]);
     const input = await parseRequest(req, changePlanSchema);
+    await assertOrgExists(orgId);
 
     const actor = {
       id: admin.id,
@@ -48,6 +51,7 @@ export class SubscriptionsController {
   async addOverride(req: Request, orgId: string) {
     const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN]);
     const input = await parseRequest(req, addOverrideSchema);
+    await assertOrgExists(orgId);
 
     const actor = {
       id: admin.id,

@@ -7,6 +7,7 @@ import { IEntitlementsService, EntitlementsService } from '../entitlements/entit
 import { periodMonthsForCycle } from '../../../lib/pricing/subscriptionPricing';
 import { computeEffectiveLimits } from './effective-limits';
 import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
+import { ConflictError, NotFoundError, ValidationError } from '../../http/errors';
 
 /** Human-readable labels for override/limit-change emails — display only. */
 const FIELD_LABELS: Record<string, string> = {
@@ -124,16 +125,16 @@ export class SubscriptionsService implements ISubscriptionsService {
   ): BillingCycle {
     if (requested) {
       if (requested === 'MONTHLY' && !plan.allowsMonthly) {
-        throw new Error(`Plan "${plan.slug}" does not offer monthly billing`);
+        throw new ValidationError(null, `Plan "${plan.slug}" does not offer monthly billing`);
       }
       if (requested === 'ANNUAL' && !plan.allowsAnnual) {
-        throw new Error(`Plan "${plan.slug}" does not offer annual billing`);
+        throw new ValidationError(null, `Plan "${plan.slug}" does not offer annual billing`);
       }
       return requested;
     }
     if (plan.allowsMonthly) return 'MONTHLY';
     if (plan.allowsAnnual) return 'ANNUAL';
-    throw new Error(`Plan "${plan.slug}" does not offer any billing cycle`);
+    throw new ValidationError(null, `Plan "${plan.slug}" does not offer any billing cycle`);
   }
 
   /**
@@ -157,8 +158,8 @@ export class SubscriptionsService implements ISubscriptionsService {
     linkedPaymentId?: string
   ) {
     const plan = await this.repo.findPlanById(planId);
-    if (!plan) throw new Error('Subscription plan not found');
-    if (!plan.isActive) throw new Error('Cannot assign an inactive plan');
+    if (!plan) throw new NotFoundError('Subscription plan not found');
+    if (!plan.isActive) throw new ConflictError('Cannot assign an inactive plan');
 
     const resolvedCycle = this.resolveBillingCycle(plan, billingCycle);
     const periodMonths = periodMonthsForCycle(resolvedCycle);
@@ -224,8 +225,8 @@ export class SubscriptionsService implements ISubscriptionsService {
 
     const fromPlanId = currentSub.planId;
     const toPlan = await this.repo.findPlanById(toPlanId);
-    if (!toPlan) throw new Error('Target plan not found');
-    if (!toPlan.isActive) throw new Error('Cannot switch to an inactive plan');
+    if (!toPlan) throw new NotFoundError('Target plan not found');
+    if (!toPlan.isActive) throw new ConflictError('Cannot switch to an inactive plan');
 
     const resolvedCycle = this.resolveBillingCycle(toPlan, billingCycle);
     const periodMonths = periodMonthsForCycle(resolvedCycle);
@@ -280,7 +281,7 @@ export class SubscriptionsService implements ISubscriptionsService {
     mode: OverrideMode = OverrideMode.ADDITIVE,
   ) {
     const sub = await this.repo.findSubscriptionByOrgId(orgId);
-    if (!sub) throw new Error('Organization does not have an active subscription');
+    if (!sub) throw new NotFoundError('Organization does not have an active subscription');
 
     const override = await this.repo.createOverride({
       id: generateUlid(),
@@ -318,7 +319,7 @@ export class SubscriptionsService implements ISubscriptionsService {
 
   async removeOverride(orgId: string, overrideId: string, reason: string, actor: AuditActor) {
     const sub = await this.repo.findSubscriptionByOrgId(orgId);
-    if (!sub) throw new Error('Subscription not found');
+    if (!sub) throw new NotFoundError('Subscription not found');
 
     const override = await this.repo.removeOverride(overrideId, actor.id!, reason);
 
@@ -352,11 +353,11 @@ export class SubscriptionsService implements ISubscriptionsService {
    */
   async resendRenewalReminder(orgId: string, actor: AuditActor): Promise<{ sent: boolean }> {
     const sub = await this.repo.findSubscriptionByOrgId(orgId);
-    if (!sub) throw new Error('Organization does not have a subscription');
-    if (sub.status !== 'ACTIVE') throw new Error(`Cannot send a renewal reminder — subscription status is ${sub.status}`);
+    if (!sub) throw new NotFoundError('Organization does not have a subscription');
+    if (sub.status !== 'ACTIVE') throw new ConflictError(`Cannot send a renewal reminder — subscription status is ${sub.status}`);
 
     const now = new Date();
-    if (sub.currentPeriodEnd <= now) throw new Error('Subscription period has already ended — resend the expired notice instead');
+    if (sub.currentPeriodEnd <= now) throw new ConflictError('Subscription period has already ended — resend the expired notice instead');
 
     const plan = await this.repo.findPlanById(sub.planId);
     const daysRemaining = Math.max(1, Math.ceil((sub.currentPeriodEnd.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
@@ -390,9 +391,9 @@ export class SubscriptionsService implements ISubscriptionsService {
    */
   async resendReceipt(orgId: string, paymentId: string, actor: AuditActor): Promise<{ sent: boolean }> {
     const payment = await prisma.opsPayment.findUnique({ where: { id: paymentId } });
-    if (!payment) throw new Error('Payment not found');
-    if (payment.organizationId !== orgId) throw new Error('Payment does not belong to this organization');
-    if (payment.status !== 'PAID') throw new Error(`Cannot resend a receipt — payment status is ${payment.status}`);
+    if (!payment) throw new NotFoundError('Payment not found');
+    if (payment.organizationId !== orgId) throw new NotFoundError('Payment does not belong to this organization');
+    if (payment.status !== 'PAID') throw new ConflictError(`Cannot resend a receipt — payment status is ${payment.status}`);
 
     const plan = payment.planId ? await this.repo.findPlanById(payment.planId) : null;
 

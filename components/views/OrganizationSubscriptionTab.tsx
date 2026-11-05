@@ -139,7 +139,7 @@ export default function OrganizationSubscriptionTab({
     try {
       const result = await resendReminder();
       if (result.sent) {
-        toast('Reminder Resent', `Renewal reminder sent to ${organization.name}'s owner.`, 'success');
+        toast('Reminder Queued', `Renewal reminder queued for ${organization.name}'s owner. Check Messaging for delivery.`, 'success');
       } else {
         toast('Nothing Sent', 'No owner contact was found for this organization — the reminder was not sent.', 'warning');
       }

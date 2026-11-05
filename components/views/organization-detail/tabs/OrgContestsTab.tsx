@@ -5,6 +5,7 @@ import { Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { Contest } from '@/lib/types';
 import StatusBadge from '@/components/ui/StatusBadge';
+import RegistrationCountsLine from '@/components/ui/RegistrationCountsLine';
 import { statusOptions } from '@/lib/constants/status';
 import Pagination from '@/components/ui/Pagination';
 import { formatInr } from '@/lib/format';
@@ -154,6 +155,7 @@ export default function OrgContestsTab({ contests }: OrgContestsTabProps) {
                       <td className="py-3 px-4 text-right font-mono font-bold text-foreground/80">
                         {c.participantCount}
                         {c.maxParticipants ? <span className="font-normal text-muted-foreground"> / {c.maxParticipants}</span> : null}
+                        <RegistrationCountsLine counts={c.registrations} />
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600">{formatInr((c.revenueCollected || 0))}</td>
                     </tr>

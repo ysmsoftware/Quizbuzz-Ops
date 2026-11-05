@@ -1,4 +1,5 @@
 import type { InstitutionPlatformStats } from '../institution/institution.types';
+import type { RegistrationCounts } from '../../../lib/types';
 
 export interface PlatformOverviewStats {
   organizations: {
@@ -13,8 +14,9 @@ export interface PlatformOverviewStats {
   };
   participants: {
     total: number;
-    /** Per ParticipantStatus (REGISTERED, ASSIGNED, SUBMITTED, ABSENT, …). */
+    /** Per ParticipantStatus (REGISTERED, ASSIGNED, SUBMITTED, ABSENT, …), confirmed only. */
     byStatus: Record<string, number>;
+    registrations: RegistrationCounts;
   };
   revenue: {
     allTime: number;
@@ -42,6 +44,7 @@ export interface UpcomingContest {
   status: string;
   timingMode: 'SCHEDULED' | 'WINDOW';
   participantCount: number;
+  registrations: RegistrationCounts;
 }
 
 export interface RecentOrg {

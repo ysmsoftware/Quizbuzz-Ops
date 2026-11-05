@@ -9,7 +9,9 @@ export async function parseRequest<T extends z.ZodTypeAny>(
     const body = await req.json();
     const result = schema.safeParse(body);
     if (!result.success) {
-      throw new ValidationError(result.error.format());
+      const issue = result.error.issues[0];
+      const where = issue?.path.join('.');
+      throw new ValidationError(result.error.format(), issue ? `${where ? `${where}: ` : ''}${issue.message}` : undefined);
     }
     return result.data;
   } catch (err) {

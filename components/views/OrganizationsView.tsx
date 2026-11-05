@@ -8,6 +8,7 @@ import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useTableQuery } from '@/lib/hooks/useTableQuery';
 import { useToast } from '@/components/ui/Toast';
 import StatusBadge from '@/components/ui/StatusBadge';
+import RegistrationCountsLine from '@/components/ui/RegistrationCountsLine';
 import Pagination from '@/components/ui/Pagination';
 import OrgCreateModal from '@/components/views/organization-detail/modals/OrgCreateModal';
 import OrgDeleteModal from '@/components/views/organization-detail/modals/OrgDeleteModal';
@@ -111,10 +112,14 @@ export default function OrganizationsView() {
       const result = await createOrg(input);
       toast(
         'Organization Created',
-        `"${input.name}" is ready. ${result.createdAccount ? 'The owner was emailed how to set a password.' : 'The owner was emailed.'}${
-          result.planAssigned ? '' : ' No plan was assigned — set one from the Subscription tab.'
-        }`,
-        result.planAssigned ? 'success' : 'warning'
+        `"${input.name}" is ready. ${
+          !result.ownerNotified
+            ? 'The welcome email could not be queued — contact the owner directly.'
+            : result.createdAccount
+              ? 'An email telling the owner how to set a password is queued.'
+              : 'An email to the owner is queued.'
+        }${result.planAssigned ? '' : ' No plan was assigned — set one from the Subscription tab.'}`,
+        result.planAssigned && result.ownerNotified ? 'success' : 'warning'
       );
       setIsCreateOpen(false);
       router.push(`/dashboard/organizations/${result.id}`);
@@ -355,7 +360,7 @@ export default function OrganizationsView() {
                   <div className="flex items-center justify-center gap-1"><span>Quizzes</span>{sortIcon('contestCount')}</div>
                 </th>
                 <th className="py-3.5 px-4 cursor-pointer hover:text-foreground select-none text-center" onClick={() => toggleSort('participantCount')}>
-                  <div className="flex items-center justify-center gap-1"><span>Participants</span>{sortIcon('participantCount')}</div>
+                  <div className="flex items-center justify-center gap-1"><span>Confirmed</span>{sortIcon('participantCount')}</div>
                 </th>
                 <th className="py-3.5 px-4">Status</th>
                 <th className="py-3.5 px-4 cursor-pointer hover:text-foreground select-none" onClick={() => toggleSort('createdAt')}>
@@ -478,7 +483,10 @@ export default function OrganizationsView() {
                         {org.memberCount ?? org.membersCount}
                       </td>
                       <td className="py-4 px-4 text-center font-mono font-bold text-muted-foreground">{formatNumber(org.contestCount)}</td>
-                      <td className="py-4 px-4 text-center font-mono font-bold text-foreground/80">{formatNumber(org.participantCount)}</td>
+                      <td className="py-4 px-4 text-center font-mono font-bold text-foreground/80">
+                        {formatNumber(org.participantCount)}
+                        <RegistrationCountsLine counts={org.registrations} />
+                      </td>
                       <td className="py-4 px-4">
                         <StatusBadge kind="org" value={org.status} />
                       </td>

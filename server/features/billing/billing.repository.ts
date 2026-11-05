@@ -1,6 +1,7 @@
 import { queryMainDb } from '../../db/main-db-pool';
 import { SqlWhere, pageOffset } from '../../db/sql';
 import { prisma } from '../../db/ops-prisma';
+import { liveOrgIds } from '../organizations/org-exists';
 import { BillingPaymentsListQueryParams } from './billing.types';
 
 export interface IBillingRepository {
@@ -139,9 +140,12 @@ export class BillingRepository implements IBillingRepository {
   }
 
   async getActiveSubscriptionsWithPlans(): Promise<any[]> {
-    return prisma.organizationSubscription.findMany({
+    const subscriptions = await prisma.organizationSubscription.findMany({
       where: { status: 'ACTIVE' },
       include: { plan: true },
     });
+    // Soft-deleting an org leaves its subscription row alone (restore brings it back), so it can't count as revenue here.
+    const liveIds = await liveOrgIds(subscriptions.map((s) => s.organizationId));
+    return subscriptions.filter((s) => liveIds.has(s.organizationId));
   }
 }

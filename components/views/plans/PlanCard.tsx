@@ -143,6 +143,7 @@ export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: P
         {/* Feature Toggles */}
         <div className="mt-4 space-y-1.5">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Features Included</p>
+          <p className="text-[10px] text-muted-foreground">Listed on the plan only — the main app doesn't enforce these yet.</p>
           <ul className="space-y-1 text-xs">
             <FeatureItem icon={ShieldCheck} label="AI Proctoring" enabled={plan.features.proctoring} />
             <FeatureItem icon={Lock} label="Custom Branding" enabled={plan.features.customCertificateBranding} />

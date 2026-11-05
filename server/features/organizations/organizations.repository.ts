@@ -9,8 +9,9 @@ import { paiseToRupees } from '../../../lib/format';
 import { INSTITUTION_FLAG_KEYS } from '../../../lib/constants/institution';
 import { effectiveOptInKeysSql } from '../institution/institution.repository';
 import { ownerNameSql, ownerEmailSql } from './org-owner.sql';
+import { confirmedRegistrationSql, registrationCountsSql } from './confirmed-registration.sql';
 import type { OrgSortField } from './organizations.validator';
-import { OrgMemberDetail, OrgContestDetail, OrgParticipantDetail } from './organizations.types';
+import { OrgMemberDetail, OrgContestDetail, OrgParticipantDetail, OrgPaymentDetail } from './organizations.types';
 
 export interface OrgListParams {
   page: number;
@@ -26,6 +27,16 @@ export interface OrgListParams {
   sort?: OrgSortField;
   order?: 'asc' | 'desc';
 }
+
+// Main-app PaymentStatus -> the ledger's statuses (same failed/pending split as the registration counts).
+const CONTEST_FEE_STATUS: Record<string, OrgPaymentDetail['status']> = {
+  SUCCESS: 'PAID',
+  CREATED: 'PENDING',
+  PENDING: 'PENDING',
+  FAILED: 'FAILED',
+  CANCELLED: 'FAILED',
+  REFUNDED: 'REFUNDED',
+};
 
 export interface OrgParticipantsParams {
   page: number;
@@ -141,9 +152,10 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     const dataQuery = `
       SELECT
         o.id, o.name, o.slug, o."logoUrl", o."planSlug", o."createdAt", o."isActive", o."isDeleted",
-        (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id) as "memberCount",
+        (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id AND "isActive" = true) as "memberCount",
         (SELECT COUNT(*)::int FROM contests WHERE "organizationId" = o.id AND "isDeleted" = false) as "contestCount",
-        (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id) as "participantCount",
+        (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id AND ${confirmedRegistrationSql()}) as "participantCount",
+        ${registrationCountsSql('p."organizationId" = o.id')} as registrations,
         (SELECT "profileType" FROM organization_profiles WHERE "organizationId" = o.id) as "profileType",
         ${ownerNameSql('o')} as "ownerName",
         ${ownerEmailSql('o')} as "ownerEmail",
@@ -170,9 +182,10 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       SELECT 
         o.id, o.name, o.slug, o."logoUrl", o."planSlug", o."createdAt", o."isActive", o."isDeleted", o."onboardingStep", o."onboardingCompleted",
         (SELECT "profileType" FROM organization_profiles WHERE "organizationId" = o.id) as "profileType",
-        (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id) as "memberCount",
+        (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id AND "isActive" = true) as "memberCount",
         (SELECT COUNT(*)::int FROM contests WHERE "organizationId" = o.id AND "isDeleted" = false) as "contestCount",
-        (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id) as "participantCount",
+        (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id AND ${confirmedRegistrationSql()}) as "participantCount",
+        ${registrationCountsSql('p."organizationId" = o.id')} as registrations,
         ${ownerNameSql('o')} as "ownerName",
         ${ownerEmailSql('o')} as "ownerEmail"
       FROM organizations o
@@ -379,7 +392,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
         c."questionSelection",
         COALESCE(pc.amount, 0) as "registrationFee",
         c."createdAt",
-        (SELECT COUNT(*)::int FROM participants WHERE "contestId" = c.id) as "participantCount"
+        (SELECT COUNT(*)::int FROM participants WHERE "contestId" = c.id AND ${confirmedRegistrationSql()}) as "participantCount",
+        ${registrationCountsSql('p."contestId" = c.id')} as registrations
       FROM contests c
       LEFT JOIN "PaymentConfig" pc ON pc."contestId" = c.id
       WHERE c."organizationId" = $1 AND c."isDeleted" = false
@@ -417,6 +431,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       // 100 previously turned a ₹1 fee into ₹0.01 on this tab.
       registrationFee: r.registrationFee,
       participantCount: r.participantCount,
+      registrations: r.registrations,
       revenueCollected: revenueMap.get(r.id) || 0,
       createdAt: new Date(r.createdAt).toISOString(),
     }));
@@ -486,16 +501,16 @@ export class OrganizationsRepository implements IOrganizationsRepository {
         pay.id,
         pay.amount,
         pay.status,
-        pay."paidAt" as date,
+        COALESCE(pay."paidAt", pay."createdAt") as date,
         pay.provider,
-        pay."razorpayPaymentId" as "referenceId",
+        COALESCE(pay."razorpayPaymentId", pay."razorpayOrderId") as "referenceId",
         c."firstName" || ' ' || COALESCE(c."lastName", '') as "payeeName",
         cont.title as "contestTitle"
       FROM payments pay
       JOIN contacts c ON pay."contactId" = c.id
       JOIN contests cont ON pay."contestId" = cont.id
-      WHERE pay."organizationId" = $1 AND pay.status = 'SUCCESS' AND pay."isDeleted" = false
-      ORDER BY pay."paidAt" DESC
+      WHERE pay."organizationId" = $1 AND pay."isDeleted" = false
+      ORDER BY date DESC
     `, [orgId]);
 
     const contestFeePayments = contestFeeRows.map(r => ({
@@ -505,7 +520,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       payeeName: r.payeeName,
       description: `Quiz Entry Fee: ${r.contestTitle}`,
       amount: r.amount / 100, // paise to INR
-      status: 'PAID' as const,
+      status: CONTEST_FEE_STATUS[r.status as string] ?? 'PENDING',
       paymentMethod: r.provider,
       date: new Date(r.date).toISOString(),
     }));
@@ -656,7 +671,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
    *    per-contest, not an org-wide total, so what actually matters for
    *    "how close is this org to hitting it" is their single fullest
    *    contest — not scoped to the cycle, since a contest created in an
-   *    earlier cycle can still be actively accepting registrations.
+   *    earlier cycle can still be actively accepting registrations. Only
+   *    confirmed registrations hold a seat.
    *  - memberCountUsed: same `isActive: true` count
    *    assertCanInviteMember() uses (includes pending invites).
    */
@@ -683,7 +699,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
             SELECT COUNT(*) AS pc
             FROM participants p
             JOIN contests c ON c.id = p."contestId"
-            WHERE c."organizationId" = $1 AND c."isDeleted" = false
+            WHERE c."organizationId" = $1 AND c."isDeleted" = false AND ${confirmedRegistrationSql('p')}
             GROUP BY p."contestId"
           ) t
         ) AS "maxParticipantsInAContest",

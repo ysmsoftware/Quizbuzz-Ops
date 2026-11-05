@@ -232,7 +232,10 @@ export interface OrganizationSubscription {
   currentPeriodStart: string;
   currentPeriodEnd: string;
   graceDays: number;
-  collectionMethod: 'PAY_ONLINE' | 'OFFLINE' | 'COMPLIMENTARY';
+  collectionMethod: 'AUTO_DEBIT' | 'PAY_ONLINE' | 'OFFLINE' | 'COMPLIMENTARY';
+  /** The live Razorpay mandate, when collectionMethod is AUTO_DEBIT. */
+  autoDebit: { id: string; status: string; paymentMethod: string | null; nextChargeAt: string | null } | null;
+  lastPaymentError: string | null;
   contractStart: string | null;
   contractEnd: string | null;
   poNumber: string | null;

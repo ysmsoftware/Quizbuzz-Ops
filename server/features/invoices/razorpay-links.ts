@@ -1,26 +1,7 @@
-import { env } from '../../config/env';
+import { razorpayAuth as auth, razorpayCall as call } from '../../lib/razorpay';
 import { generateUlid } from '../../utils/ulid';
 
 /** Razorpay Payment Links: a hosted page that expires on a date. Docs: /docs/api/payments/payment-links. */
-
-function auth(): string | null {
-  const id = env.RAZORPAY_KEY_ID;
-  const secret = env.RAZORPAY_KEY_SECRET;
-  if (!id || !secret || id.includes('stub')) return null;
-  return 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64');
-}
-
-async function call<T>(path: string, method: string, body?: unknown): Promise<T> {
-  const header = auth();
-  if (!header) throw new Error('Razorpay keys are not configured');
-  const res = await fetch(`https://api.razorpay.com/v1/${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', Authorization: header },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(`Razorpay ${method} ${path} failed: ${res.status} ${await res.text()}`);
-  return res.json() as Promise<T>;
-}
 
 export async function createPaymentLink(input: {
   invoiceId: string;

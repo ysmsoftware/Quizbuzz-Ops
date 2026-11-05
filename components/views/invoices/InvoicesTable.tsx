@@ -28,6 +28,7 @@ const SOURCE: Record<string, string> = {
   OTHER: 'Other',
   RAZORPAY_LINK: 'Razorpay link',
   RAZORPAY_ORDER: 'Razorpay checkout',
+  RAZORPAY_SUBSCRIPTION: 'Razorpay auto-debit',
 };
 
 type Dialog =

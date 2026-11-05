@@ -11,6 +11,8 @@ import { computeAccessDates, lapseStatusAt } from '../subscriptions/access-dates
 import { oldestUnpaidDueAt } from '../subscriptions/access-input';
 import { invoiceDocument, pdfResponse, receiptDocument } from './billing-documents';
 import { invoicesService } from './invoices.service';
+import { isFeatureEnabled } from '../feature-flags/is-feature-enabled';
+import { autoDebitCycle, stopAutoDebit } from '../autodebit/autodebit.service';
 
 /**
  * What the owner's Billing page asks ops for. The main app checks the caller is the org's OWNER,
@@ -31,9 +33,10 @@ function claimsFrom(token: unknown): AccountClaims | null {
 }
 
 const num = (v: unknown) => Number(v ?? 0);
+const ownerActor = (claims: AccountClaims) => ({ id: null, email: claims.adminEmail ?? 'owner', name: 'Organization owner', role: 'org-owner' });
 
 async function summary(organizationId: string) {
-  const [sub, invoices] = await Promise.all([
+  const [sub, invoices, autoDebitFlag] = await Promise.all([
     prisma.organizationSubscription.findUnique({ where: { organizationId }, include: { plan: true } }),
     prisma.invoice.findMany({
       where: { organizationId },
@@ -41,7 +44,9 @@ async function summary(organizationId: string) {
       take: 50,
       include: { payments: { where: { voidedAt: null, status: 'PAID', receiptNumber: { not: null } }, orderBy: { createdAt: 'asc' }, select: { id: true, receiptNumber: true } } },
     }),
+    Promise.all([isFeatureEnabled('razorpay_gateway_active', organizationId), isFeatureEnabled('auto_debit', organizationId)]).then(([a, b]) => a && b),
   ]);
+  const mandate = sub?.razorpaySubscriptionId ? await prisma.razorpaySubscription.findUnique({ where: { id: sub.razorpaySubscriptionId } }) : null;
   const dates = sub
     ? computeAccessDates({
         kind: sub.plan.kind,
@@ -62,6 +67,17 @@ async function summary(organizationId: string) {
       contractEnd: sub.contractEnd?.toISOString() ?? null,
       restrictAt: dates.restrictAt?.toISOString() ?? null,
       downgradeAt: dates.downgradeAt?.toISOString() ?? null,
+      lastPaymentError: sub.lastPaymentError,
+    },
+    autoDebit: {
+      // The owner can turn it on for the plan they're on: a self-serve plan billed monthly or every 6 months.
+      available: autoDebitFlag && !!sub && sub.plan.kind === 'STANDARD' && autoDebitCycle(sub.billingCycle) && ['PAY_ONLINE', 'AUTO_DEBIT'].includes(sub.collectionMethod),
+      on: !!mandate,
+      // card, upi or emandate, as Razorpay names it.
+      method: mandate?.paymentMethod ?? null,
+      status: mandate?.status ?? null,
+      nextChargeAt: (mandate?.currentEnd ?? mandate?.startAt)?.toISOString() ?? null,
+      amount: mandate ? num(mandate.amount) : null,
     },
     invoices: invoices.map((inv) => {
       const open = inv.status === 'ISSUED' || inv.status === 'PARTIALLY_PAID';
@@ -85,9 +101,11 @@ async function cancel(claims: AccountClaims, resume: boolean) {
   const organizationId = claims.organizationId;
   const sub = await prisma.organizationSubscription.findUnique({ where: { organizationId }, include: { plan: true } });
   if (!sub) throw new NotFoundError('No subscription found');
-  if (sub.plan.kind !== 'STANDARD' || sub.collectionMethod !== 'PAY_ONLINE') {
+  if (sub.plan.kind !== 'STANDARD' || !['PAY_ONLINE', 'AUTO_DEBIT'].includes(sub.collectionMethod)) {
     throw new ConflictError('This plan is managed by your account manager. Please contact us to change it.');
   }
+  // A cancelled plan must never be charged again. Undoing the cancel doesn't bring the mandate back: the owner turns it on again.
+  if (!resume) await stopAutoDebit(organizationId, ownerActor(claims), 'Owner cancelled the plan');
   const input = { kind: sub.plan.kind, currentPeriodEnd: sub.currentPeriodEnd, graceDays: sub.graceDays, overdueInvoiceDueAt: await oldestUnpaidDueAt(organizationId) };
   const status = resume ? lapseStatusAt(input) : 'CANCELLED';
   await prisma.organizationSubscription.update({ where: { id: sub.id }, data: { status, cancelledAt: resume ? null : new Date() } });
@@ -107,6 +125,11 @@ export async function handleAccountRequest(req: Request): Promise<Response> {
   const claims = claimsFrom(body.token);
   if (!claims) return errorResponse('Invalid or expired token', 'UNAUTHENTICATED', null, 401);
   const organizationId = claims.organizationId;
+
+  if (body.action === 'stop_autodebit') {
+    await stopAutoDebit(organizationId, ownerActor(claims), 'Owner turned automatic renewal off');
+    return okResponse(await summary(organizationId), 'Automatic renewal is off.');
+  }
 
   if (body.action === 'cancel' || body.action === 'resume') {
     await cancel(claims, body.action === 'resume');

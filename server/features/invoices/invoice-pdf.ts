@@ -29,6 +29,7 @@ const SOURCE_LABEL: Record<string, string> = {
   OTHER: 'Other',
   RAZORPAY_LINK: 'Razorpay',
   RAZORPAY_ORDER: 'Razorpay',
+  RAZORPAY_SUBSCRIPTION: 'Razorpay auto-debit',
 };
 
 /** Subtotal down to Total. Throws if they don't add up: a wrong document must never go out. */

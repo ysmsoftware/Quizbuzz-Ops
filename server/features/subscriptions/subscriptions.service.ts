@@ -99,6 +99,7 @@ export class SubscriptionsService implements ISubscriptionsService {
       graceDays: sub.graceDays,
       overdueInvoiceDueAt: await oldestUnpaidDueAt(orgId),
     });
+    const mandate = sub.razorpaySubscriptionId ? await prisma.razorpaySubscription.findUnique({ where: { id: sub.razorpaySubscriptionId } }) : null;
 
     return {
       subscription: {
@@ -111,6 +112,13 @@ export class SubscriptionsService implements ISubscriptionsService {
         currentPeriodEnd: sub.currentPeriodEnd.toISOString(),
         graceDays: sub.graceDays,
         collectionMethod: sub.collectionMethod,
+        autoDebit: mandate && {
+          id: mandate.id,
+          status: mandate.status,
+          paymentMethod: mandate.paymentMethod,
+          nextChargeAt: (mandate.currentEnd ?? mandate.startAt)?.toISOString() ?? null,
+        },
+        lastPaymentError: sub.lastPaymentError,
         contractStart: sub.contractStart?.toISOString() ?? null,
         contractEnd: sub.contractEnd?.toISOString() ?? null,
         poNumber: sub.poNumber,

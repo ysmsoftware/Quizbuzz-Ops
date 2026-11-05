@@ -8,6 +8,7 @@ import { AuditTargetType } from '@prisma/client';
 import { okResponse, errorResponse } from '@/server/http/envelope';
 import { errorMessage } from '@/lib/errors';
 import { canBuyPlan } from '@/server/features/plans/can-buy-plan';
+import { isFeatureEnabled } from '@/server/features/feature-flags/is-feature-enabled';
 
 export async function POST(req: Request) {
   try {
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
     // server-side and is the only source of truth for what's actually charged.
     const currentSub = await prisma.organizationSubscription.findUnique({
       where: { organizationId },
-      include: { plan: { select: { id: true, name: true } } },
+      include: { plan: { select: { id: true, name: true, kind: true } } },
     });
 
     if (!canBuyPlan(plan, organizationId, currentSub?.planId)) {
@@ -128,6 +129,18 @@ export async function POST(req: Request) {
 
     const featureList = planFeatureList(plan);
 
+    // Same rule as startAutoDebit: with paid time left, the first automatic charge is when it ends.
+    const paidUntil =
+      currentSub && currentSub.plan.kind !== 'FREE' && currentSub.currentPeriodEnd.getTime() > Date.now() + 15 * 60_000
+        ? currentSub.currentPeriodEnd.toISOString()
+        : null;
+    const autoDebit = {
+      available: (await isFeatureEnabled('razorpay_gateway_active', organizationId)) && (await isFeatureEnabled('auto_debit', organizationId)),
+      firstChargeAt: paidUntil,
+      // Set when this org already pays this way: choosing it again changes the payment method.
+      current: currentSub?.collectionMethod === 'AUTO_DEBIT' ? { planId: currentSub.planId, billingCycle: currentSub.billingCycle } : null,
+    };
+
     return okResponse(
       {
         session: {
@@ -139,6 +152,7 @@ export async function POST(req: Request) {
           adminName: adminName || null,
         },
         currentSubscription,
+        autoDebit,
         plan: {
           id: plan.id,
           name: plan.name,

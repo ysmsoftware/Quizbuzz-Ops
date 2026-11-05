@@ -51,6 +51,8 @@ enum BillingCycle {
 
 // How the money reaches us. Enforcement never looks at this: only at dates.
 enum CollectionMethod {
+  // Razorpay charges each cycle. OrganizationSubscription.razorpaySubscriptionId is the live mandate.
+  AUTO_DEBIT
   PAY_ONLINE
   OFFLINE
   COMPLIMENTARY
@@ -71,6 +73,7 @@ enum InvoiceAccessMode {
 }
 
 enum PaymentSource {
+  RAZORPAY_SUBSCRIPTION
   RAZORPAY_ORDER
   RAZORPAY_LINK
   BANK_TRANSFER
@@ -311,6 +314,11 @@ model OrganizationSubscription {
   contractNotes      String?
   // The smallest days-before-end reminder already sent (60, 30, 7).
   contractReminderDays Int?
+  // The Razorpay subscription charging this org now. Null unless collectionMethod is AUTO_DEBIT.
+  razorpaySubscriptionId String?        @unique
+  // Our own wording of why the last automatic charge failed. Raw gateway text stays in the audit log.
+  lastPaymentError   String?
+  lastPaymentErrorAt DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -810,6 +818,46 @@ model BillingSettings {
   updatedAt     DateTime @updatedAt
 
   @@map("billing_settings")
+}
+
+// Every Razorpay auto-debit subscription an org has set up. A new payment method is a new one,
+// which replaces the old once authorised. Razorpay stays the truth for its status; this row mirrors it.
+model RazorpaySubscription {
+  id             String       @id // Razorpay's sub_ id
+  organizationId String
+  planId         String
+  billingCycle   BillingCycle
+  razorpayPlanId String
+  // Charged each cycle: price, and price + GST.
+  baseAmount     Decimal      @db.Decimal(10, 2)
+  amount         Decimal      @db.Decimal(10, 2)
+  // Razorpay's own: created, authenticated, active, pending, halted, cancelled, completed, expired, paused.
+  status         String       @default("created")
+  shortUrl       String?
+  // First charge. Null means at authorisation.
+  startAt        DateTime?
+  currentStart   DateTime?
+  currentEnd     DateTime?
+  paymentMethod  String?
+  createdByEmail String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("razorpay_subscriptions")
+}
+
+// Razorpay plans are fixed once made, so a price change gets a new one.
+model RazorpayPlan {
+  id           String       @id // Razorpay's plan_ id
+  planId       String
+  billingCycle BillingCycle
+  amountPaise  Int
+  createdAt    DateTime     @default(now())
+
+  @@unique([planId, billingCycle, amountPaise])
+  @@map("razorpay_plans")
 }
 
 model RazorpayWebhookEvent {

@@ -5,6 +5,7 @@ import SubscriptionsService, { syncOrgPlanLimitsCache } from '../features/subscr
 import { computeAccessDates, lapseStatusAt, LapseStatus } from '../features/subscriptions/access-dates';
 import { oldestUnpaidDueAt } from '../features/subscriptions/access-input';
 import { reminderDue } from './reminder-due';
+import { reconcileAutoDebits } from '../features/autodebit/autodebit.service';
 import { orgOwnerNotifier } from '../notifications/org-owner-notifier';
 import { writeAuditLogEntry, SYSTEM_ACTOR } from '../audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
@@ -99,12 +100,16 @@ async function sendContractReminders(now: Date): Promise<number> {
 export async function runSubscriptionReconciliationJob(): Promise<ReconciliationResult> {
   const now = new Date();
   const freePlansAssigned = await assignFreePlanToNewOrgs();
+  const autoDebit = await reconcileAutoDebits(now);
   const invoiceReminders = await sendInvoiceReminders(now);
   const contractReminders = await sendContractReminders(now);
 
   const subs = await prisma.organizationSubscription.findMany({
     include: { plan: { select: { name: true, kind: true } } },
   });
+  const charging = new Set(
+    (await prisma.razorpaySubscription.findMany({ where: { status: { in: ['authenticated', 'active'] } }, select: { id: true } })).map((r) => r.id),
+  );
 
   let remindersSent = 0;
   let statusChanges = 0;
@@ -118,10 +123,15 @@ export async function runSubscriptionReconciliationJob(): Promise<Reconciliation
       cancelled: sub.status === 'CANCELLED',
     };
 
+    // Razorpay charges at the period end and the webhook can take a while: a healthy mandate isn't past due for its first day.
+    const autoRenewing = !!sub.razorpaySubscriptionId && charging.has(sub.razorpaySubscriptionId);
+    const awaitingCharge = autoRenewing && now.getTime() < sub.currentPeriodEnd.getTime() + MS_PER_DAY;
+
     // Renewal reminder: once per period, 7 days before the end. Left unmarked if nothing was sent, so the next run retries.
+    // Auto-renewing orgs get no "renew now" nag: Razorpay sends its own pre-debit notice.
     const remindFrom = sub.currentPeriodEnd.getTime() - RENEWAL_REMINDER_DAYS_BEFORE * MS_PER_DAY;
     const remindedThisPeriod = sub.renewalReminderSentAt && sub.renewalReminderSentAt >= sub.currentPeriodStart;
-    if (sub.plan.kind !== 'FREE' && sub.status === 'ACTIVE' && now.getTime() >= remindFrom && now < sub.currentPeriodEnd && !remindedThisPeriod) {
+    if (!autoRenewing && sub.plan.kind !== 'FREE' && sub.status === 'ACTIVE' && now.getTime() >= remindFrom && now < sub.currentPeriodEnd && !remindedThisPeriod) {
       const daysRemaining = Math.max(1, Math.ceil((sub.currentPeriodEnd.getTime() - now.getTime()) / MS_PER_DAY));
       const sent = await orgOwnerNotifier.notify(sub.organizationId, 'SUBSCRIPTION_RENEWAL_REMINDER', {
         planName: sub.plan.name,
@@ -137,6 +147,7 @@ export async function runSubscriptionReconciliationJob(): Promise<Reconciliation
     // A cancelled plan stays "cancelled" while its paid time runs out, then lapses like any other.
     const target: LapseStatus = lapseStatusAt(input, now);
     if (target === sub.status || (sub.status === 'CANCELLED' && target === 'ACTIVE')) continue;
+    if (target === 'PAST_DUE' && awaitingCharge) continue;
 
     try {
       await prisma.organizationSubscription.update({ where: { id: sub.id }, data: { status: target } });
@@ -174,9 +185,9 @@ export async function runSubscriptionReconciliationJob(): Promise<Reconciliation
     }
   }
 
-  const result = { freePlansAssigned, invoiceReminders, contractReminders, remindersSent, statusChanges, synced, syncFailures };
+  const result = { freePlansAssigned, invoiceReminders, contractReminders, remindersSent, statusChanges, synced, syncFailures, autoDebitAbandoned: autoDebit.abandoned, autoDebitFailures: autoDebit.failures };
   // This runs hourly, so the audit log only hears about runs that did something.
-  if (freePlansAssigned || invoiceReminders || contractReminders || remindersSent || statusChanges || syncFailures) {
+  if (freePlansAssigned || invoiceReminders || contractReminders || remindersSent || statusChanges || syncFailures || autoDebit.abandoned || autoDebit.failures) {
     await writeAuditLogEntry(SYSTEM_ACTOR, 'system.cache_reconciled', AuditTargetType.SUBSCRIPTION, 'system_reconciliation', 'Subscription Sync Reconciler', { ...result });
     console.log('[JOB] Subscription reconciliation:', result);
   }

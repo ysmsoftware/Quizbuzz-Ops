@@ -9,6 +9,7 @@
     "worker": "tsx --env-file=.env scripts/worker.ts",
     "lint": "eslint .",
     "test": "tsx --test \"server/**/*.test.ts\"",
+    "test:autodebit-e2e": "tsx --env-file=.env scripts/autodebit-e2e.ts",
     "db:seed": "node prisma/seed.js",
     "seed:platform-admin": "tsx --env-file=.env scripts/seed-platform-admin.ts",
     "flags:sync": "tsx --env-file=.env scripts/sync-feature-flags.ts",

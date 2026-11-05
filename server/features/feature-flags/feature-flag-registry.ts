@@ -159,6 +159,17 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     accessModel: 'GLOBAL',
   },
   {
+    key: 'auto_debit',
+    label: 'Auto-debit subscriptions',
+    description:
+      'Lets the organization’s owner turn on automatic renewal (UPI AutoPay, card or eMandate through Razorpay Subscriptions) for monthly and 6-month plans.',
+    // OPT_IN: global on only makes it grantable, so it goes live one org at a time. Mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.WARNING,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
+  {
     key: 'ambassador_program_enabled',
     label: 'Ambassador Program',
     description:

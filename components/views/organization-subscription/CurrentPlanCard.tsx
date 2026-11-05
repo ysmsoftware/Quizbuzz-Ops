@@ -121,6 +121,17 @@ export default function CurrentPlanCard({
               <p>Free limits from: <strong className="text-foreground">{format(new Date(subscription.downgradeAt), 'MMM d, yyyy')}</strong></p>
             </>
           )}
+          {subscription.autoDebit ? (
+            <p>
+              Auto-debit: <strong className="text-foreground">{subscription.autoDebit.status}</strong>
+              {subscription.autoDebit.paymentMethod && ` via ${subscription.autoDebit.paymentMethod.toUpperCase()}`}
+              {subscription.autoDebit.nextChargeAt && `, next charge ${format(new Date(subscription.autoDebit.nextChargeAt), 'MMM d, yyyy')}`}
+              <span className="block font-mono text-[10px]">{subscription.autoDebit.id}</span>
+            </p>
+          ) : subscription.planKind !== 'FREE' && (
+            <p>Payment: {subscription.collectionMethod === 'PAY_ONLINE' ? 'pays online each renewal' : subscription.collectionMethod.toLowerCase().replace('_', ' ')}</p>
+          )}
+          {subscription.lastPaymentError && <p className="text-destructive">Last charge failed: {subscription.lastPaymentError}</p>}
         </div>
 
         {/* Payment Receipt — our own record of the last successful charge,

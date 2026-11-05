@@ -28,7 +28,7 @@ interface RawNote {
 interface RawSubscriptionResponse {
   subscription: Pick<
     OrganizationSubscription,
-    'id' | 'organizationId' | 'billingCycle' | 'periodMonths' | 'currentPeriodStart' | 'currentPeriodEnd' | 'graceDays' | 'restrictAt' | 'downgradeAt' | 'collectionMethod' | 'contractStart' | 'contractEnd' | 'poNumber' | 'contractNotes'
+    'id' | 'organizationId' | 'billingCycle' | 'periodMonths' | 'currentPeriodStart' | 'currentPeriodEnd' | 'graceDays' | 'restrictAt' | 'downgradeAt' | 'collectionMethod' | 'autoDebit' | 'lastPaymentError' | 'contractStart' | 'contractEnd' | 'poNumber' | 'contractNotes'
   > & { status: string };
   plan: { id?: string; slug: string; kind: OrganizationSubscription['planKind'] };
   overrides?: Array<Omit<SubscriptionOverride, 'value' | 'createdByAdminName'> & { value: unknown; createdByAdminName?: string }>;
@@ -433,6 +433,8 @@ export async function getOrganizationSubscription(orgId: string): Promise<Organi
       currentPeriodEnd: res.subscription.currentPeriodEnd,
       graceDays: res.subscription.graceDays,
       collectionMethod: res.subscription.collectionMethod,
+      autoDebit: res.subscription.autoDebit ?? null,
+      lastPaymentError: res.subscription.lastPaymentError ?? null,
       contractStart: res.subscription.contractStart,
       contractEnd: res.subscription.contractEnd,
       poNumber: res.subscription.poNumber,

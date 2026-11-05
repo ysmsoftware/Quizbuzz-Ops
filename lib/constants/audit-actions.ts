@@ -33,7 +33,7 @@ export const OPS_AUDIT_GROUPS: AuditActionGroup[] = [
   {
     domain: 'subscription',
     label: 'Subscription',
-    actions: ['subscription.created', 'subscription.plan_changed', 'subscription.expired', 'subscription.cache_sync_failed', 'subscription.renewal_reminder_resent'],
+    actions: ['subscription.created', 'subscription.plan_changed', 'subscription.expired', 'subscription.cache_sync_failed', 'subscription.renewal_reminder_resent', 'subscription.status_changed', 'subscription.cancelled', 'subscription.resumed', 'subscription.access_updated'],
   },
   { domain: 'override', label: 'Override', actions: ['override.added', 'override.removed', 'override.expired'] },
   { domain: 'booking', label: 'Booking', actions: ['booking.created', 'booking.status_changed'] },
@@ -44,10 +44,11 @@ export const OPS_AUDIT_GROUPS: AuditActionGroup[] = [
     actions: ['billing_portal.checkout_started', 'billing_portal.payment_attempted', 'billing_portal.payment_succeeded', 'billing_portal.payment_failed', 'billing_portal.receipt_resent'],
   },
   { domain: 'payment', label: 'Payment', actions: ['payment.refunded'] },
+  { domain: 'invoice', label: 'Invoice', actions: ['invoice.issued', 'invoice.payment_recorded', 'invoice.payment_received', 'invoice.payment_voided', 'invoice.void', 'invoice.write_off', 'invoice.extend_due'] },
   { domain: 'ambassador_type', label: 'Ambassador Type', actions: ['ambassador_type.created', 'ambassador_type.updated', 'ambassador_type.deleted', 'ambassador_type.org_access.set'] },
   { domain: 'college', label: 'College', actions: ['college.created', 'college.updated', 'college.deleted', 'unlisted_college.dismissed'] },
   { domain: 'department', label: 'Department', actions: ['department.created', 'department.updated', 'unlisted_department.dismissed'] },
-  { domain: 'app_settings', label: 'App Settings', actions: ['app_settings.logo_updated', 'app_settings.logo_removed'] },
+  { domain: 'app_settings', label: 'App Settings', actions: ['app_settings.logo_updated', 'app_settings.logo_removed', 'billing_settings.updated'] },
   { domain: 'system', label: 'System', actions: ['system.cache_reconciled'] },
 ];
 

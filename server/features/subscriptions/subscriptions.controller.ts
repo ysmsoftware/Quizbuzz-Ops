@@ -1,6 +1,6 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseRequest } from '../../http/validation';
-import { assignPlanSchema, changePlanSchema, addOverrideSchema, removeOverrideSchema } from './subscriptions.validator';
+import { assignPlanSchema, changePlanSchema, addOverrideSchema, removeOverrideSchema, updateAccessSchema } from './subscriptions.validator';
 import { ISubscriptionsService, SubscriptionsService } from './subscriptions.service';
 import { okResponse, errorResponse } from '../../http/envelope';
 import { PlatformAdminRole } from '@prisma/client';
@@ -76,6 +76,30 @@ export class SubscriptionsController {
     };
     const result = await this.service.removeOverride(orgId, overrideId, input.reason || 'Manual removal', actor);
     return okResponse(result, 'Subscription limit override removed.');
+  }
+
+  async updateAccess(req: Request, orgId: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN]);
+    const input = await parseRequest(req, updateAccessSchema);
+    if (input.graceDays !== undefined && admin.role !== PlatformAdminRole.SUPER_ADMIN) {
+      return errorResponse('Only a super admin can change the grace period.', 'FORBIDDEN', null, 403);
+    }
+    await assertOrgExists(orgId);
+    const actor = { id: admin.id, email: admin.email, name: admin.name, role: admin.role };
+    const result = await this.service.updateAccess(
+      orgId,
+      {
+        currentPeriodEnd: input.currentPeriodEnd ? new Date(input.currentPeriodEnd) : undefined,
+        graceDays: input.graceDays,
+        contractStart: input.contractStart === undefined ? undefined : input.contractStart ? new Date(input.contractStart) : null,
+        contractEnd: input.contractEnd === undefined ? undefined : input.contractEnd ? new Date(input.contractEnd) : null,
+        poNumber: input.poNumber,
+        contractNotes: input.contractNotes,
+        reason: input.reason,
+      },
+      actor,
+    );
+    return okResponse(result, 'Subscription access updated.');
   }
 
   async resendRenewalReminder(orgId: string) {

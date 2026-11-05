@@ -156,14 +156,24 @@ export interface SubscriptionPlan {
   // annual-only with a fixed rate unrelated to any monthly figure.
   allowsMonthly: boolean;
   allowsAnnual: boolean;
+  allowsHalfYearly: boolean;
   monthlyPrice: number | null;
   annualPrice: number | null;
+  halfYearlyPrice: number | null;
   isActive: boolean;
+  isSellable: boolean;
+  kind: 'FREE' | 'STANDARD' | 'CUSTOM';
+  audience: 'ORGANIZER' | 'EDUCATION' | 'BUSINESS' | null;
+  /** Set on a private plan: only this org can be put on it or buy it. */
+  organizationId: string | null;
   limits: {
     maxContestsPerCycle: number | null; // null represents "unlimited"
     maxParticipantsPerContest: number | null;
     maxQuestionsPerContest: number | null;
     maxOrgMembers: number | null;
+    maxLearners: number | null;
+    maxCandidatesPerMonth: number | null;
+    aiCreditsPerMonth: number | null;
   };
   features: {
     proctoring: boolean;
@@ -171,6 +181,10 @@ export interface SubscriptionPlan {
     prioritySupport: boolean;
     analyticsExport: boolean;
     customDomain: boolean;
+    learnerGroups: boolean;
+    gradebook: boolean;
+    ambassadorCampaigns: boolean;
+    manualEmails: boolean;
   };
   createdAt: string;
   updatedAt: string;
@@ -187,7 +201,7 @@ export type OverrideMode = 'ADDITIVE' | 'ABSOLUTE';
 export interface SubscriptionOverride {
   id: string;
   field: string; // e.g. "maxContestsPerCycle"
-  value: number | null; // null for Unlimited
+  value: number | boolean | null; // null for Unlimited; a feature override is on or off
   mode: OverrideMode;
   reason: string;
   expiresAt: string | null; // nullable
@@ -203,7 +217,8 @@ export interface EffectiveLimit {
 }
 
 export type EffectiveLimits = Record<
-  'maxContestsPerCycle' | 'maxParticipantsPerContest' | 'maxQuestionsPerContest' | 'maxOrgMembers',
+  | 'maxContestsPerCycle' | 'maxParticipantsPerContest' | 'maxQuestionsPerContest' | 'maxOrgMembers'
+  | 'maxLearners' | 'maxCandidatesPerMonth' | 'aiCreditsPerMonth',
   EffectiveLimit
 >;
 
@@ -211,11 +226,22 @@ export interface OrganizationSubscription {
   id: string;
   organizationId: string;
   planId: string;
-  status: 'active' | 'past_due' | 'cancelled';
+  status: 'active' | 'past_due' | 'restricted' | 'expired' | 'cancelled';
   billingCycle?: 'MONTHLY' | 'ANNUAL';
   periodMonths?: number;
   currentPeriodStart: string;
   currentPeriodEnd: string;
+  graceDays: number;
+  collectionMethod: 'PAY_ONLINE' | 'OFFLINE' | 'COMPLIMENTARY';
+  contractStart: string | null;
+  contractEnd: string | null;
+  poNumber: string | null;
+  contractNotes: string | null;
+  /** From here nothing new can be created. Null on the Free plan. */
+  restrictAt: string | null;
+  /** From here Free limits apply. Null on the Free plan. */
+  downgradeAt: string | null;
+  planKind: 'FREE' | 'STANDARD' | 'CUSTOM';
   overrides: SubscriptionOverride[];
   effectiveLimits: EffectiveLimits;
 }
@@ -453,6 +479,11 @@ export type OpsMessageTemplate =
   | 'BILLING_RECEIPT'
   | 'BILLING_PAYMENT_FAILED'
   | 'SUBSCRIPTION_RENEWAL_REMINDER'
+  | 'INVOICE_ISSUED'
+  | 'INVOICE_REMINDER'
+  | 'CONTRACT_ENDING'
+  | 'SUBSCRIPTION_PAST_DUE'
+  | 'SUBSCRIPTION_RESTRICTED'
   | 'SUBSCRIPTION_EXPIRED'
   | 'SUBSCRIPTION_CANCELLED'
   | 'SUBSCRIPTION_PLAN_CHANGED'

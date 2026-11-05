@@ -13,7 +13,7 @@ import {
   ToggleFlagResult,
 } from './feature-flags.types';
 import { dependentsOf, requiresOf } from './feature-flag-registry';
-import { accessModelOf, computeEffectiveFlagState } from './flag-state';
+import { accessModelOf, computeEffectiveFlagState, type EffectiveFlagState } from './flag-state';
 import { TYPE_DENIED_FLAGS, TYPE_FLAG_PRESET, type OrgProfileType } from '../../../lib/constants/org-profile-types';
 
 type OrgNameLookup = (ids: string[]) => Promise<Record<string, string>>;
@@ -30,6 +30,13 @@ async function mirror(label: string, write: () => Promise<void>): Promise<Mirror
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/** Flags the subscription plan can also switch off. Same list as PLAN_GATED_FLAGS in the main app's feature-flags.ts. */
+const PLAN_GATED_FLAGS: Record<string, string> = {
+  gradebook: 'gradebook',
+  institution_mode: 'learnerGroups',
+  ambassador_program_enabled: 'ambassadorCampaigns',
+};
 
 export interface IFeatureFlagsService {
   listFlags(): Promise<FeatureFlagDetail[]>;
@@ -329,12 +336,15 @@ export class FeatureFlagsService implements IFeatureFlagsService {
     let mainGlobals: Map<string, boolean> | null = null;
     let mainByKey: Map<string, { isEnabled: boolean; expiresAt: Date | null }> | null = null;
     let orgType: OrgProfileType = 'INDIVIDUAL';
+    let planFeatures: Record<string, boolean> | null = {};
     try {
-      const [g, rows, type] = await Promise.all([
+      const [g, rows, type, features] = await Promise.all([
         this.repo.getMainGlobalFlags(),
         this.repo.getMainOverridesForOrg(organizationId),
         this.repo.getMainOrgProfileType(organizationId),
+        this.repo.getMainOrgPlanFeatures(organizationId),
       ]);
+      planFeatures = features;
       mainGlobals = g;
       mainByKey = new Map(rows.map((r) => [r.key, r]));
       orgType = type;
@@ -353,9 +363,20 @@ export class FeatureFlagsService implements IFeatureFlagsService {
       return computeEffectiveFlagState(accessModelOf(flag.key), global, override, now, typeRule);
     };
 
+    // Same plan layer as isFeatureEnabled in the main app: an active override beats the plan.
+    const enforcementFlag = flags.find((f) => f.key === 'plan_enforcement');
+    const enforcing = !!mainGlobals && !!enforcementFlag && stateOf(enforcementFlag, 'main').value;
+    const withPlan = (flag: FeatureFlag, state: EffectiveFlagState): EffectiveFlagState => {
+      const feature = PLAN_GATED_FLAGS[flag.key];
+      const denied = !planFeatures || planFeatures[feature] === false;
+      return enforcing && feature && denied && state.value && state.reason !== 'override'
+        ? { value: false, reason: 'plan_denied' }
+        : state;
+    };
+
     const settable = flags.filter((f) => f.supportsOrgOverride);
     // Authoritative answer per flag: the main app's when readable, else Ops'.
-    const effective = new Map(settable.map((f) => [f.key, stateOf(f, mainGlobals ? 'main' : 'ops')]));
+    const effective = new Map(settable.map((f) => [f.key, withPlan(f, stateOf(f, mainGlobals ? 'main' : 'ops'))]));
 
     return settable.map((flag) => {
       const state = effective.get(flag.key)!;
@@ -381,7 +402,7 @@ export class FeatureFlagsService implements IFeatureFlagsService {
         effective: state,
         blockedBy,
         usable: state.value && blockedBy.length === 0,
-        inSync: mainGlobals ? stateOf(flag, 'ops').value === state.value : null,
+        inSync: mainGlobals ? stateOf(flag, 'ops').value === stateOf(flag, 'main').value : null,
       } satisfies OrgFeatureAccess;
     });
   }

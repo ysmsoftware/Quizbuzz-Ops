@@ -21,6 +21,7 @@ import {
   type PlanCyclePricing,
   type CurrentSubscriptionForProration,
   availableCyclesForPlan,
+  cycleLabel,
   type BillingCycleChoice,
 } from '@/lib/pricing/subscriptionPricing';
 import { formatInr } from '@/lib/format';
@@ -228,7 +229,7 @@ function CheckoutContent() {
         amount,
         currency,
         name: 'QuizBuzz Subscription',
-        description: `Plan: ${planName} (${cycle === 'ANNUAL' ? 'Annual' : 'Monthly'})`,
+        description: `Plan: ${planName} (${cycle ? cycleLabel(cycle) : ''})`,
         order_id: orderId,
         prefill: {
           name: session.adminName || '',
@@ -398,7 +399,7 @@ function CheckoutContent() {
 
             {/* Billing cycle toggle */}
             {availableCycles.length > 1 ? (
-              <div className="grid grid-cols-2 gap-2 mb-4">
+              <div className={`grid gap-2 mb-4 ${availableCycles.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 {availableCycles.map((c) => (
                   <button
                     key={c}
@@ -410,14 +411,14 @@ function CheckoutContent() {
                         : 'bg-background text-muted-foreground border-border/60 hover:border-primary/40'
                     }`}
                   >
-                    {c === 'ANNUAL' ? 'Annual' : 'Monthly'}
+                    {cycleLabel(c)}
                   </button>
                 ))}
               </div>
             ) : (
               availableCycles.length === 1 && (
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium mb-4">
-                  Billing: {availableCycles[0] === 'ANNUAL' ? 'Annual' : 'Monthly'}
+                  Billing: {cycleLabel(availableCycles[0])}
                 </div>
               )
             )}
@@ -450,7 +451,7 @@ function CheckoutContent() {
               {pricing.creditApplied > 0 && (
                 <>
                   <div className="flex justify-between text-muted-foreground">
-                    <span>{sessionData.currentSubscription?.planName || 'Current plan'} — full price ({cycle === 'ANNUAL' ? 'annual' : 'monthly'})</span>
+                    <span>{sessionData.currentSubscription?.planName || 'Current plan'} — full price ({cycleLabel(sessionData.currentSubscription?.billingCycle ?? cycle ?? '').toLowerCase()})</span>
                     <span>{formatInr(pricing.baseAmount + pricing.creditApplied, { fixed: 2 })}</span>
                   </div>
                   <div className="flex justify-between text-success">
@@ -460,15 +461,11 @@ function CheckoutContent() {
                 </>
               )}
               <div className="flex justify-between text-muted-foreground">
-                <span>Subscription ({cycle === 'ANNUAL' ? 'annual' : 'monthly'}){pricing.creditApplied > 0 ? ', after credit' : ''}</span>
+                <span>Subscription ({cycle ? cycleLabel(cycle).toLowerCase() : ''}){pricing.creditApplied > 0 ? ', after credit' : ''}</span>
                 <span>{formatInr(pricing.baseAmount, { fixed: 2 })}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
-                <span>Payment gateway fee (2%)</span>
-                <span>{formatInr(pricing.gatewayFeeAmount, { fixed: 2 })}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>GST on gateway fee (18%)</span>
+                <span>GST (18%)</span>
                 <span>{formatInr(pricing.gstAmount, { fixed: 2 })}</span>
               </div>
               <div className="flex justify-between text-base font-bold text-foreground pt-3 border-t border-dashed border-border/60">

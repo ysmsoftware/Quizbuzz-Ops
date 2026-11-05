@@ -15,7 +15,7 @@ export class PlansRepository implements IPlansRepository {
       where: includeInactive ? {} : { isActive: true },
       include: {
         subscriptions: {
-          where: { status: 'ACTIVE' },
+          where: { status: { not: 'EXPIRED' } },
         },
       },
       orderBy: [{ monthlyPrice: { sort: 'asc', nulls: 'last' } }, { annualPrice: { sort: 'asc', nulls: 'last' } }],
@@ -27,7 +27,7 @@ export class PlansRepository implements IPlansRepository {
       where: { id },
       include: {
         subscriptions: {
-          where: { status: 'ACTIVE' },
+          where: { status: { not: 'EXPIRED' } },
         },
       },
     });
@@ -38,7 +38,7 @@ export class PlansRepository implements IPlansRepository {
       where: { slug },
       include: {
         subscriptions: {
-          where: { status: 'ACTIVE' },
+          where: { status: { not: 'EXPIRED' } },
         },
       },
     });

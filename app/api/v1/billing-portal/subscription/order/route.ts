@@ -2,6 +2,7 @@ import { prisma } from '@/server/db/ops-prisma';
 import { redis } from '@/server/lib/redis';
 import { verifyJwt, type BillingHandoffPayload } from '@/server/utils/jwt';
 import { env } from '@/server/config/env';
+import { handoffSecret } from '@/server/features/invoices/handoff-secret';
 import { generateUlid } from '@/server/utils/ulid';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
@@ -13,9 +14,11 @@ import {
   resolvePlanCyclePrice,
   periodMonthsForCycle,
   isValidBillingCycle,
+  cycleLabel,
   type BillingCycleChoice,
 } from '@/lib/pricing/subscriptionPricing';
 import { errorMessage } from '@/lib/errors';
+import { canBuyPlan } from '@/server/features/plans/can-buy-plan';
 
 // Short-lived per org+plan+cycle lock so a double-click, two open tabs, or a
 // retried request can't race two concurrent calls past the active-subscription
@@ -40,10 +43,13 @@ export async function POST(req: Request) {
     }
 
     if (!isValidBillingCycle(billingCycle)) {
-      return errorResponse('billingCycle must be MONTHLY or ANNUAL', 'VALIDATION_ERROR', null, 400);
+      return errorResponse('billingCycle must be MONTHLY, HALF_YEARLY or ANNUAL', 'VALIDATION_ERROR', null, 400);
     }
 
-    const secret = env.BILLING_HANDOFF_SECRET;
+    const secret = handoffSecret();
+    if (!secret) {
+      return errorResponse('Billing is not available right now. Please contact support.', 'GATEWAY_NOT_CONFIGURED', null, 503);
+    }
     let payload: BillingHandoffPayload;
     try {
       payload = verifyJwt(token, secret);
@@ -70,7 +76,11 @@ export async function POST(req: Request) {
       where: { slug: planSlug },
     });
 
-    if (!plan || !plan.isActive) {
+    const ownSubscription = await prisma.organizationSubscription.findUnique({
+      where: { organizationId },
+      select: { planId: true },
+    });
+    if (!plan || !canBuyPlan(plan, organizationId, ownSubscription?.planId)) {
       return errorResponse('Target plan not found or inactive', 'NOT_FOUND', null, 404);
     }
 
@@ -92,8 +102,10 @@ export async function POST(req: Request) {
       baseAmount = resolvePlanCyclePrice(
         {
           allowsMonthly: plan.allowsMonthly,
+          allowsHalfYearly: plan.allowsHalfYearly,
           allowsAnnual: plan.allowsAnnual,
           monthlyPrice: plan.monthlyPrice ? Number(plan.monthlyPrice) : null,
+          halfYearlyPrice: plan.halfYearlyPrice ? Number(plan.halfYearlyPrice) : null,
           annualPrice: plan.annualPrice ? Number(plan.annualPrice) : null,
         },
         billingCycle
@@ -124,7 +136,7 @@ export async function POST(req: Request) {
       currentSub!.billingCycle === billingCycle
     ) {
       return errorResponse(
-        `You already have an active ${plan.name} (${billingCycle === 'ANNUAL' ? 'annual' : 'monthly'}) subscription until ${currentSub!.currentPeriodEnd.toISOString().slice(0, 10)}.`,
+        `You already have an active ${plan.name} (${cycleLabel(billingCycle).toLowerCase()}) subscription until ${currentSub!.currentPeriodEnd.toISOString().slice(0, 10)}.`,
         'ALREADY_SUBSCRIBED',
         null,
         409
@@ -157,8 +169,6 @@ export async function POST(req: Request) {
           currentPeriodEnd: currentSub!.currentPeriodEnd,
           billingCycle: currentSub!.billingCycle as BillingCycleChoice,
           lastPaidBaseAmount: lastPaidPayment?.baseAmount != null ? Number(lastPaidPayment.baseAmount) : null,
-          planMonthlyPrice: plan.monthlyPrice ? Number(plan.monthlyPrice) : null,
-          planAnnualPrice: plan.annualPrice ? Number(plan.annualPrice) : null,
         },
         now
       );

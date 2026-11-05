@@ -5,10 +5,20 @@
  * total and the charged total can never drift apart.
  */
 
-export type BillingCycleChoice = 'MONTHLY' | 'ANNUAL';
+export type BillingCycleChoice = 'MONTHLY' | 'HALF_YEARLY' | 'ANNUAL';
 
-const GATEWAY_FEE_RATE = 0.02;
-const GST_ON_GATEWAY_FEE_RATE = 0.18;
+const CYCLE_LABELS: Record<string, { label: string; term: string }> = {
+  MONTHLY: { label: 'Monthly', term: '1 month' },
+  HALF_YEARLY: { label: 'Every 6 months', term: '6 months' },
+  ANNUAL: { label: 'Yearly', term: '1 year' },
+};
+
+/** "Monthly", "Every 6 months", "Yearly": one wording for every screen and email. */
+export const cycleLabel = (cycle: string) => CYCLE_LABELS[cycle]?.label ?? 'Contract';
+/** "1 month", "6 months", "1 year", as printed after the plan name on an invoice. */
+export const cycleTerm = (cycle: string) => CYCLE_LABELS[cycle]?.term ?? 'contract';
+
+const GST_RATE = 0.18;
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -22,27 +32,25 @@ export interface PricingBreakdown {
 }
 
 /**
- * gatewayFee = 2% of baseAmount
- * gst        = 18% of gatewayFee (not of baseAmount)
- * total      = baseAmount + gatewayFee + gst
+ * Plan prices are ex-GST: total = base + 18% GST. The gateway fee is ours to absorb, so it's 0
+ * on new payments and only ever non-zero on old receipts.
  */
 export function calculateSubscriptionPricing(baseAmount: number): PricingBreakdown {
-  const gatewayFeeAmount = round2(baseAmount * GATEWAY_FEE_RATE);
-  const gstAmount = round2(gatewayFeeAmount * GST_ON_GATEWAY_FEE_RATE);
-  const totalAmount = round2(baseAmount + gatewayFeeAmount + gstAmount);
-
+  const gstAmount = round2(baseAmount * GST_RATE);
   return {
     baseAmount: round2(baseAmount),
-    gatewayFeeAmount,
+    gatewayFeeAmount: 0,
     gstAmount,
-    totalAmount,
+    totalAmount: round2(baseAmount + gstAmount),
   };
 }
 
 export interface PlanCyclePricing {
   allowsMonthly: boolean;
+  allowsHalfYearly?: boolean;
   allowsAnnual: boolean;
   monthlyPrice: number | null;
+  halfYearlyPrice?: number | null;
   annualPrice: number | null;
 }
 
@@ -59,23 +67,31 @@ export function resolvePlanCyclePrice(plan: PlanCyclePricing, cycle: BillingCycl
     return plan.monthlyPrice;
   }
 
+  if (cycle === 'HALF_YEARLY') {
+    if (!plan.allowsHalfYearly || plan.halfYearlyPrice == null) {
+      throw new Error('This plan does not offer 6-month billing.');
+    }
+    return plan.halfYearlyPrice;
+  }
+
   if (!plan.allowsAnnual || plan.annualPrice == null) {
     throw new Error('This plan does not offer annual billing.');
   }
   return plan.annualPrice;
 }
 
-export function periodMonthsForCycle(cycle: BillingCycleChoice): number {
-  return cycle === 'ANNUAL' ? 12 : 1;
+export function periodMonthsForCycle(cycle: string): number {
+  return cycle === 'ANNUAL' ? 12 : cycle === 'HALF_YEARLY' ? 6 : 1;
 }
 
 export function isValidBillingCycle(value: unknown): value is BillingCycleChoice {
-  return value === 'MONTHLY' || value === 'ANNUAL';
+  return value === 'MONTHLY' || value === 'HALF_YEARLY' || value === 'ANNUAL';
 }
 
 export function availableCyclesForPlan(plan: PlanCyclePricing): BillingCycleChoice[] {
   const cycles: BillingCycleChoice[] = [];
   if (plan.allowsMonthly && plan.monthlyPrice != null) cycles.push('MONTHLY');
+  if (plan.allowsHalfYearly && plan.halfYearlyPrice != null) cycles.push('HALF_YEARLY');
   if (plan.allowsAnnual && plan.annualPrice != null) cycles.push('ANNUAL');
   return cycles;
 }
@@ -84,11 +100,11 @@ export interface CurrentSubscriptionForProration {
   currentPeriodStart: Date | string;
   currentPeriodEnd: Date | string;
   billingCycle: BillingCycleChoice;
-  /** Most recent PAID OpsPayment.baseAmount for the current subscription, if one exists. */
+  /**
+   * What was actually paid for the current period: the most recent PAID OpsPayment.baseAmount.
+   * Null when nothing was paid (Free, complimentary, or set up by ops), and then there's nothing to credit.
+   */
   lastPaidBaseAmount: number | null;
-  /** Fallback when no payment row is found (e.g. an ops-admin-assigned subscription). */
-  planMonthlyPrice: number | null;
-  planAnnualPrice: number | null;
 }
 
 export interface ProrationResult {
@@ -121,10 +137,8 @@ export function calculateProratedBase(
     return { proratedBase: round2(newPlanBaseAmount), creditApplied: 0 };
   }
 
-  const currentPlanValue =
-    current.lastPaidBaseAmount != null
-      ? current.lastPaidBaseAmount
-      : (current.billingCycle === 'ANNUAL' ? current.planAnnualPrice : current.planMonthlyPrice) ?? 0;
+  // Only money actually paid is credited. Crediting the list price let a Free org knock a month off its first paid plan.
+  const currentPlanValue = current.lastPaidBaseAmount ?? 0;
 
   const remainingFraction = Math.min(1, remainingMs / totalMs);
   const unusedCredit = round2(currentPlanValue * remainingFraction);

@@ -14,14 +14,33 @@ export type LimitField =
   | 'maxContestsPerCycle'
   | 'maxParticipantsPerContest'
   | 'maxQuestionsPerContest'
-  | 'maxOrgMembers';
+  | 'maxOrgMembers'
+  | 'maxLearners'
+  | 'maxCandidatesPerMonth'
+  | 'aiCreditsPerMonth';
 
 export const LIMIT_FIELDS: readonly LimitField[] = [
   'maxContestsPerCycle',
   'maxParticipantsPerContest',
   'maxQuestionsPerContest',
   'maxOrgMembers',
+  'maxLearners',
+  'maxCandidatesPerMonth',
+  'aiCreditsPerMonth',
 ] as const;
+
+/** Key in the main app's cache -> plan column, which is also the override field name. */
+export const PLAN_FEATURES = {
+  proctoring: 'featureProctoring',
+  certBranding: 'featureCertBranding',
+  prioritySupport: 'featurePrioritySupport',
+  analyticsExport: 'featureAnalyticsExport',
+  customDomain: 'featureCustomDomain',
+  learnerGroups: 'featureLearnerGroups',
+  gradebook: 'featureGradebook',
+  ambassadorCampaigns: 'featureAmbassadorCampaigns',
+  manualEmails: 'featureManualEmails',
+} as const;
 
 export type OverrideMode = 'ADDITIVE' | 'ABSOLUTE';
 

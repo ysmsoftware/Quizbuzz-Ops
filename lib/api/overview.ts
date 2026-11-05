@@ -97,7 +97,7 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     id: org.id,
     name: org.name,
     slug: org.slug,
-    planId: org.planSlug ?? 'starter',
+    planId: org.planSlug ?? 'free',
     logoUrl: org.logoUrl || orgLogoFallback(org.name),
     createdAt: org.createdAt,
   }));

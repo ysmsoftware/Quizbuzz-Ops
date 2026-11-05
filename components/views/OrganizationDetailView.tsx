@@ -6,7 +6,7 @@ import { useOrganizationDetail } from '@/lib/hooks/useOrganizations';
 import { usePlans } from '@/lib/hooks/usePlans';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
-import { Globe, Users, Trophy, User, CreditCard, Notebook, Layers, Landmark, GraduationCap, ToggleRight, type LucideIcon } from 'lucide-react';
+import { Globe, Users, Trophy, User, CreditCard, FileText, Notebook, Layers, Landmark, GraduationCap, ToggleRight, type LucideIcon } from 'lucide-react';
 
 import OrgDetailHeader from './organization-detail/OrgDetailHeader';
 import OrgOverviewTab from './organization-detail/tabs/OrgOverviewTab';
@@ -18,6 +18,7 @@ import OrgPayoutAccountTab from './organization-detail/tabs/OrgPayoutAccountTab'
 import OrgNotesTab from './organization-detail/tabs/OrgNotesTab';
 import OrgInstitutionTab from './organization-detail/tabs/OrgInstitutionTab';
 import OrgFeaturesTab from './organization-detail/tabs/OrgFeaturesTab';
+import OrgInvoicesTab from './invoices/OrgInvoicesTab';
 import OrganizationSubscriptionTab from './OrganizationSubscriptionTab';
 
 import OrgEditModal, { type OrgEditFields } from './organization-detail/modals/OrgEditModal';
@@ -32,7 +33,7 @@ interface DetailViewProps {
   onBack?: () => void;
 }
 
-type DetailTab = 'overview' | 'members' | 'contests' | 'participants' | 'institution' | 'features' | 'payments' | 'payout_account' | 'notes' | 'subscription';
+type DetailTab = 'overview' | 'members' | 'contests' | 'participants' | 'institution' | 'features' | 'payments' | 'invoices' | 'payout_account' | 'notes' | 'subscription';
 
 export default function OrganizationDetailView({ orgId, onBack }: DetailViewProps) {
   const router = useRouter();
@@ -201,6 +202,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
     { id: 'institution', label: 'Institution', icon: GraduationCap },
     { id: 'features', label: 'Features', icon: ToggleRight },
     { id: 'payments', label: 'Payments', icon: CreditCard },
+    { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'payout_account', label: 'Payout Account', icon: Landmark },
     { id: 'notes', label: 'Support Notes', icon: Notebook },
     { id: 'subscription', label: 'Subscription', icon: Layers },
@@ -289,6 +291,8 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
             resendingReceiptPaymentId={resendingReceiptPaymentId}
           />
         )}
+
+        {activeTab === 'invoices' && <OrgInvoicesTab orgId={organization.id} role={admin?.role} />}
 
         {activeTab === 'payout_account' && (
           <OrgPayoutAccountTab

@@ -22,11 +22,68 @@ enum SubscriptionStatus {
   // Distinct from CANCELLED (an explicit admin/org action) — set only by
   // the nightly subscription-reconciliation job. See subscription-reconciliation.job.ts.
   EXPIRED
+  // Period ended and grace ran out, not yet dropped to Free limits: nothing new
+  // can be created, running work continues. See server/features/subscriptions/access-dates.ts.
+  RESTRICTED
+}
+
+enum PlanKind {
+  // The default plan every org starts on. Never lapses.
+  FREE
+  STANDARD
+  // Set up by ops for one customer, never on sale.
+  CUSTOM
+}
+
+enum PlanAudience {
+  ORGANIZER
+  EDUCATION
+  BUSINESS
 }
 
 enum BillingCycle {
   MONTHLY
   ANNUAL
+  HALF_YEARLY
+  // A contract with its own end date. periodMonths is approximate.
+  CUSTOM
+}
+
+// How the money reaches us. Enforcement never looks at this: only at dates.
+enum CollectionMethod {
+  PAY_ONLINE
+  OFFLINE
+  COMPLIMENTARY
+}
+
+enum InvoiceStatus {
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+  WRITTEN_OFF
+}
+
+// ACCESS_NOW: usable from issue, restricted if unpaid past due + grace. ON_PAYMENT: nothing changes until paid.
+enum InvoiceAccessMode {
+  ACCESS_NOW
+  ON_PAYMENT
+}
+
+enum PaymentSource {
+  RAZORPAY_ORDER
+  RAZORPAY_LINK
+  BANK_TRANSFER
+  CHEQUE
+  UPI_DIRECT
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  WON
+  LOST
 }
 
 enum AuditTargetType {
@@ -42,6 +99,7 @@ enum AuditTargetType {
   AMBASSADOR_TYPE
   COLLEGE
   APP_SETTINGS
+  INVOICE
 }
 
 enum OpsPaymentStatus {
@@ -182,18 +240,39 @@ model SubscriptionPlan {
   monthlyPrice  Decimal?     @db.Decimal(10, 2)
   annualPrice   Decimal?     @db.Decimal(10, 2)
 
+  // Sold at this price at 6 months. Selling it at checkout comes with the owner Billing page.
+  allowsHalfYearly Boolean   @default(false)
+  halfYearlyPrice  Decimal?  @db.Decimal(10, 2)
+
   isActive      Boolean      @default(true)
+  // Offered to new customers. isActive stays true on a retired version so
+  // existing subscribers can stay on it.
+  isSellable    Boolean      @default(false)
+  kind          PlanKind     @default(STANDARD)
+  audience      PlanAudience?
+  // Private to this one org when set: never listed, only they can buy it.
+  organizationId String?
 
   maxContestsPerCycle       Int?
   maxParticipantsPerContest Int?
   maxQuestionsPerContest    Int?
   maxOrgMembers             Int?
+  // Null means unlimited, 0 means none, same as the limits above.
+  maxLearners               Int?
+  maxCandidatesPerMonth     Int?
+  aiCreditsPerMonth         Int?
+  // Published to the main app. Payouts start reading it with per-contest commission.
+  commissionPercent         Decimal? @db.Decimal(5, 2)
 
   featureProctoring          Boolean @default(false)
   featureCertBranding        Boolean @default(false)
   featurePrioritySupport     Boolean @default(false)
   featureAnalyticsExport     Boolean @default(false)
   featureCustomDomain        Boolean @default(false)
+  featureLearnerGroups       Boolean @default(false)
+  featureGradebook           Boolean @default(false)
+  featureAmbassadorCampaigns Boolean @default(false)
+  featureManualEmails        Boolean @default(false)
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -223,6 +302,15 @@ model OrganizationSubscription {
   // subscription becomes eligible for a fresh reminder automatically —
   // no explicit reset needed on assignPlan/changePlan.
   renewalReminderSentAt DateTime?
+  // Days after currentPeriodEnd before the org is restricted. Per org, so a contract can differ.
+  graceDays          Int                @default(7)
+  collectionMethod   CollectionMethod   @default(PAY_ONLINE)
+  contractStart      DateTime?
+  contractEnd        DateTime?
+  poNumber           String?
+  contractNotes      String?
+  // The smallest days-before-end reminder already sent (60, 30, 7).
+  contractReminderDays Int?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -481,7 +569,12 @@ enum OpsMessageTemplate {
   // on-demand by the resend-receipt admin action.
   BILLING_RECEIPT
   BILLING_PAYMENT_FAILED
-  // No SUBSCRIPTION_PAST_DUE: this system has no auto-renewal/card-on-file —
+  SUBSCRIPTION_PAST_DUE
+  SUBSCRIPTION_RESTRICTED
+  INVOICE_ISSUED
+  INVOICE_REMINDER
+  CONTRACT_ENDING
+  // This system has no auto-renewal/card-on-file yet —
   // every purchase is a manual, advance, one-time charge for a fixed period.
   // There is no "we tried to charge you and it failed" state to notify
   // about; SUBSCRIPTION_RENEWAL_REMINDER (before) and SUBSCRIPTION_EXPIRED
@@ -575,13 +668,177 @@ model OpsPayment {
   refundedAt        DateTime?
   refundReason      String?
   refundedById      String?
+
+  invoiceId         String?
+  invoice           Invoice?         @relation(fields: [invoiceId], references: [id])
+  source            PaymentSource    @default(RAZORPAY_ORDER)
+  // UTR, cheque number or similar. Null for Razorpay payments, which have their own id.
+  reference         String?
+  // Tax the customer deducted and paid to the government for us. Settles the invoice alongside `amount`, which is the cash received.
+  tdsAmount         Decimal?         @db.Decimal(10, 2)
+  receivedAt        DateTime?
+  recordedById      String?
+  notes             String?
+  voidedAt          DateTime?
+  voidedById        String?
+  voidReason        String?
+
+  // Comes from BillingSequence. Null only on payments from before receipts existed.
+  receiptNumber     String?          @unique
+  proof             PaymentProof?
+
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
   @@index([organizationId])
   @@index([status, createdAt])
   @@index([planId])
+  @@index([invoiceId])
   @@map("ops_payments")
+}
+
+// Own table so listing payments never loads file bytes.
+// ponytail: stored in Postgres because ops has no object storage. Volume is a few files a month; move to S3 if that changes.
+model PaymentProof {
+  paymentId   String     @id
+  fileName    String
+  contentType String
+  data        Bytes
+  createdAt   DateTime   @default(now())
+
+  payment     OpsPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("payment_proofs")
+}
+
+model Invoice {
+  id               String            @id
+  organizationId   String
+  organizationName String
+  // From BillingSequence, so it never repeats. Given at issue and never changes.
+  invoiceNumber    String            @unique
+
+  // Set when paying this invoice changes the plan. Null for an instalment or an extra charge.
+  planId           String?
+  billingCycle     BillingCycle?
+  periodMonths     Int?
+  periodStart      DateTime?
+  periodEnd        DateTime?
+
+  description      String
+  collectionMethod CollectionMethod
+  accessMode       InvoiceAccessMode @default(ON_PAYMENT)
+  // Set once the org has been given what this invoice is for. An unpaid invoice with this set can restrict the org.
+  accessGrantedAt  DateTime?
+
+  subtotal         Decimal           @db.Decimal(12, 2)
+  gstRate          Decimal           @db.Decimal(5, 2)
+  cgstAmount       Decimal           @db.Decimal(12, 2)
+  sgstAmount       Decimal           @db.Decimal(12, 2)
+  igstAmount       Decimal           @db.Decimal(12, 2)
+  total            Decimal           @db.Decimal(12, 2)
+  amountPaid       Decimal           @default(0) @db.Decimal(12, 2)
+  tdsAmount        Decimal           @default(0) @db.Decimal(12, 2)
+
+  dueAt            DateTime
+  status           InvoiceStatus     @default(ISSUED)
+  paidAt           DateTime?
+  closedReason     String?
+
+  // What was printed: an invoice must not change if the org or our details change later.
+  seller           Json
+  buyer            Json
+
+  razorpayLinkId   String?           @unique
+  razorpayLinkUrl  String?
+  razorpayLinkStatus String?
+
+  lastReminderDays Int?
+  createdById      String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  payments         OpsPayment[]
+
+  @@index([organizationId])
+  @@index([status, dueAt])
+  @@map("invoices")
+}
+
+// The one saved copy of each PDF. Ops and the organization both download this row, so they
+// always get identical files. Removed only when the document itself changes (void, new due date).
+// ponytail: in Postgres because ops has no object storage. About 340 KB each; move to S3 at thousands a year.
+model BillingDocument {
+  number    String   @id
+  kind      String
+  invoiceId String
+  paymentId String?
+  fileName  String
+  sha256    String
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("billing_documents")
+}
+
+model BillingSequence {
+  key  String @id
+  last Int    @default(0)
+
+  @@map("billing_sequences")
+}
+
+// One row: what's printed on invoices. Issuing is refused until it's filled in.
+model BillingSettings {
+  id            String   @id @default("billing_default")
+  legalName     String
+  gstin         String?
+  // Printed when set. Have your CA confirm the code.
+  sacCode       String?
+  address       String
+  state         String
+  email         String?
+  phone         String?
+  bankName      String?
+  accountName   String?
+  accountNumber String?
+  ifsc          String?
+  upiId         String?
+  invoicePrefix  String  @default("INV")
+  receiptPrefix  String  @default("REC")
+  updatedAt     DateTime @updatedAt
+
+  @@map("billing_settings")
+}
+
+model RazorpayWebhookEvent {
+  eventId     String    @id
+  type        String
+  payload     Json
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("razorpay_webhook_events")
+}
+
+model SalesLead {
+  id             String     @id
+  organizationId String?
+  name           String
+  email          String
+  phone          String?
+  organization   String?
+  message        String?
+  learners       Int?
+  source         String
+  status         LeadStatus @default(NEW)
+  notes          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status, createdAt])
+  @@map("sales_leads")
 }
 
 model PricingConfig {

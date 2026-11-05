@@ -60,6 +60,8 @@ export class BillingService implements IBillingService {
       if (!sub.plan) continue;
       if (sub.billingCycle === 'ANNUAL' && sub.plan.annualPrice != null) {
         mrr += Number(sub.plan.annualPrice) / 12;
+      } else if (sub.billingCycle === 'HALF_YEARLY' && sub.plan.halfYearlyPrice != null) {
+        mrr += Number(sub.plan.halfYearlyPrice) / 6;
       } else if (sub.plan.monthlyPrice != null) {
         mrr += Number(sub.plan.monthlyPrice);
       }

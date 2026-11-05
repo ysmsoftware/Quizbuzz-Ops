@@ -19,6 +19,7 @@ export type FlagStateReason =
   | 'not_granted' // OPT_IN flag, global on, but this org was never granted it
   | 'type_preset' // OPT_IN flag on by default for the org's type (no override set)
   | 'type_denied' // the org's type always turns this flag off in the main app
+  | 'plan_denied' // the org's subscription plan doesn't include it (main app's plan_enforcement is on)
   | 'global'; // GLOBAL flag following the global switch
 
 export interface EffectiveFlagState {

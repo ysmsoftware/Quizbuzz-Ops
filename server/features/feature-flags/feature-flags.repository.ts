@@ -32,6 +32,7 @@ export interface IFeatureFlagsRepository {
   getMainOverridesForOrg(organizationId: string): Promise<Array<MainOverrideRow & { key: string }>>;
   /** The org's type as the main app sees it (not set = INDIVIDUAL). */
   getMainOrgProfileType(organizationId: string): Promise<OrgProfileType>;
+  getMainOrgPlanFeatures(organizationId: string): Promise<Record<string, boolean> | null>;
   /** flagKey → organizations with an active, enabled, non-expired override. */
   countGrantedByFlag(): Promise<Map<string, number>>;
 }
@@ -142,6 +143,15 @@ export class FeatureFlagsRepository implements IFeatureFlagsRepository {
       `SELECT key, "organizationId", "isEnabled", "expiresAt" FROM organization_feature_flag_overrides WHERE "organizationId" = $1`,
       [organizationId]
     );
+  }
+
+  /** The plan's feature switches as the main app sees them. Null: no cache yet, so Free applies. */
+  async getMainOrgPlanFeatures(organizationId: string): Promise<Record<string, boolean> | null> {
+    const rows = await queryMainDb<{ cache: { features?: Record<string, boolean> } | null }>(
+      `SELECT "planLimitsCache" AS cache FROM organizations WHERE id = $1`,
+      [organizationId],
+    );
+    return rows[0]?.cache ? (rows[0].cache.features ?? {}) : null;
   }
 
   async getMainOrgProfileType(organizationId: string): Promise<OrgProfileType> {

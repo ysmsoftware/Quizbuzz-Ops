@@ -31,6 +31,8 @@ import {
   ImageIcon,
   CreditCard,
   type LucideIcon,
+  FileText,
+  Inbox,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { errorMessage } from '@/lib/errors';
@@ -58,6 +60,9 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'overview', group: 'Overview', label: 'Overview', phase: 'phase 1', href: '/dashboard', icon: LayoutDashboard },
   { id: 'organizations', group: 'Customers', label: 'Organizations', phase: 'phase 1', href: '/dashboard/organizations', icon: Building2 },
   { id: 'plans', group: 'Revenue', label: 'Subscription Plans', phase: 'phase 2', href: '/dashboard/plans', icon: Sparkles },
+  { id: 'invoices', group: 'Revenue', label: 'Invoices', phase: 'phase 2', href: '/dashboard/invoices', icon: FileText },
+  { id: 'billing-settings', group: 'Revenue', label: 'Billing Settings', phase: 'phase 2', href: '/dashboard/billing-settings', icon: Receipt },
+  { id: 'leads', group: 'Customers', label: 'Leads', phase: 'phase 2', href: '/dashboard/leads', icon: Inbox },
   { id: 'billing', group: 'Revenue', label: 'Billing & Revenue', phase: 'phase 2', href: '/dashboard/billing', icon: Receipt },
   { id: 'payments', group: 'Revenue', label: 'Payments', phase: 'phase 2', href: '/dashboard/payments', icon: CreditCard },
   { id: 'messaging', group: 'Customers', label: 'Messaging', phase: 'phase 2', href: '/dashboard/messaging', icon: MessagesSquare },

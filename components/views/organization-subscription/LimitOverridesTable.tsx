@@ -12,10 +12,22 @@ interface LimitOverridesTableProps {
 }
 
 const limitLabels: Record<string, string> = {
-  maxContestsPerCycle: 'Max Quizzes per Period',
+  maxContestsPerCycle: 'Max Quizzes per Month',
   maxParticipantsPerContest: 'Max Participants per Quiz',
   maxQuestionsPerContest: 'Max Questions per Quiz',
   maxOrgMembers: 'Max Team Members',
+  maxLearners: 'Max Learners',
+  maxCandidatesPerMonth: 'Max Candidates per Month',
+  aiCreditsPerMonth: 'AI Credits per Month',
+  featureProctoring: 'Webcam Proctoring',
+  featureCertBranding: 'Certificate Branding',
+  featureAnalyticsExport: 'CSV Export',
+  featureLearnerGroups: 'Learner Groups',
+  featureGradebook: 'Gradebook',
+  featureAmbassadorCampaigns: 'Ambassador Campaigns',
+  featureManualEmails: 'Broadcast Emails',
+  featureCustomDomain: 'Custom Domain',
+  featurePrioritySupport: 'Priority Support',
 };
 
 export default function LimitOverridesTable({
@@ -67,7 +79,9 @@ export default function LimitOverridesTable({
                     {limitLabels[ov.field] || ov.field}
                   </td>
                   <td className="py-2.5 px-3 font-mono font-bold text-amber-600">
-                    {ov.value === null || ov.value === undefined
+                    {ov.field.startsWith('feature')
+                      ? (ov.value ? 'On' : 'Off')
+                      : ov.value === null || ov.value === undefined
                       ? 'Unlimited'
                       : ov.mode === 'ADDITIVE'
                         ? `+${ov.value}`

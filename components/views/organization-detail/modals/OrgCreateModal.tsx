@@ -25,7 +25,7 @@ const labelClass = 'text-[10px] font-bold uppercase tracking-wider text-muted-fo
 
 /** Onboard a tenant from Ops: creates the organization and its owner account, then emails the owner. */
 export default function OrgCreateModal({ isOpen, onClose, plans, isCreating, onSubmit }: OrgCreateModalProps) {
-  const starterId = useMemo(() => plans.find((p) => p.slug === 'starter')?.id ?? '', [plans]);
+  const starterId = useMemo(() => plans.find((p) => p.slug === 'free')?.id ?? '', [plans]);
   const [form, setForm] = useState({ name: '', slug: '', ownerName: '', ownerEmail: '', planId: '', profileType: '' });
   const [slugTouched, setSlugTouched] = useState(false);
 

@@ -140,6 +140,16 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     accessModel: 'GLOBAL', // on for everyone; override carves out an exception
   },
   {
+    key: 'plan_enforcement',
+    label: 'Enforce Subscription Plans',
+    description:
+      'On: plan limits, plan features and restriction after a lapse are enforced. Off: nothing is refused, and each would-be refusal is logged as WOULD_BLOCK in the plan usage log. This is also the kill switch.',
+    defaultEnabled: false,
+    severity: FeatureFlagSeverity.WARNING,
+    supportsOrgOverride: true,
+    accessModel: 'GLOBAL',
+  },
+  {
     key: 'razorpay_gateway_active',
     label: 'Razorpay Payment Gateway',
     description: 'Accept live candidate registration payments via Razorpay merchant portal.',

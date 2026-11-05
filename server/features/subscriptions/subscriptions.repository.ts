@@ -31,13 +31,17 @@ export interface ISubscriptionsRepository {
     currentPeriodEnd: Date;
   }, tx?: PrismaOrTx): Promise<OrganizationSubscription>;
   linkPayment(paymentId: string, subscriptionId: string, tx?: PrismaOrTx): Promise<void>;
-  markExpired(organizationId: string): Promise<OrganizationSubscription>;
   setRenewalReminderSent(organizationId: string, at: Date): Promise<void>;
   updateSubscriptionPlan(
     organizationId: string,
     planId: string,
     billingCycle: BillingCycle,
-    periodMonths: number
+    periodMonths: number,
+    fresh?: { currentPeriodStart: Date; currentPeriodEnd: Date; status: SubscriptionStatus }
+  ): Promise<OrganizationSubscription>;
+  updateAccess(
+    organizationId: string,
+    data: Prisma.OrganizationSubscriptionUpdateInput
   ): Promise<OrganizationSubscription>;
   createChangeLog(params: {
     id: string;
@@ -131,14 +135,6 @@ export class SubscriptionsRepository implements ISubscriptionsRepository {
     });
   }
 
-  /** Sets status EXPIRED — called only by the nightly reconciliation job for subs whose currentPeriodEnd has passed. */
-  async markExpired(organizationId: string): Promise<OrganizationSubscription> {
-    return prisma.organizationSubscription.update({
-      where: { organizationId },
-      data: { status: 'EXPIRED' },
-    });
-  }
-
   /**
    * Records when SUBSCRIPTION_RENEWAL_REMINDER was sent for the CURRENT
    * period — see the schema comment on renewalReminderSentAt for why no
@@ -155,7 +151,8 @@ export class SubscriptionsRepository implements ISubscriptionsRepository {
     organizationId: string,
     planId: string,
     billingCycle: BillingCycle,
-    periodMonths: number
+    periodMonths: number,
+    fresh?: { currentPeriodStart: Date; currentPeriodEnd: Date; status: SubscriptionStatus }
   ): Promise<OrganizationSubscription> {
     return prisma.organizationSubscription.update({
       where: { organizationId },
@@ -163,9 +160,17 @@ export class SubscriptionsRepository implements ISubscriptionsRepository {
         planId,
         billingCycle,
         periodMonths,
+        ...fresh,
         updatedAt: new Date(),
       },
     });
+  }
+
+  async updateAccess(
+    organizationId: string,
+    data: Prisma.OrganizationSubscriptionUpdateInput
+  ): Promise<OrganizationSubscription> {
+    return prisma.organizationSubscription.update({ where: { organizationId }, data });
   }
 
   async createChangeLog(params: {
@@ -225,7 +230,7 @@ export class SubscriptionsRepository implements ISubscriptionsRepository {
 
   async findActiveSubscriptionsByPlanId(planId: string): Promise<OrganizationSubscription[]> {
     return prisma.organizationSubscription.findMany({
-      where: { planId, status: 'ACTIVE' },
+      where: { planId, status: { not: 'EXPIRED' } },
     });
   }
 }

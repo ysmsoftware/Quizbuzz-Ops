@@ -45,7 +45,7 @@ export const createOrgSchema = z.object({
   slug: z.string().trim().toLowerCase().max(60).regex(SLUG_PATTERN, 'Slug may contain lowercase letters, numbers and single hyphens').optional(),
   ownerName: z.string().trim().min(2, 'Owner name is required').max(100),
   ownerEmail: z.string().trim().toLowerCase().email('A valid owner email is required'),
-  // Ops subscription plan id; defaults to the free "starter" plan when omitted.
+  // Ops subscription plan id; defaults to the Free plan when omitted.
   planId: z.string().trim().optional(),
   // Optional: the owner then sees it read-only in onboarding instead of choosing.
   profileType: z.enum(ORG_PROFILE_TYPE_VALUES).optional(),

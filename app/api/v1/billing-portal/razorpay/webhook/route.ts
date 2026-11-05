@@ -2,12 +2,52 @@ import crypto from 'crypto';
 import { prisma } from '@/server/db/ops-prisma';
 import { env } from '@/server/config/env';
 import SubscriptionsService from '@/server/features/subscriptions/subscriptions.service';
+import { invoicesService } from '@/server/features/invoices/invoices.service';
+import { cycleTerm } from '@/lib/pricing/subscriptionPricing';
 import { orgOwnerNotifier } from '@/server/notifications/org-owner-notifier';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
 import { AuditTargetType, BillingCycle } from '@prisma/client';
 import { okResponse, errorResponse } from '@/server/http/envelope';
 
 const subscriptionsService = new SubscriptionsService();
+
+interface LinkAwareBody {
+  event?: string;
+  payload?: {
+    payment_link?: { entity?: { id?: string } };
+    payment?: { entity?: { id?: string; amount?: number } };
+  };
+}
+
+const WEBHOOK_ACTOR = { id: null, email: 'razorpay', name: 'Razorpay webhook', role: 'razorpay-webhook' };
+
+/** Razorpay can repeat an event. A failed attempt stays unprocessed, so its retry runs again. */
+async function handlePaymentLinkEvent(req: Request, rawBody: string, body: LinkAwareBody) {
+  const eventId = req.headers.get('x-razorpay-event-id');
+  if (eventId) {
+    const seen = await prisma.razorpayWebhookEvent.findUnique({ where: { eventId } });
+    if (seen?.processedAt) return okResponse(null, 'Already processed');
+    if (!seen) {
+      await prisma.razorpayWebhookEvent
+        .create({ data: { eventId, type: body.event ?? '', payload: JSON.parse(rawBody) } })
+        .catch((e: { code?: string }) => { if (e.code !== 'P2002') throw e; });
+    }
+  }
+
+  const linkId = body.payload?.payment_link?.entity?.id;
+  const payment = body.payload?.payment?.entity;
+  if (linkId) {
+    if ((body.event === 'payment_link.paid' || body.event === 'payment_link.partially_paid') && payment?.id && payment.amount) {
+      await invoicesService.applyLinkPayment(linkId, { id: payment.id, amountPaise: payment.amount }, WEBHOOK_ACTOR);
+      await invoicesService.setLinkStatus(linkId, body.event === 'payment_link.paid' ? 'paid' : 'partially_paid');
+    } else if (body.event === 'payment_link.expired' || body.event === 'payment_link.cancelled') {
+      await invoicesService.setLinkStatus(linkId, body.event.slice('payment_link.'.length));
+    }
+  }
+
+  if (eventId) await prisma.razorpayWebhookEvent.update({ where: { eventId }, data: { processedAt: new Date() } });
+  return okResponse(null, 'Event processed');
+}
 
 /**
  * Razorpay-only. This is the single source of truth for whether a payment
@@ -51,7 +91,7 @@ export async function POST(req: Request) {
       error_description?: string;
       notes?: { adminEmail?: string; adminName?: string };
     }
-    let body: { event?: string; payload?: { payment?: { entity?: RazorpayPaymentEntity } } };
+    let body: LinkAwareBody & { payload?: { payment?: { entity?: RazorpayPaymentEntity } } };
     try {
       body = JSON.parse(rawBody);
     } catch {
@@ -59,6 +99,11 @@ export async function POST(req: Request) {
     }
 
     const event = body.event;
+
+    if (event?.startsWith('payment_link.')) {
+      return await handlePaymentLinkEvent(req, rawBody, body);
+    }
+
     const paymentEntity = body.payload?.payment?.entity;
 
     if (!paymentEntity) {
@@ -135,6 +180,11 @@ export async function POST(req: Request) {
       }
 
       const billingCycle = (updatedPayment.billingCycle || 'MONTHLY') as BillingCycle;
+      const existingSub = await prisma.organizationSubscription.findUnique({ where: { organizationId: updatedPayment.organizationId } });
+      const lapsedRenewalStart =
+        existingSub?.planId === updatedPayment.planId && (existingSub?.status === 'PAST_DUE' || existingSub?.status === 'RESTRICTED')
+          ? existingSub.currentPeriodEnd
+          : undefined;
       // linkedPaymentId makes the subscription upsert + this payment's
       // subscriptionId backfill one atomic transaction — see the comment on
       // assignPlan() for why that matters on webhook retry.
@@ -143,7 +193,8 @@ export async function POST(req: Request) {
         updatedPayment.planId,
         actor,
         billingCycle,
-        undefined,
+        // Renewing the same plan during grace continues from the old end date, so paying late buys no free days.
+        lapsedRenewalStart,
         updatedPayment.id
       );
 
@@ -178,7 +229,14 @@ export async function POST(req: Request) {
         select: { name: true },
       });
       const planName = plan?.name || 'your plan';
+      const invoiceNumber = await invoicesService.recordOrderInvoice(updatedPayment, `QuizBuzz ${planName} plan, ${cycleTerm(billingCycle)}`).catch((err) => {
+        console.error(`Could not make an invoice for payment ${updatedPayment.id}:`, err);
+        return null;
+      });
+      const { receiptNumber } = await prisma.opsPayment.findUniqueOrThrow({ where: { id: updatedPayment.id }, select: { receiptNumber: true } });
       const receiptParams = {
+        invoiceNumber,
+        receiptNumber,
         planName,
         billingCycle,
         baseAmount: updatedPayment.baseAmount ? Number(updatedPayment.baseAmount) : 0,

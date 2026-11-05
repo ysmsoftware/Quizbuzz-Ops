@@ -11,7 +11,7 @@ import { z } from 'zod';
 export class OrganizationsController {
   constructor(
     private service: IOrganizationsService = new OrganizationsService(),
-    // Used only to give a newly created org its plan (the default is the free "starter" plan).
+    // Used only to give a newly created org its plan (the default is the Free plan).
     private subscriptions?: Pick<ISubscriptionsService, 'assignPlan'>,
     private findPlanId?: (slug: string) => Promise<string | null>
   ) {}
@@ -31,7 +31,7 @@ export class OrganizationsController {
     // Subscription tab. It must not turn a successful create into an error response.
     let planAssigned = false;
     try {
-      const planId = input.planId ?? (this.findPlanId ? await this.findPlanId('starter') : null);
+      const planId = input.planId ?? (this.findPlanId ? await this.findPlanId('free') : null);
       if (planId && this.subscriptions) {
         await this.subscriptions.assignPlan(created.id, planId, actor);
         planAssigned = true;

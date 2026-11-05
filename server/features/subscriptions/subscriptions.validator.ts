@@ -1,17 +1,17 @@
 import { z } from 'zod';
-import { LIMIT_FIELDS } from './effective-limits';
+import { LIMIT_FIELDS, PLAN_FEATURES } from './effective-limits';
 
 // Plan feature switches the entitlements sync reads back as booleans.
-const FEATURE_OVERRIDE_FIELDS = ['featureProctoring', 'featureCertBranding', 'featurePrioritySupport', 'featureAnalyticsExport', 'featureCustomDomain'];
+const FEATURE_OVERRIDE_FIELDS: string[] = Object.values(PLAN_FEATURES);
 
 export const assignPlanSchema = z.object({
   planId: z.string().min(1, 'Plan ID is required'),
-  billingCycle: z.enum(['MONTHLY', 'ANNUAL']).optional(),
+  billingCycle: z.enum(['MONTHLY', 'HALF_YEARLY', 'ANNUAL']).optional(),
 });
 
 export const changePlanSchema = z.object({
   planId: z.string().min(1, 'Plan ID is required'),
-  billingCycle: z.enum(['MONTHLY', 'ANNUAL']).optional(),
+  billingCycle: z.enum(['MONTHLY', 'HALF_YEARLY', 'ANNUAL']).optional(),
   reason: z.string().optional(),
 });
 
@@ -36,6 +36,18 @@ export const addOverrideSchema = z.object({
   }
 });
 
+export const updateAccessSchema = z.object({
+  currentPeriodEnd: z.string().datetime({ offset: true }).optional(),
+  graceDays: z.number().int().min(0).max(365).optional(),
+  contractStart: z.string().datetime({ offset: true }).nullable().optional(),
+  contractEnd: z.string().datetime({ offset: true }).nullable().optional(),
+  poNumber: z.string().trim().max(100).nullable().optional(),
+  contractNotes: z.string().trim().max(2000).nullable().optional(),
+  reason: z.string().trim().min(1, 'Reason is required'),
+}).refine((v) => Object.keys(v).some((k) => k !== 'reason' && v[k as keyof typeof v] !== undefined), {
+  message: 'Change at least one thing',
+});
+
 export const removeOverrideSchema = z.object({
   reason: z.string().optional(),
 });
@@ -43,4 +55,5 @@ export const removeOverrideSchema = z.object({
 export type AssignPlanInput = z.infer<typeof assignPlanSchema>;
 export type ChangePlanInput = z.infer<typeof changePlanSchema>;
 export type AddOverrideInput = z.infer<typeof addOverrideSchema>;
+export type UpdateAccessInput = z.infer<typeof updateAccessSchema>;
 export type RemoveOverrideInput = z.infer<typeof removeOverrideSchema>;

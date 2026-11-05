@@ -31,6 +31,8 @@ function describeState(f: OrgFeatureAccess): { badge: React.ReactNode; detail: s
       return { badge: <StatusBadge tone="danger">Off for everyone</StatusBadge>, detail: 'Switched off globally (kill switch). Any grant is ignored until the global switch is back on.' };
     case 'type_denied':
       return { badge: <StatusBadge tone="neutral">Not for this type</StatusBadge>, detail: "This organization's type never has it (for example, companies don't take registration fees). Change the type to allow it." };
+    case 'plan_denied':
+      return { badge: <StatusBadge tone="neutral">Not on their plan</StatusBadge>, detail: "The organization's subscription plan doesn't include it. Upgrade the plan, or add an override to grant it anyway." };
     case 'not_granted':
       return { badge: <StatusBadge tone="neutral">Not granted</StatusBadge>, detail: 'Opt-in feature this organization has not been granted.' };
     case 'override':

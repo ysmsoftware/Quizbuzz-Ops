@@ -17,10 +17,25 @@ interface AddOverrideModalProps {
 }
 
 const limitLabels: Record<LimitField, string> = {
-  maxContestsPerCycle: 'Max Quizzes per Period',
+  maxContestsPerCycle: 'Max Quizzes per Month',
   maxParticipantsPerContest: 'Max Participants per Quiz',
   maxQuestionsPerContest: 'Max Questions per Quiz',
   maxOrgMembers: 'Max Team Members',
+  maxLearners: 'Max Learners',
+  maxCandidatesPerMonth: 'Max Candidates per Month',
+  aiCreditsPerMonth: 'AI Credits per Month',
+};
+
+const featureLabels: Record<string, string> = {
+  featureProctoring: 'Webcam Proctoring',
+  featureCertBranding: 'Certificate Branding',
+  featureAnalyticsExport: 'CSV Export',
+  featureLearnerGroups: 'Learner Groups',
+  featureGradebook: 'Gradebook',
+  featureAmbassadorCampaigns: 'Ambassador Campaigns',
+  featureManualEmails: 'Broadcast Emails',
+  featureCustomDomain: 'Custom Domain',
+  featurePrioritySupport: 'Priority Support',
 };
 
 /** Pure preview of what this one override would resolve to, given the field's current effective value. Mirrors (for a single override) the same fold rule effective-limits.ts applies for all of them. */
@@ -29,8 +44,8 @@ function previewNewValue(
   mode: OverrideMode,
   enteredValue: number | null,
 ): number | null {
-  if (mode === 'ABSOLUTE') return enteredValue;
-  if (currentValue === null || enteredValue === null) return currentValue; // adding to/from "unlimited" stays unlimited
+  if (mode === 'ABSOLUTE' || enteredValue === null) return enteredValue; // "unlimited" always replaces the limit
+  if (currentValue === null) return null; // adding to unlimited stays unlimited
   return currentValue + enteredValue;
 }
 
@@ -41,7 +56,8 @@ export default function AddOverrideModal({
   isSubmitting,
   effectiveLimits,
 }: AddOverrideModalProps) {
-  const [field, setField] = useState<LimitField>('maxContestsPerCycle');
+  const [field, setField] = useState<string>('maxContestsPerCycle');
+  const [featureOn, setFeatureOn] = useState(true);
   const [mode, setMode] = useState<OverrideMode>('ADDITIVE');
   const [value, setValue] = useState('1');
   const [isUnlimited, setIsUnlimited] = useState(false);
@@ -50,7 +66,8 @@ export default function AddOverrideModal({
 
   if (!isOpen) return null;
 
-  const currentValue = effectiveLimits[field].value;
+  const isFeature = field in featureLabels;
+  const currentValue = isFeature ? null : effectiveLimits[field as LimitField].value;
   const enteredValue = isUnlimited ? null : parseInt(value, 10);
   const previewValue = previewNewValue(currentValue, mode, Number.isNaN(enteredValue as number) ? 0 : enteredValue);
 
@@ -59,8 +76,8 @@ export default function AddOverrideModal({
     if (!reason.trim()) return;
     await onSubmit({
       field,
-      value: enteredValue,
-      mode,
+      value: isFeature ? featureOn : enteredValue,
+      mode: isFeature || isUnlimited ? 'ABSOLUTE' : mode,
       reason,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       createdByAdminName: 'Super Admin',
@@ -91,15 +108,37 @@ export default function AddOverrideModal({
               <label className="block font-semibold text-foreground mb-1">Target Quota Field</label>
               <select
                 value={field}
-                onChange={(e) => setField(e.target.value as LimitField)}
+                onChange={(e) => setField(e.target.value)}
                 className="w-full px-3 py-2 rounded-md bg-background border border-input focus:ring-1 focus:ring-amber-500"
               >
-                {Object.entries(limitLabels).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
+                <optgroup label="Limits">
+                  {Object.entries(limitLabels).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Features">
+                  {Object.entries(featureLabels).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </optgroup>
               </select>
             </div>
 
+            {isFeature ? (
+              <div>
+                <label htmlFor="feature-state" className="block font-semibold text-foreground mb-1">For this organization</label>
+                <select
+                  id="feature-state"
+                  value={featureOn ? 'on' : 'off'}
+                  onChange={(e) => setFeatureOn(e.target.value === 'on')}
+                  className="w-full px-3 py-2 rounded-md bg-background border border-input focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="on">Turn on</option>
+                  <option value="off">Turn off</option>
+                </select>
+              </div>
+            ) : (
+            <>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -155,6 +194,8 @@ export default function AddOverrideModal({
                 New: <span className="font-semibold text-amber-600">{previewValue ?? 'Unlimited'}</span>
               </p>
             </div>
+            </>
+            )}
 
             <div>
               <label className="block font-semibold text-foreground mb-1">Reason for Authorization (Required)</label>

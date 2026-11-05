@@ -3,6 +3,7 @@ import { OpsMessageTemplate } from '@prisma/client';
 import { messagingConfig } from '../config/messaging.config';
 import { getEmailTemplate } from '../templates/email.templates';
 import { IMessageProvider } from './message-provider.interface';
+import { paymentAttachments } from '../features/invoices/payment-documents';
 
 export class EmailProvider implements IMessageProvider {
   private transporter: nodemailer.Transporter;
@@ -30,11 +31,20 @@ export class EmailProvider implements IMessageProvider {
 
     const { subject, html } = getEmailTemplate(template, params);
 
+    // A receipt email carries both documents. If they can't be built, the email still goes.
+    const attachments = template === 'BILLING_RECEIPT' && params.paymentId
+      ? await paymentAttachments(params.paymentId).catch((err) => {
+          console.error(`Could not attach documents for payment ${params.paymentId}:`, err);
+          return [];
+        })
+      : [];
+
     return this.transporter.sendMail({
       from: messagingConfig.smtp.from,
       to: destination,
       subject,
       html,
+      attachments,
     });
   }
 }

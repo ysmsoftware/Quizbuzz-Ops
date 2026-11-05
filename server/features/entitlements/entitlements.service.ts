@@ -1,5 +1,7 @@
 import { IEntitlementsRepository, EntitlementsRepository } from './entitlements.repository';
-import { computeEffectiveLimits, LIMIT_FIELDS } from '../subscriptions/effective-limits';
+import { computeEffectiveLimits, LIMIT_FIELDS, LimitField, PLAN_FEATURES } from '../subscriptions/effective-limits';
+import { computeAccessDates } from '../subscriptions/access-dates';
+import { oldestUnpaidDueAt } from '../subscriptions/access-input';
 
 export interface IEntitlementsService {
   syncOrgPlanLimitsCache(orgId: string): Promise<void>;
@@ -13,69 +15,53 @@ export class EntitlementsService implements IEntitlementsService {
 
     if (!sub || !sub.plan) return;
 
-    // Numeric plan limits (contests/cycle, participants/contest,
-    // questions/contest, org members): base value + stacked overrides,
-    // computed by the single shared fold — see effective-limits.ts.
+    // A lapsed org runs on the Free plan's limits. Ops' overrides still apply on top.
+    const expired = sub.status === 'EXPIRED';
+    const base = expired ? (await this.repo.findFreePlan()) ?? sub.plan : sub.plan;
+    const dates = expired
+      ? { restrictAt: null, downgradeAt: null }
+      : computeAccessDates({
+          kind: sub.plan.kind,
+          currentPeriodEnd: sub.currentPeriodEnd,
+          graceDays: sub.graceDays,
+          overdueInvoiceDueAt: await oldestUnpaidDueAt(orgId),
+          cancelled: sub.status === 'CANCELLED',
+        });
+
     const effective = computeEffectiveLimits(
-      {
-        maxContestsPerCycle: sub.plan.maxContestsPerCycle,
-        maxParticipantsPerContest: sub.plan.maxParticipantsPerContest,
-        maxQuestionsPerContest: sub.plan.maxQuestionsPerContest,
-        maxOrgMembers: sub.plan.maxOrgMembers,
-      },
+      Object.fromEntries(LIMIT_FIELDS.map((field) => [field, base[field]])) as Record<LimitField, number | null>,
       sub.overrides,
     );
 
-    // Feature flags are booleans (on/off), not stackable numbers — "last
-    // active override wins" is the correct semantic here, so this stays a
-    // simple map rather than going through the numeric fold above.
-    const featureOverrideMap = new Map<string, any>();
+    // Feature flags are on/off, not stackable numbers, so "last active override wins".
+    const featureOverrides = new Map<string, number | null>();
     for (const ov of sub.overrides) {
-      if (!LIMIT_FIELDS.includes(ov.field as any)) {
-        featureOverrideMap.set(ov.field, ov.value);
-      }
+      if (!LIMIT_FIELDS.includes(ov.field as LimitField)) featureOverrides.set(ov.field, ov.value);
     }
+    const features = Object.fromEntries(
+      Object.entries(PLAN_FEATURES).map(([key, column]) => [
+        key,
+        featureOverrides.has(column) ? Boolean(featureOverrides.get(column)) : Boolean(base[column]),
+      ]),
+    );
+    // Falling to Free never takes away an org's way to get its own data out.
+    if (expired) features.analyticsExport = true;
 
     const cachePayload = {
-      // Basic plan-choice + renewal info — read-only display data for the
-      // main app's Settings "Plan & Billing" tab. Not used for entitlement
-      // enforcement (the limits below are), so staleness between syncs is
-      // harmless: it only changes when a plan is assigned/changed/renewed,
-      // which is exactly when this function runs.
       billingCycle: sub.billingCycle,
       periodMonths: sub.periodMonths,
       currentPeriodStart: sub.currentPeriodStart.toISOString(),
       currentPeriodEnd: sub.currentPeriodEnd.toISOString(),
-      maxContestsPerCycle: effective.maxContestsPerCycle.value,
-      maxParticipantsPerContest: effective.maxParticipantsPerContest.value,
-      maxQuestionsPerContest: effective.maxQuestionsPerContest.value,
-      maxOrgMembers: effective.maxOrgMembers.value,
-      features: {
-        proctoring: featureOverrideMap.has('featureProctoring')
-          ? Boolean(featureOverrideMap.get('featureProctoring'))
-          : sub.plan.featureProctoring,
-        certBranding: featureOverrideMap.has('featureCertBranding')
-          ? Boolean(featureOverrideMap.get('featureCertBranding'))
-          : sub.plan.featureCertBranding,
-        prioritySupport: featureOverrideMap.has('featurePrioritySupport')
-          ? Boolean(featureOverrideMap.get('featurePrioritySupport'))
-          : sub.plan.featurePrioritySupport,
-        analyticsExport: featureOverrideMap.has('featureAnalyticsExport')
-          ? Boolean(featureOverrideMap.get('featureAnalyticsExport'))
-          : sub.plan.featureAnalyticsExport,
-        customDomain: featureOverrideMap.has('featureCustomDomain')
-          ? Boolean(featureOverrideMap.get('featureCustomDomain'))
-          : sub.plan.featureCustomDomain,
-      },
+      planKind: sub.plan.kind,
+      restrictAt: dates.restrictAt?.toISOString() ?? null,
+      downgradeAt: dates.downgradeAt?.toISOString() ?? null,
+      ...Object.fromEntries(LIMIT_FIELDS.map((field) => [field, effective[field].value])),
+      commissionPercent: base.commissionPercent != null ? Number(base.commissionPercent) : null,
+      features,
       computedAt: new Date().toISOString(),
     };
 
-    await this.repo.updateMainDbPlanLimitsCache(
-      orgId,
-      sub.plan.slug,
-      sub.status,
-      JSON.stringify(cachePayload)
-    );
+    await this.repo.updateMainDbPlanLimitsCache(orgId, sub.plan.slug, sub.status, JSON.stringify(cachePayload));
   }
 }
 export default EntitlementsService;

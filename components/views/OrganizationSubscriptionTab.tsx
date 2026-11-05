@@ -5,13 +5,14 @@ import { useSubscription } from '@/lib/hooks/useSubscription';
 import { usePlans } from '@/lib/hooks/usePlans';
 import { useToast } from '@/components/ui/Toast';
 import { Organization, SubscriptionOverride } from '@/lib/types';
-import { OrgPayment } from '@/lib/api/organizations';
+import { AccessUpdate, OrgPayment } from '@/lib/api/organizations';
 import CurrentPlanCard from './organization-subscription/CurrentPlanCard';
 import QuotaUsageGrid from './organization-subscription/QuotaUsageGrid';
 import LimitOverridesTable from './organization-subscription/LimitOverridesTable';
 import PlanChangeHistoryTable from './organization-subscription/PlanChangeHistoryTable';
 import ChangePlanModal from './organization-subscription/ChangePlanModal';
 import AddOverrideModal from './organization-subscription/AddOverrideModal';
+import AccessModal from './organization-subscription/AccessModal';
 import RevokeOverrideModal from './organization-subscription/RevokeOverrideModal';
 import { AlertTriangle, Plus } from 'lucide-react';
 import { errorMessage } from '@/lib/errors';
@@ -28,7 +29,9 @@ export default function OrganizationSubscriptionTab({
   payments,
 }: OrganizationSubscriptionTabProps) {
   const subscriptionPayments = (payments || []).filter((p) => p.source === 'subscription');
-  const { plans } = usePlans();
+  const { plans: allPlans } = usePlans();
+  // Another org's private plan is never an option here.
+  const plans = allPlans.filter((p) => !p.organizationId || p.organizationId === organization.id);
   const { toast } = useToast();
   const {
     subscription,
@@ -45,11 +48,14 @@ export default function OrganizationSubscriptionTab({
     isRemovingOverride,
     resendReminder,
     isResendingReminder,
+    updateAccess,
+    isUpdatingAccess,
   } = useSubscription(organization.id);
 
   // Modals
   const [isChangePlanOpen, setIsChangePlanOpen] = useState(false);
   const [isAddOverrideOpen, setIsAddOverrideOpen] = useState(false);
+  const [isAccessOpen, setIsAccessOpen] = useState(false);
   const [revokingOverrideId, setRevokingOverrideId] = useState<string | null>(null);
 
   if (isSubLoading) {
@@ -134,6 +140,16 @@ export default function OrganizationSubscriptionTab({
     }
   };
 
+  const handleAccessSubmit = async (input: AccessUpdate) => {
+    try {
+      await updateAccess(input);
+      toast('Access Updated', `Access dates updated for ${organization.name}.`, 'success');
+      setIsAccessOpen(false);
+    } catch (err) {
+      toast('Update Failed', errorMessage(err) || 'Could not update the access dates.', 'error');
+    }
+  };
+
   // Resend renewal reminder
   const handleResendReminder = async () => {
     try {
@@ -173,6 +189,7 @@ export default function OrganizationSubscriptionTab({
           subscription={subscription}
           currentPlan={currentPlan}
           onChangePlanClick={() => setIsChangePlanOpen(true)}
+          onAdjustAccessClick={() => setIsAccessOpen(true)}
           payments={subscriptionPayments}
           onResendReminder={handleResendReminder}
           isResendingReminder={isResendingReminder}
@@ -206,6 +223,15 @@ export default function OrganizationSubscriptionTab({
         currentPlanId={subscription.planId}
         isSubmitting={isChangingPlan}
       />
+
+      {isAccessOpen && (
+        <AccessModal
+          subscription={subscription}
+          onClose={() => setIsAccessOpen(false)}
+          onSubmit={handleAccessSubmit}
+          isSubmitting={isUpdatingAccess}
+        />
+      )}
 
       <AddOverrideModal
         isOpen={isAddOverrideOpen}

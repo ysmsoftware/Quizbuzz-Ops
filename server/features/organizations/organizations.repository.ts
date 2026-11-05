@@ -1,3 +1,4 @@
+import { cycleLabel as cycleLabelOf } from '../../../lib/pricing/subscriptionPricing';
 import type { OrgProfileType } from '../../../lib/constants/org-profile-types';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -18,7 +19,7 @@ export interface OrgListParams {
   limit: number;
   search?: string;
   status: 'all' | 'active' | 'suspended' | 'deleted';
-  /** Main-app plan slug (organizations."planSlug"); 'starter' also matches orgs with no plan recorded. */
+  /** Main-app plan slug (organizations."planSlug"); 'free' also matches the old 'starter' and orgs with no plan recorded. */
   planSlug?: string;
   /** Institution flag key, or 'any'. */
   feature?: string;
@@ -125,8 +126,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       where.search(['o.name', 'o.slug', ownerEmailSql('o')], params.search);
     }
     if (params.planSlug) {
-      // An org with no recorded plan is on the free starter plan (see OrganizationsService).
-      if (params.planSlug === 'starter') where.and(`(o."planSlug" = 'starter' OR o."planSlug" IS NULL)`);
+      // An org with no recorded plan is on the Free plan (see OrganizationsService).
+      if (params.planSlug === 'free') where.and(`(o."planSlug" IN ('free', 'starter') OR o."planSlug" IS NULL)`);
       else where.and('o."planSlug" = ?', params.planSlug);
     }
 
@@ -545,7 +546,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
 
     const mappedSubscriptionPayments = subscriptionPayments.map((p) => {
       const planName = (p.planId && planNameById.get(p.planId)) || 'Subscription';
-      const cycleLabel = p.billingCycle === 'ANNUAL' ? 'Annual' : p.billingCycle === 'MONTHLY' ? 'Monthly' : '';
+      const cycleLabel = p.billingCycle ? cycleLabelOf(p.billingCycle) : '';
       return {
         id: p.id,
         source: 'subscription' as const,

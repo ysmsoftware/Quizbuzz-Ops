@@ -137,19 +137,38 @@ export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: P
               <span className="text-muted-foreground">Members:</span>
               <span className="font-semibold ml-auto">{plan.limits.maxOrgMembers ?? 'Unlimited'}</span>
             </div>
+            <div className="flex items-center space-x-1.5 p-2 rounded-lg bg-muted/40 border border-border/30">
+              <Users className="h-3.5 w-3.5 text-teal-500 shrink-0" />
+              <span className="text-muted-foreground">Learners:</span>
+              <span className="font-semibold ml-auto">{plan.limits.maxLearners ?? 'Unlimited'}</span>
+            </div>
+            <div className="flex items-center space-x-1.5 p-2 rounded-lg bg-muted/40 border border-border/30">
+              <Building2 className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+              <span className="text-muted-foreground">Candidates/mo:</span>
+              <span className="font-semibold ml-auto">{plan.limits.maxCandidatesPerMonth ?? 'Unlimited'}</span>
+            </div>
           </div>
         </div>
+
+        {!plan.isSellable && (
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            {plan.organizationId ? 'Private to one organization.' : 'Not on sale. Ops can still assign it.'}
+          </p>
+        )}
 
         {/* Feature Toggles */}
         <div className="mt-4 space-y-1.5">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Features Included</p>
-          <p className="text-[10px] text-muted-foreground">Listed on the plan only — the main app doesn't enforce these yet.</p>
           <ul className="space-y-1 text-xs">
-            <FeatureItem icon={ShieldCheck} label="AI Proctoring" enabled={plan.features.proctoring} />
+            <FeatureItem icon={ShieldCheck} label="Webcam Proctoring" enabled={plan.features.proctoring} />
             <FeatureItem icon={Lock} label="Custom Branding" enabled={plan.features.customCertificateBranding} />
-            <FeatureItem icon={Download} label="Analytics Export" enabled={plan.features.analyticsExport} />
+            <FeatureItem icon={Download} label="CSV Export" enabled={plan.features.analyticsExport} />
             <FeatureItem icon={Globe} label="Custom Domain" enabled={plan.features.customDomain} />
             <FeatureItem icon={ShieldCheck} label="Priority Support" enabled={plan.features.prioritySupport} />
+            <FeatureItem icon={Users} label="Learner Groups" enabled={plan.features.learnerGroups} />
+            <FeatureItem icon={Layers} label="Gradebook" enabled={plan.features.gradebook} />
+            <FeatureItem icon={Trophy} label="Ambassador Campaigns" enabled={plan.features.ambassadorCampaigns} />
+            <FeatureItem icon={Globe} label="Broadcast Emails" enabled={plan.features.manualEmails} />
           </ul>
         </div>
       </div>

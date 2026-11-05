@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { OrganizationSubscription, SubscriptionPlan } from '@/lib/types';
 import { OrgPayment } from '@/lib/api/organizations';
-import { Layers, Calendar, ArrowRight, Receipt, ChevronDown, ChevronUp, BellRing, Loader2 } from 'lucide-react';
+import { Layers, Calendar, CalendarClock, ArrowRight, Receipt, ChevronDown, ChevronUp, BellRing, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatInr } from '@/lib/format';
 
@@ -11,6 +11,7 @@ interface CurrentPlanCardProps {
   subscription: OrganizationSubscription;
   currentPlan: SubscriptionPlan | undefined;
   onChangePlanClick: () => void;
+  onAdjustAccessClick: () => void;
   /** Subscription-source payments for this org, newest first is not required — sorted here. */
   payments?: OrgPayment[];
   /** Resends the SUBSCRIPTION_RENEWAL_REMINDER email — only meaningful for an active subscription with a future period end. */
@@ -22,6 +23,7 @@ export default function CurrentPlanCard({
   subscription,
   currentPlan,
   onChangePlanClick,
+  onAdjustAccessClick,
   payments = [],
   onResendReminder,
   isResendingReminder,
@@ -44,6 +46,12 @@ export default function CurrentPlanCard({
     .filter((p) => p.status === 'PAID')
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const lastPayment = paidPayments[0];
+  const statusStyle =
+    subscription.status === 'active'
+      ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+      : subscription.status === 'past_due'
+        ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+        : 'bg-destructive/10 text-destructive border-destructive/20';
 
   return (
     <div className="p-6 bg-card border border-border/50 rounded-xl flex flex-col justify-between space-y-6 shadow-xs">
@@ -53,8 +61,8 @@ export default function CurrentPlanCard({
             <Layers className="h-5 w-5 text-primary" />
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active Subscription</span>
           </div>
-          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-            {subscription.status.toUpperCase()}
+          <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${statusStyle}`}>
+            {subscription.status.replace('_', ' ').toUpperCase()}
           </span>
         </div>
 
@@ -85,7 +93,9 @@ export default function CurrentPlanCard({
               <span>Cycle Start: <strong className="text-foreground">{format(new Date(subscription.currentPeriodStart), 'MMM d, yyyy')}</strong></span>
             </div>
           )}
-          {subscription.currentPeriodEnd && (
+          {subscription.planKind === 'FREE' ? (
+            <p>The Free plan has no end date.</p>
+          ) : subscription.currentPeriodEnd && (
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center space-x-2">
                 <Calendar className="h-3.5 w-3.5 text-muted-foreground/70" />
@@ -104,6 +114,12 @@ export default function CurrentPlanCard({
                 </button>
               )}
             </div>
+          )}
+          {subscription.restrictAt && subscription.downgradeAt && (
+            <>
+              <p>Restricted from: <strong className="text-foreground">{format(new Date(subscription.restrictAt), 'MMM d, yyyy')}</strong> ({subscription.graceDays} days&apos; grace)</p>
+              <p>Free limits from: <strong className="text-foreground">{format(new Date(subscription.downgradeAt), 'MMM d, yyyy')}</strong></p>
+            </>
           )}
         </div>
 
@@ -131,14 +147,16 @@ export default function CurrentPlanCard({
                     {lastPayment.baseAmount != null ? `${formatInr(lastPayment.baseAmount)}` : '—'}
                   </span>
                 </div>
+                {!!lastPayment.gatewayFeeAmount && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Gateway Fee (2%)</span>
                   <span className="font-mono text-foreground">
                     {lastPayment.gatewayFeeAmount != null ? `${formatInr(lastPayment.gatewayFeeAmount)}` : '—'}
                   </span>
                 </div>
+                )}
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">GST (18% on fee)</span>
+                  <span className="text-muted-foreground">GST</span>
                   <span className="font-mono text-foreground">
                     {lastPayment.gstAmount != null ? `${formatInr(lastPayment.gstAmount)}` : '—'}
                   </span>
@@ -168,6 +186,17 @@ export default function CurrentPlanCard({
         )}
       </div>
 
+      <div className="space-y-2">
+      {subscription.planKind !== 'FREE' && (
+        <button
+          type="button"
+          onClick={onAdjustAccessClick}
+          className="w-full py-2 px-4 text-xs font-semibold rounded-lg border border-input bg-background hover:bg-muted transition-colors flex items-center justify-center space-x-2"
+        >
+          <CalendarClock className="h-4 w-4" />
+          <span>Access and contract</span>
+        </button>
+      )}
       <button
         type="button"
         onClick={onChangePlanClick}
@@ -176,6 +205,7 @@ export default function CurrentPlanCard({
         <span>Change / Upgrade Plan</span>
         <ArrowRight className="h-4 w-4" />
       </button>
+      </div>
     </div>
   );
 }

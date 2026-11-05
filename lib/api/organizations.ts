@@ -28,9 +28,9 @@ interface RawNote {
 interface RawSubscriptionResponse {
   subscription: Pick<
     OrganizationSubscription,
-    'id' | 'organizationId' | 'billingCycle' | 'periodMonths' | 'currentPeriodStart' | 'currentPeriodEnd'
+    'id' | 'organizationId' | 'billingCycle' | 'periodMonths' | 'currentPeriodStart' | 'currentPeriodEnd' | 'graceDays' | 'restrictAt' | 'downgradeAt' | 'collectionMethod' | 'contractStart' | 'contractEnd' | 'poNumber' | 'contractNotes'
   > & { status: string };
-  plan: { id?: string; slug: string };
+  plan: { id?: string; slug: string; kind: OrganizationSubscription['planKind'] };
   overrides?: Array<Omit<SubscriptionOverride, 'value' | 'createdByAdminName'> & { value: unknown; createdByAdminName?: string }>;
   effectiveLimits: OrganizationSubscription['effectiveLimits'];
   changeHistory?: Array<{ id: string; fromPlanId: string; toPlanId: string; changedAt: string }>;
@@ -361,6 +361,27 @@ export async function resendPaymentReceipt(orgId: string, paymentId: string): Pr
   });
 }
 
+/** Moves a subscription's end date or grace period. */
+export interface AccessUpdate {
+  currentPeriodEnd?: string;
+  graceDays?: number;
+  contractStart?: string | null;
+  contractEnd?: string | null;
+  poNumber?: string | null;
+  contractNotes?: string | null;
+  reason: string;
+}
+
+export async function updateSubscriptionAccess(
+  orgId: string,
+  input: AccessUpdate,
+): Promise<void> {
+  await apiRequest(`/api/v1/ops/organizations/${orgId}/subscription/access`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 /** Resends the SUBSCRIPTION_RENEWAL_REMINDER email to the organization owner. */
 export async function resendRenewalReminder(orgId: string): Promise<ResendResult> {
   return apiRequest<ResendResult>(`/api/v1/ops/organizations/${orgId}/subscription/resend-reminder`, {
@@ -410,6 +431,15 @@ export async function getOrganizationSubscription(orgId: string): Promise<Organi
       periodMonths: res.subscription.periodMonths,
       currentPeriodStart: res.subscription.currentPeriodStart,
       currentPeriodEnd: res.subscription.currentPeriodEnd,
+      graceDays: res.subscription.graceDays,
+      collectionMethod: res.subscription.collectionMethod,
+      contractStart: res.subscription.contractStart,
+      contractEnd: res.subscription.contractEnd,
+      poNumber: res.subscription.poNumber,
+      contractNotes: res.subscription.contractNotes,
+      restrictAt: res.subscription.restrictAt,
+      downgradeAt: res.subscription.downgradeAt,
+      planKind: res.plan.kind,
       overrides: (res.overrides || []).map((o) => ({
         id: o.id,
         field: o.field,

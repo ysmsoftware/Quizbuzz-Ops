@@ -1,3 +1,4 @@
+import { usageWindow } from '../subscriptions/access-dates';
 import { IOrganizationsRepository, OrganizationsRepository } from './organizations.repository';
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
@@ -74,8 +75,8 @@ export class OrganizationsService implements IOrganizationsService {
           }
         : {
             // Not a real subscription: the free default, flagged so the UI can say so.
-            slug: 'starter',
-            name: 'Starter (Free)',
+            slug: 'free',
+            name: 'Free',
             status: 'NONE',
             hasSubscription: false,
           };
@@ -122,8 +123,8 @@ export class OrganizationsService implements IOrganizationsService {
           hasSubscription: true,
         }
       : {
-          slug: 'starter',
-          name: 'Starter (Free)',
+          slug: 'free',
+          name: 'Free',
           status: 'NONE',
           hasSubscription: false,
         };
@@ -187,18 +188,15 @@ export class OrganizationsService implements IOrganizationsService {
   }> {
     const sub = await this.repo.getSubscriptionForOrg(orgId);
 
-    // No subscription synced yet — nothing meaningfully "used this cycle"
-    // to report; fall back to an all-time window so the numbers are at
-    // least not wrong, just not cycle-scoped.
-    const periodStart: Date = sub?.currentPeriodStart ?? new Date(0);
-    const periodEnd: Date = sub?.currentPeriodEnd ?? new Date(8640000000000000);
-
-    const usage = await this.repo.getUsageSnapshot(orgId, periodStart, periodEnd);
+    // Contest limits are per month on every billing cycle. With no subscription yet there's
+    // no anchor, so report all time rather than a made-up window.
+    const window = sub ? usageWindow(sub.currentPeriodStart) : null;
+    const usage = await this.repo.getUsageSnapshot(orgId, window?.start ?? new Date(0), window?.end ?? new Date(8640000000000000));
 
     return {
       ...usage,
-      periodStart: sub?.currentPeriodStart ? sub.currentPeriodStart.toISOString() : null,
-      periodEnd: sub?.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
+      periodStart: window ? window.start.toISOString() : null,
+      periodEnd: window ? window.end.toISOString() : null,
     };
   }
 

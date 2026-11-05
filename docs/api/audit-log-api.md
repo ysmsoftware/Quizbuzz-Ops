@@ -46,7 +46,7 @@ None.
       {
         "id": "aud_10029",
         "actorId": "adm_9912",
-        "actorEmail": "admin@quizbuzz.io",
+        "actorEmail": "admin@example.com",
         "actorName": "Austin Operations Admin",
         "actorRole": "SUPER_ADMIN",
         "action": "org.suspended",
@@ -61,7 +61,7 @@ None.
       {
         "id": "aud_10030",
         "actorId": "adm_9912",
-        "actorEmail": "admin@quizbuzz.io",
+        "actorEmail": "admin@example.com",
         "actorName": "Austin Operations Admin",
         "actorRole": "SUPER_ADMIN",
         "action": "plan.updated",

@@ -22,8 +22,8 @@ The Platform Auth API domain handles operator authentication, two-factor OTP ver
 #### Request Body
 ```json
 {
-  "email": "admin@quizbuzz.io",
-  "password": "SecurePassword123!"
+  "email": "admin@example.com",
+  "password": "<password>"
 }
 ```
 
@@ -34,7 +34,7 @@ The Platform Auth API domain handles operator authentication, two-factor OTP ver
 {
   "success": true,
   "data": {
-    "email": "admin@quizbuzz.io",
+    "email": "admin@example.com",
     "otpRequired": true,
     "expiresInSeconds": 600
   },
@@ -68,7 +68,7 @@ The Platform Auth API domain handles operator authentication, two-factor OTP ver
 #### Request Body
 ```json
 {
-  "email": "admin@quizbuzz.io",
+  "email": "admin@example.com",
   "otp": "492015"
 }
 ```
@@ -83,7 +83,7 @@ Sets `Set-Cookie` header for `ops_access_token` and `ops_refresh_token`.
   "data": {
     "admin": {
       "id": "adm_9912",
-      "email": "admin@quizbuzz.io",
+      "email": "admin@example.com",
       "name": "Austin Operations Admin",
       "role": "SUPER_ADMIN"
     }
@@ -121,7 +121,7 @@ None.
   "data": {
     "admin": {
       "id": "adm_9912",
-      "email": "admin@quizbuzz.io",
+      "email": "admin@example.com",
       "name": "Austin Operations Admin",
       "role": "SUPER_ADMIN"
     }
@@ -157,7 +157,7 @@ None.
   "success": true,
   "data": {
     "id": "adm_9912",
-    "email": "admin@quizbuzz.io",
+    "email": "admin@example.com",
     "name": "Austin Operations Admin",
     "firstName": "Austin",
     "lastName": "Operations Admin",

@@ -5,8 +5,13 @@
  * design), so the very first admin account has to be inserted directly.
  * Safe to re-run — upserts by email, so it won't create duplicates.
  *
- * Usage (the email and password are required; never put them in this file):
- *   SEED_ADMIN_EMAIL=someone@else.com SEED_ADMIN_PASSWORD=... npm run seed:platform-admin
+ * The email and password come only from environment variables set in the terminal. Never put
+ * them in this file, in .env, or anywhere else in the repo. To keep the password out of shell
+ * history, type it at the prompt:
+ *   export SEED_ADMIN_EMAIL=you@example.com
+ *   read -rs SEED_ADMIN_PASSWORD && export SEED_ADMIN_PASSWORD
+ *   npm run seed:platform-admin
+ *   unset SEED_ADMIN_EMAIL SEED_ADMIN_PASSWORD
  */
 import bcrypt from 'bcryptjs';
 import { PlatformAdminRole } from '@prisma/client';

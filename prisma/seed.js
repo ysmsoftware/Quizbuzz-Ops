@@ -143,14 +143,9 @@ async function main() {
     stdio: 'inherit',
   });
 
-  // NOTE: this script intentionally does NOT seed a platform admin account.
-  // It used to upsert a fixed admin@example.com / REMOVED-rotate-me
-  // super admin on every run — a real, known, working credential that would
-  // silently get re-created (and re-activated) any time `npm run db:seed`
-  // was run again, including by accident against a live production database.
-  // Platform admins are provisioned directly against the database (or via a
-  // dedicated one-off admin-creation script that generates a random password
-  // and forces a reset), never via this shared seed script.
+  // NOTE: this script intentionally does NOT seed a platform admin account. Admin credentials
+  // are never stored in code: create one with `npm run seed:platform-admin`, passing the email
+  // and password as environment variables in the terminal (see that script).
 
   console.log('✅ Seeding completed successfully.');
 }

@@ -9,6 +9,7 @@ import PlanCard from './plans/PlanCard';
 import PlanFormModal, { PlanFormValues } from './plans/PlanFormModal';
 import PlanEditImpactModal from './plans/PlanEditImpactModal';
 import PlanDeactivateModal from './plans/PlanDeactivateModal';
+import MoveSubscribersModal from './plans/MoveSubscribersModal';
 import { Layers } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import Pagination from '@/components/ui/Pagination';
@@ -31,6 +32,7 @@ export default function SubscriptionPlansView() {
   const [pendingFormData, setPendingFormData] = useState<PlanFormValues | null>(null);
   const [isDeactivateOpen, setIsDeactivateOpen] = useState(false);
   const [deactivatingPlanTarget, setDeactivatingPlanTarget] = useState<SubscriptionPlan | null>(null);
+  const [movingPlan, setMovingPlan] = useState<SubscriptionPlan | null>(null);
 
   // Filter & Search
   const filteredPlans = useMemo(() => {
@@ -153,6 +155,7 @@ export default function SubscriptionPlansView() {
                 plan={plan}
                 onEdit={handleOpenEdit}
                 onDeactivate={handleOpenDeactivate}
+                onMoveSubscribers={setMovingPlan}
               />
             ))}
           </AnimatePresence>
@@ -179,6 +182,8 @@ export default function SubscriptionPlansView() {
         fetchImpact={fetchImpact}
         isSubmitting={isUpdating}
       />
+
+      {movingPlan && <MoveSubscribersModal plan={movingPlan} plans={plans} onClose={() => setMovingPlan(null)} />}
 
       <PlanDeactivateModal
         isOpen={isDeactivateOpen}

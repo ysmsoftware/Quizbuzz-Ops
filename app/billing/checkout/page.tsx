@@ -53,6 +53,8 @@ interface CheckoutSessionData {
   plan: PlanCyclePricing & { id: string; name: string; description: string; features: string[] };
   currentSubscription: (CurrentSubscriptionForProration & { planId: string; planName: string }) | null;
   autoDebit: { available: boolean; firstChargeAt: string | null; current: { planId: string; billingCycle: string } | null };
+  /** Cycles of this plan that would be a downgrade now: they start at the period end instead of being charged. */
+  change: { scheduledCycles: string[]; on: string | null; currentPlanName: string | null };
 }
 
 type PayMode = 'auto' | 'once';
@@ -138,6 +140,7 @@ function CheckoutContent() {
   const changingMethod =
     auto && sessionData?.autoDebit.current?.planId === sessionData?.plan.id && sessionData?.autoDebit.current?.billingCycle === cycle;
   const firstChargeAt = sessionData?.autoDebit?.firstChargeAt ?? null;
+  const scheduled = !auto && !!cycle && !!sessionData?.change?.scheduledCycles.includes(cycle);
 
   const pricing = useMemo(() => {
     if (!sessionData?.plan || !cycle) return null;
@@ -223,6 +226,7 @@ function CheckoutContent() {
     setPayState('creating_order');
 
     if (auto) return startAutoDebit(cycle);
+    if (scheduled) return scheduleChange(cycle);
 
     try {
       const res = await fetch('/api/v1/billing-portal/subscription/order', {
@@ -292,6 +296,27 @@ function CheckoutContent() {
     } catch (err) {
       console.error('Payment error:', err);
       setPayError(errorMessage(err) || 'An unexpected error occurred processing payment.');
+      setPayState('idle');
+    }
+  };
+
+  /** A downgrade: nothing is charged, the plan switches when the paid period ends. */
+  const scheduleChange = async (billingCycle: BillingCycleChoice) => {
+    try {
+      const res = await fetch('/api/v1/billing-portal/subscription/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, billingCycle }),
+      });
+      const body = await res.json();
+      if (!body.success) {
+        setPayError(body.message || 'Could not schedule the change.');
+        setPayState('idle');
+        return;
+      }
+      window.location.href = billingUrl('&subscription=scheduled');
+    } catch (err) {
+      setPayError(errorMessage(err) || 'An unexpected error occurred.');
       setPayState('idle');
     }
   };
@@ -526,7 +551,15 @@ function CheckoutContent() {
           </div>
 
           {/* Price Breakdown */}
-          {alreadySubscribedToSelected ? (
+          {scheduled && pricing ? (
+            <div className="text-xs text-muted-foreground pt-5 border-t border-border/50 mb-2 bg-muted/30 rounded-xl p-4 space-y-1">
+              <p className="text-foreground font-semibold">Nothing to pay now.</p>
+              <p>
+                You stay on {sessionData.change.currentPlanName} until {new Date(sessionData.change.on ?? '').toLocaleDateString()}. From then you&apos;re on {plan.name},{' '}
+                {formatInr(pricing.totalAmount, { fixed: 2 })} including GST each {cycle ? cycleLabel(cycle).toLowerCase() : ''} renewal.
+              </p>
+            </div>
+          ) : alreadySubscribedToSelected ? (
             <div className="text-xs text-muted-foreground pt-5 border-t border-border/50 mb-2 bg-muted/30 rounded-xl p-4">
               You&apos;re already subscribed to this plan until{' '}
               {new Date(sessionData.currentSubscription?.currentPeriodEnd ?? '').toLocaleDateString()}. Pick a different plan
@@ -576,7 +609,9 @@ function CheckoutContent() {
           <p className="text-[11px] text-muted-foreground mb-6">
             {auto
               ? `Razorpay will ask you to approve automatic payments of ${pricing ? formatInr(pricing.totalAmount, { fixed: 2 }) : 'this amount'} ${cycle === 'HALF_YEARLY' ? 'every 6 months' : 'every month'}. Turn them off any time from your Billing page.`
-              : 'This is a one-time charge for the selected period — no auto-renewal. You’ll need to return here to renew when the period ends.'}
+              : scheduled
+                ? 'You can keep your current plan from the Billing page until then.'
+                : 'This is a one-time charge for the selected period — no auto-renewal. You’ll need to return here to renew when the period ends.'}
           </p>
 
           {payError && (
@@ -604,7 +639,9 @@ function CheckoutContent() {
                 <>
                   <CreditCard className="w-5 h-5" />
                   <span>
-                    {changingMethod
+                    {scheduled
+                      ? `Switch to ${plan.name} on ${new Date(sessionData.change.on ?? '').toLocaleDateString()}`
+                      : changingMethod
                       ? 'Update payment method'
                       : auto && firstChargeAt
                         ? 'Set up automatic renewal'

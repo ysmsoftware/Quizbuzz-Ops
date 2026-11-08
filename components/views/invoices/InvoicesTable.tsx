@@ -12,6 +12,7 @@ import { formatInr } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
 import { Field, fieldClass, InvoiceModal } from './InvoiceModal';
 import RecordPaymentModal from './RecordPaymentModal';
+import CreditNoteModal from './CreditNoteModal';
 
 const STATUS: Record<Invoice['status'], { tone: 'success' | 'warning' | 'neutral' | 'danger' | 'info'; label: string }> = {
   ISSUED: { tone: 'info', label: 'Unpaid' },
@@ -34,10 +35,12 @@ const SOURCE: Record<string, string> = {
 type Dialog =
   | { kind: 'record'; invoice: Invoice }
   | { kind: 'reason'; invoice: Invoice; action: 'void' | 'write_off' | 'extend_due' }
-  | { kind: 'void_payment'; invoice: Invoice; payment: InvoicePayment };
+  | { kind: 'void_payment'; invoice: Invoice; payment: InvoicePayment }
+  | { kind: 'credit'; invoice: Invoice };
 
 const isOpen = (i: Invoice) => i.status === 'ISSUED' || i.status === 'PARTIALLY_PAID';
-const balanceOf = (i: Invoice) => Number(i.total) - Number(i.amountPaid) - Number(i.tdsAmount);
+const balanceOf = (i: Invoice) => Number(i.total) - Number(i.amountPaid) - Number(i.tdsAmount) - Number(i.creditedAmount);
+const creditable = (i: Invoice) => i.status !== 'VOID' && i.status !== 'WRITTEN_OFF' && Number(i.total) - Number(i.creditedAmount) > 0;
 const buttonClass = 'px-2 py-1 text-[11px] font-semibold rounded-md border border-border/50 bg-card hover:bg-secondary/40 disabled:opacity-50';
 
 /** Invoices with their payments and every action on them. Used by the org tab and the Invoices page. */
@@ -50,7 +53,7 @@ export default function InvoicesTable({ organizationId, status, overdue, isSuper
   pageSize?: number;
 }) {
   const [page, setPage] = useState(1);
-  const { invoices, total, isLoading, record, voidPayment, act } = useInvoices({ organizationId, status, overdue, page, limit: pageSize });
+  const { invoices, total, isLoading, record, voidPayment, act, creditNote } = useInvoices({ organizationId, status, overdue, page, limit: pageSize });
   const { toast } = useToast();
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [reason, setReason] = useState('');
@@ -161,6 +164,27 @@ export default function InvoicesTable({ organizationId, status, overdue, isSuper
                           </ul>
                         )}
 
+                        {inv.creditNotes.length > 0 && (
+                          <ul className="space-y-1">
+                            {inv.creditNotes.map((cn) => (
+                              <li key={cn.id} className="flex flex-wrap items-center justify-between gap-2">
+                                <span>
+                                  Credit note {formatInr(Number(cn.total), { fixed: 2 })} &middot; {cn.reason}
+                                  {' '}&middot; {cn.refundMethod === 'RAZORPAY' ? `refunded via Razorpay${cn.razorpayRefundId ? ` (${cn.razorpayRefundId})` : ''}` : cn.refundMethod === 'BANK_TRANSFER' ? `refunded by bank transfer (${cn.refundReference})` : 'no refund'}
+                                  {cn.endedAccess && ' · access ended'}
+                                </span>
+                                <a href={`/api/v1/ops/invoices/${inv.id}/credit-notes/${cn.id}`} className="text-primary hover:underline">{cn.number}</a>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        {isSuperAdmin && creditable(inv) && (
+                          <div className="flex flex-wrap gap-2">
+                            <button type="button" className={buttonClass} onClick={() => open({ kind: 'credit', invoice: inv })}>{Number(inv.amountPaid) > 0 ? 'Refund or credit note' : 'Credit note'}</button>
+                          </div>
+                        )}
+
                         {isOpen(inv) && (
                           <div className="flex flex-wrap gap-2">
                             <button type="button" className={buttonClass} onClick={() => open({ kind: 'record', invoice: inv })}>Record payment</button>
@@ -195,6 +219,23 @@ export default function InvoicesTable({ organizationId, status, overdue, isSuper
           onClose={() => setDialog(null)}
           onSubmit={(body) => submitPayment(dialog.invoice, body)}
           isSubmitting={record.isPending}
+        />
+      )}
+
+      {dialog?.kind === 'credit' && (
+        <CreditNoteModal
+          invoice={dialog.invoice}
+          onClose={() => setDialog(null)}
+          isSubmitting={creditNote.isPending}
+          onSubmit={async (body) => {
+            try {
+              await creditNote.mutateAsync({ id: dialog.invoice.id, body });
+              toast('Credit note issued', body.refundMethod === 'NONE' ? 'The amount owed is lower now.' : 'The refund is on its way.', 'success');
+              setDialog(null);
+            } catch (err) {
+              toast('Could not issue it', errorMessage(err), 'error');
+            }
+          }}
         />
       )}
 

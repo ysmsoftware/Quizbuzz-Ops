@@ -28,7 +28,7 @@ interface RawNote {
 interface RawSubscriptionResponse {
   subscription: Pick<
     OrganizationSubscription,
-    'id' | 'organizationId' | 'billingCycle' | 'periodMonths' | 'currentPeriodStart' | 'currentPeriodEnd' | 'graceDays' | 'restrictAt' | 'downgradeAt' | 'collectionMethod' | 'autoDebit' | 'lastPaymentError' | 'contractStart' | 'contractEnd' | 'poNumber' | 'contractNotes'
+    'id' | 'organizationId' | 'billingCycle' | 'periodMonths' | 'currentPeriodStart' | 'currentPeriodEnd' | 'graceDays' | 'restrictAt' | 'downgradeAt' | 'collectionMethod' | 'autoDebit' | 'lastPaymentError' | 'scheduledChange' | 'contractStart' | 'contractEnd' | 'poNumber' | 'contractNotes'
   > & { status: string };
   plan: { id?: string; slug: string; kind: OrganizationSubscription['planKind'] };
   overrides?: Array<Omit<SubscriptionOverride, 'value' | 'createdByAdminName'> & { value: unknown; createdByAdminName?: string }>;
@@ -363,6 +363,7 @@ export async function resendPaymentReceipt(orgId: string, paymentId: string): Pr
 
 /** Moves a subscription's end date or grace period. */
 export interface AccessUpdate {
+  currentPeriodStart?: string;
   currentPeriodEnd?: string;
   graceDays?: number;
   contractStart?: string | null;
@@ -435,6 +436,7 @@ export async function getOrganizationSubscription(orgId: string): Promise<Organi
       collectionMethod: res.subscription.collectionMethod,
       autoDebit: res.subscription.autoDebit ?? null,
       lastPaymentError: res.subscription.lastPaymentError ?? null,
+      scheduledChange: res.subscription.scheduledChange ?? null,
       contractStart: res.subscription.contractStart,
       contractEnd: res.subscription.contractEnd,
       poNumber: res.subscription.poNumber,
@@ -470,12 +472,38 @@ export async function assignInitialSubscriptionPlan(orgId: string, planId: strin
   return getOrganizationSubscription(orgId) as Promise<OrganizationSubscription>;
 }
 
-export async function changeOrganizationPlan(orgId: string, planId: string): Promise<OrganizationSubscription> {
+export interface PlanChangeInput {
+  planId: string;
+  reason?: string;
+  billingCycle?: 'MONTHLY' | 'HALF_YEARLY' | 'ANNUAL';
+  /** period_end keeps the current plan until its paid time runs out. */
+  when?: 'now' | 'period_end';
+}
+
+export async function changeOrganizationPlan(orgId: string, input: PlanChangeInput): Promise<OrganizationSubscription> {
   await apiRequest(`/api/v1/ops/organizations/${orgId}/subscription/change-plan`, {
     method: 'POST',
-    body: JSON.stringify({ planId }),
+    body: JSON.stringify(input),
   });
   return getOrganizationSubscription(orgId) as Promise<OrganizationSubscription>;
+}
+
+export async function cancelScheduledPlanChange(orgId: string): Promise<void> {
+  await apiRequest(`/api/v1/ops/organizations/${orgId}/subscription/scheduled-change`, { method: 'DELETE' });
+}
+
+export interface MigratePreview {
+  total: number;
+  movable: number;
+  skipped: number;
+  byMethod: Record<string, number>;
+  autoDebitNeedingApproval: number;
+  moved: number;
+}
+
+/** Moves everyone on a plan to another. dryRun only counts them. */
+export function migratePlanSubscribers(planId: string, body: { toPlanId: string; when: 'now' | 'renewal'; dryRun: boolean; reason: string }) {
+  return apiRequest<MigratePreview>(`/api/v1/ops/plans/${planId}/migrate`, { method: 'POST', body: JSON.stringify(body) });
 }
 
 export async function addSubscriptionOverride(

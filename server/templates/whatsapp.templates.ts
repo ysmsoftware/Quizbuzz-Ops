@@ -44,6 +44,14 @@ const WHATSAPP_TEMPLATES: Record<OpsMessageTemplate, WhatsAppTemplateBuilder> = 
     campaignName: 'ops_contract_ending',
     templateParams: [p.adminName, p.planName, p.contractEnd],
   }),
+  CREDIT_NOTE_ISSUED: (p) => ({
+    campaignName: 'ops_credit_note_issued',
+    templateParams: [p.adminName, p.creditNoteNumber, p.invoiceNumber],
+  }),
+  SUBSCRIPTION_CHANGE_SCHEDULED: (p) => ({
+    campaignName: 'ops_subscription_change_scheduled',
+    templateParams: [p.adminName, p.toPlan, p.on],
+  }),
   SUBSCRIPTION_PAST_DUE: (p) => ({
     campaignName: 'ops_subscription_past_due',
     templateParams: [p.adminName, p.planName, String(p.restrictAt)],

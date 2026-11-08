@@ -32,3 +32,15 @@ export function splitPayment(received: number, invoice: { subtotal: number; tota
   const baseAmount = invoice.total > 0 ? round2((received * invoice.subtotal) / invoice.total) : 0;
   return { baseAmount, gstAmount: round2(received - baseAmount) };
 }
+
+/** The invoice's GST split, scaled to the credited amount. The parts always add up to the amount exactly. */
+export function splitCredit(inv: { total: unknown; subtotal: unknown; cgstAmount: unknown; sgstAmount: unknown; igstAmount: unknown }, amount: number) {
+  const total = Number(inv.total);
+  if (total <= 0) throw new Error('A no-charge invoice has nothing to credit.');
+  const ratio = amount / total;
+  const cgstAmount = round2(Number(inv.cgstAmount) * ratio);
+  const sgstAmount = round2(Number(inv.sgstAmount) * ratio);
+  const igstAmount = round2(Number(inv.igstAmount) * ratio);
+  return { subtotal: round2(amount - cgstAmount - sgstAmount - igstAmount), cgstAmount, sgstAmount, igstAmount, total: round2(amount) };
+}
+

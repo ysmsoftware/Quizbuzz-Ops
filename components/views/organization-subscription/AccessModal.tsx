@@ -18,6 +18,8 @@ interface AccessModalProps {
 /** Move a subscription's end date or grace period, for a trusted payment on its way or a contract's terms. */
 export default function AccessModal({ subscription, onClose, onSubmit, isSubmitting }: AccessModalProps) {
   const [endDate, setEndDate] = useState(format(new Date(subscription.currentPeriodEnd), 'yyyy-MM-dd'));
+  const [cycleStart, setCycleStart] = useState(format(new Date(subscription.currentPeriodStart), 'yyyy-MM-dd'));
+  const cycleStartChanged = !!cycleStart && format(new Date(subscription.currentPeriodStart), 'yyyy-MM-dd') !== cycleStart;
   const [graceDays, setGraceDays] = useState(String(subscription.graceDays));
   const [reason, setReason] = useState('');
   const [contractStart, setContractStart] = useState(dayOf(subscription.contractStart));
@@ -32,11 +34,12 @@ export default function AccessModal({ subscription, onClose, onSubmit, isSubmitt
   const contractEndChanged = contractEnd !== dayOf(subscription.contractEnd);
   const poChanged = poNumber !== (subscription.poNumber ?? '');
   const notesChanged = contractNotes !== (subscription.contractNotes ?? '');
-  const anyChange = endChanged || graceChanged || startChanged || contractEndChanged || poChanged || notesChanged;
+  const anyChange = cycleStartChanged || endChanged || graceChanged || startChanged || contractEndChanged || poChanged || notesChanged;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSubmit({
+      currentPeriodStart: cycleStartChanged ? new Date(`${cycleStart}T00:00:00`).toISOString() : undefined,
       currentPeriodEnd: endChanged ? newEnd.toISOString() : undefined,
       graceDays: graceChanged ? Number(graceDays) : undefined,
       contractStart: startChanged ? (contractStart ? new Date(`${contractStart}T00:00:00`).toISOString() : null) : undefined,
@@ -61,6 +64,19 @@ export default function AccessModal({ subscription, onClose, onSubmit, isSubmitt
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
+          <div>
+            <label htmlFor="access-start" className="block font-semibold text-foreground mb-1">Cycle started</label>
+            <input
+              id="access-start"
+              type="date"
+              required
+              value={cycleStart}
+              onChange={(e) => setCycleStart(e.target.value)}
+              className="w-full px-3 py-2 rounded-md bg-background border border-input focus:ring-1 focus:ring-primary"
+            />
+            <p className="mt-1 text-muted-foreground">Also where each month of usage starts counting.</p>
+          </div>
+
           <div>
             <label htmlFor="access-end" className="block font-semibold text-foreground mb-1">Paid until</label>
             <input

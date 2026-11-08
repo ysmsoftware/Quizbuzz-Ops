@@ -9,7 +9,10 @@ import { verifyJwt } from '../../utils/jwt';
 import { EntitlementsService } from '../entitlements/entitlements.service';
 import { computeAccessDates, lapseStatusAt } from '../subscriptions/access-dates';
 import { oldestUnpaidDueAt } from '../subscriptions/access-input';
-import { invoiceDocument, pdfResponse, receiptDocument } from './billing-documents';
+import { creditNoteDocument, invoiceDocument, pdfResponse, receiptDocument } from './billing-documents';
+import { cancelScheduledChange } from '../subscriptions/plan-change';
+import { buyTopUp, liveTopUps } from './ai-credits';
+import { AI_CREDIT_PACKS } from '@/lib/pricing/ai-credits';
 import { invoicesService } from './invoices.service';
 import { isFeatureEnabled } from '../feature-flags/is-feature-enabled';
 import { autoDebitCycle, stopAutoDebit } from '../autodebit/autodebit.service';
@@ -42,10 +45,16 @@ async function summary(organizationId: string) {
       where: { organizationId },
       orderBy: { createdAt: 'desc' },
       take: 50,
-      include: { payments: { where: { voidedAt: null, status: 'PAID', receiptNumber: { not: null } }, orderBy: { createdAt: 'asc' }, select: { id: true, receiptNumber: true } } },
+      include: {
+        // A refunded payment still has its receipt.
+        payments: { where: { voidedAt: null, status: { in: ['PAID', 'REFUNDED'] }, receiptNumber: { not: null } }, orderBy: { createdAt: 'asc' }, select: { id: true, receiptNumber: true } },
+        creditNotes: { orderBy: { createdAt: 'asc' }, select: { id: true, number: true, total: true } },
+      },
     }),
     Promise.all([isFeatureEnabled('razorpay_gateway_active', organizationId), isFeatureEnabled('auto_debit', organizationId)]).then(([a, b]) => a && b),
   ]);
+  const scheduledPlan = sub?.scheduledPlanId ? await prisma.subscriptionPlan.findUnique({ where: { id: sub.scheduledPlanId }, select: { name: true } }) : null;
+  const [topUpsOn, topUps] = await Promise.all([isFeatureEnabled('ai_top_ups', organizationId), liveTopUps(organizationId)]);
   const mandate = sub?.razorpaySubscriptionId ? await prisma.razorpaySubscription.findUnique({ where: { id: sub.razorpaySubscriptionId } }) : null;
   const dates = sub
     ? computeAccessDates({
@@ -68,6 +77,9 @@ async function summary(organizationId: string) {
       restrictAt: dates.restrictAt?.toISOString() ?? null,
       downgradeAt: dates.downgradeAt?.toISOString() ?? null,
       lastPaymentError: sub.lastPaymentError,
+      scheduledChange: scheduledPlan
+        ? { planName: scheduledPlan.name, billingCycle: sub.scheduledBillingCycle ?? sub.billingCycle, on: sub.currentPeriodEnd.toISOString() }
+        : null,
     },
     autoDebit: {
       // The owner can turn it on for the plan they're on: a self-serve plan billed monthly or every 6 months.
@@ -79,6 +91,13 @@ async function summary(organizationId: string) {
       nextChargeAt: (mandate?.currentEnd ?? mandate?.startAt)?.toISOString() ?? null,
       amount: mandate ? num(mandate.amount) : null,
     },
+    aiCredits: {
+      // Packs are sold only where AI generation is live (ops flag), and never to an org on an account-managed plan.
+      canBuy: topUpsOn && sub?.plan.kind !== 'CUSTOM',
+      perMonth: sub?.plan.aiCreditsPerMonth ?? 0,
+      topUps: topUps.map((t) => ({ credits: t.credits, expiresAt: t.expiresAt.toISOString() })),
+      packs: AI_CREDIT_PACKS.map((p) => ({ credits: p.credits, price: p.price })),
+    },
     invoices: invoices.map((inv) => {
       const open = inv.status === 'ISSUED' || inv.status === 'PARTIALLY_PAID';
       return {
@@ -87,11 +106,12 @@ async function summary(organizationId: string) {
         date: inv.createdAt.toISOString(),
         description: inv.description,
         total: num(inv.total),
-        amountDue: open ? Math.round((num(inv.total) - num(inv.amountPaid) - num(inv.tdsAmount)) * 100) / 100 : 0,
+        amountDue: open ? Math.round((num(inv.total) - num(inv.amountPaid) - num(inv.tdsAmount) - num(inv.creditedAmount)) * 100) / 100 : 0,
         status: inv.status,
         dueAt: inv.dueAt.toISOString(),
         canPayOnline: open && inv.collectionMethod === 'PAY_ONLINE',
         receipts: inv.payments.map((p) => ({ paymentId: p.id, number: p.receiptNumber })),
+        creditNotes: inv.creditNotes.map((c) => ({ id: c.id, number: c.number, amount: num(c.total) })),
       };
     }),
   };
@@ -121,10 +141,26 @@ async function cancel(claims: AccountClaims, resume: boolean) {
 }
 
 export async function handleAccountRequest(req: Request): Promise<Response> {
-  const body = (await req.json().catch(() => ({}))) as { token?: unknown; action?: string; invoiceId?: string; paymentId?: string };
+  const body = (await req.json().catch(() => ({}))) as { token?: unknown; action?: string; invoiceId?: string; paymentId?: string; creditNoteId?: string; credits?: number };
   const claims = claimsFrom(body.token);
   if (!claims) return errorResponse('Invalid or expired token', 'UNAUTHENTICATED', null, 401);
   const organizationId = claims.organizationId;
+
+  if (body.action === 'cancel_scheduled_change') {
+    await cancelScheduledChange(organizationId, ownerActor(claims));
+    return okResponse(await summary(organizationId), 'You keep your current plan.');
+  }
+
+  if (body.action === 'credit_note') {
+    const note = await prisma.creditNote.findFirst({ where: { id: body.creditNoteId, organizationId } });
+    if (!note) return errorResponse('Credit note not found', 'NOT_FOUND', null, 404);
+    return pdfResponse(await creditNoteDocument(note));
+  }
+
+  if (body.action === 'buy_ai_credits') {
+    if (!(await isFeatureEnabled('ai_top_ups', organizationId))) return errorResponse('AI credits aren’t available for your organization yet.', 'FEATURE_DISABLED', null, 403);
+    return okResponse({ url: await buyTopUp(organizationId, Number(body.credits), ownerActor(claims)) }, 'Pay link.');
+  }
 
   if (body.action === 'stop_autodebit') {
     await stopAutoDebit(organizationId, ownerActor(claims), 'Owner turned automatic renewal off');

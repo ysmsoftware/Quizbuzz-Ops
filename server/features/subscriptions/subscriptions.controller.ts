@@ -1,6 +1,8 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseRequest } from '../../http/validation';
-import { assignPlanSchema, changePlanSchema, addOverrideSchema, removeOverrideSchema, updateAccessSchema } from './subscriptions.validator';
+import { assignPlanSchema, changePlanSchema, addOverrideSchema, removeOverrideSchema, updateAccessSchema, migrateSubscribersSchema } from './subscriptions.validator';
+import { cancelScheduledChange, migratePlanSubscribers, scheduleChange } from './plan-change';
+import { prisma } from '../../db/ops-prisma';
 import { ISubscriptionsService, SubscriptionsService } from './subscriptions.service';
 import { okResponse, errorResponse } from '../../http/envelope';
 import { PlatformAdminRole } from '@prisma/client';
@@ -44,8 +46,26 @@ export class SubscriptionsController {
       name: admin.name,
       role: admin.role,
     };
+    if (input.when === 'period_end') {
+      const current = await prisma.organizationSubscription.findUnique({ where: { organizationId: orgId }, select: { billingCycle: true, currentPeriodEnd: true } });
+      await scheduleChange(orgId, input.planId, input.billingCycle ?? current?.billingCycle ?? 'MONTHLY', actor, input.reason || 'Scheduled by ops');
+      return okResponse(await this.service.getSubscription(orgId), `Change scheduled for ${current?.currentPeriodEnd.toISOString().slice(0, 10)}.`);
+    }
     const result = await this.service.changePlan(orgId, input.planId, actor, input.billingCycle, input.reason);
     return okResponse(result, 'Subscription plan changed successfully.');
+  }
+
+  async cancelScheduledChange(orgId: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN]);
+    await cancelScheduledChange(orgId, { id: admin.id, email: admin.email, name: admin.name, role: admin.role });
+    return okResponse(await this.service.getSubscription(orgId), 'Scheduled change cancelled.');
+  }
+
+  async migrateSubscribers(req: Request, planId: string) {
+    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
+    const input = await parseRequest(req, migrateSubscribersSchema);
+    const result = await migratePlanSubscribers(planId, input, { id: admin.id, email: admin.email, name: admin.name, role: admin.role });
+    return okResponse(result, input.dryRun ? 'Preview.' : `Moved ${result.moved} organizations.`);
   }
 
   async addOverride(req: Request, orgId: string) {
@@ -89,6 +109,7 @@ export class SubscriptionsController {
     const result = await this.service.updateAccess(
       orgId,
       {
+        currentPeriodStart: input.currentPeriodStart ? new Date(input.currentPeriodStart) : undefined,
         currentPeriodEnd: input.currentPeriodEnd ? new Date(input.currentPeriodEnd) : undefined,
         graceDays: input.graceDays,
         contractStart: input.contractStart === undefined ? undefined : input.contractStart ? new Date(input.contractStart) : null,

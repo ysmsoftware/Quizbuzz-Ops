@@ -1,3 +1,4 @@
+import { stopAutoDebit } from '../autodebit/autodebit.service';
 import { usageWindow } from '../subscriptions/access-dates';
 import { IOrganizationsRepository, OrganizationsRepository } from './organizations.repository';
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
@@ -358,6 +359,8 @@ export class OrganizationsService implements IOrganizationsService {
     if (org.isDeleted) throw new ConflictError('Organization is already deleted');
 
     await this.repo.setMainDbOrganizationDeleted(orgId, true, false);
+    // Never charge a deleted org. Restoring it doesn't bring the mandate back: the owner sets it up again.
+    await stopAutoDebit(orgId, actor, `Organization deleted: ${reason}`);
 
     await writeAuditLogEntry(actor, 'org.deleted', AuditTargetType.ORGANIZATION, orgId, org.name, {
       reason,

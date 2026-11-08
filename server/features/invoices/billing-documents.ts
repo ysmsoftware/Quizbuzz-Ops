@@ -1,14 +1,14 @@
 import crypto from 'crypto';
-import { Invoice, OpsPayment } from '@prisma/client';
+import { CreditNote, Invoice, OpsPayment } from '@prisma/client';
 import { prisma } from '../../db/ops-prisma';
-import { invoiceFileName, receiptFileName, renderInvoicePdf, renderReceiptPdf } from './invoice-pdf';
+import { creditNoteFileName, invoiceFileName, receiptFileName, renderCreditNotePdf, renderInvoicePdf, renderReceiptPdf } from './invoice-pdf';
 
 /**
  * Every download comes through here, for ops, the organization and email alike, so there is only
  * ever one file per document number. It's built once and then served as saved.
  */
 
-async function saved(number: string, kind: 'INVOICE' | 'RECEIPT', invoiceId: string, paymentId: string | null, fileName: string, build: () => Promise<Uint8Array>) {
+async function saved(number: string, kind: 'INVOICE' | 'RECEIPT' | 'CREDIT_NOTE', invoiceId: string, paymentId: string | null, fileName: string, build: () => Promise<Uint8Array>) {
   const existing = await prisma.billingDocument.findUnique({ where: { number } });
   if (existing) return existing;
   const data = Buffer.from(await build());
@@ -27,6 +27,14 @@ export const invoiceDocument = (invoice: Invoice) =>
 export async function receiptDocument(invoice: Invoice, payment: OpsPayment, payments: OpsPayment[]) {
   if (!payment.receiptNumber) throw new Error(`Payment ${payment.id} has no receipt number`);
   return saved(payment.receiptNumber, 'RECEIPT', invoice.id, payment.id, receiptFileName(payment.receiptNumber), () => renderReceiptPdf(invoice, payment, payments));
+}
+
+/** Never rebuilt: a credit note can't change once issued. */
+export async function creditNoteDocument(cn: CreditNote) {
+  return saved(cn.number, 'CREDIT_NOTE', cn.invoiceId, cn.paymentId, creditNoteFileName(cn.number), async () => {
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: cn.invoiceId } });
+    return renderCreditNotePdf(invoice, cn);
+  });
 }
 
 /** The document itself changed: void, a new due date, a new pay link. It's rebuilt on the next download. */

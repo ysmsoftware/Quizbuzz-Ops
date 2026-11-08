@@ -3,7 +3,7 @@ import { OpsMessageTemplate } from '@prisma/client';
 import { messagingConfig } from '../config/messaging.config';
 import { getEmailTemplate } from '../templates/email.templates';
 import { IMessageProvider } from './message-provider.interface';
-import { paymentAttachments } from '../features/invoices/payment-documents';
+import { creditNoteAttachments, paymentAttachments } from '../features/invoices/payment-documents';
 
 export class EmailProvider implements IMessageProvider {
   private transporter: nodemailer.Transporter;
@@ -37,7 +37,12 @@ export class EmailProvider implements IMessageProvider {
           console.error(`Could not attach documents for payment ${params.paymentId}:`, err);
           return [];
         })
-      : [];
+      : template === 'CREDIT_NOTE_ISSUED' && params.creditNoteId
+        ? await creditNoteAttachments(params.creditNoteId).catch((err) => {
+            console.error(`Could not attach credit note ${params.creditNoteId}:`, err);
+            return [];
+          })
+        : [];
 
     return this.transporter.sendMail({
       from: messagingConfig.smtp.from,

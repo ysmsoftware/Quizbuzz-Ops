@@ -9,6 +9,7 @@ import { okResponse, errorResponse } from '@/server/http/envelope';
 import { errorMessage } from '@/lib/errors';
 import { canBuyPlan } from '@/server/features/plans/can-buy-plan';
 import { isFeatureEnabled } from '@/server/features/feature-flags/is-feature-enabled';
+import { changeTiming } from '@/server/features/subscriptions/plan-change';
 
 export async function POST(req: Request) {
   try {
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
     // server-side and is the only source of truth for what's actually charged.
     const currentSub = await prisma.organizationSubscription.findUnique({
       where: { organizationId },
-      include: { plan: { select: { id: true, name: true, kind: true } } },
+      include: { plan: true },
     });
 
     if (!canBuyPlan(plan, organizationId, currentSub?.planId)) {
@@ -134,6 +135,15 @@ export async function POST(req: Request) {
       currentSub && currentSub.plan.kind !== 'FREE' && currentSub.currentPeriodEnd.getTime() > Date.now() + 15 * 60_000
         ? currentSub.currentPeriodEnd.toISOString()
         : null;
+    // Per cycle, because a shorter cycle on the same plan also waits for the period end.
+    const scheduledCycles = (['MONTHLY', 'HALF_YEARLY', 'ANNUAL'] as const).filter(
+      (cycle) => currentSub && changeTiming(currentSub, { plan, cycle }) === 'period_end',
+    );
+    const change = {
+      scheduledCycles,
+      on: currentSub?.currentPeriodEnd.toISOString() ?? null,
+      currentPlanName: currentSub?.plan.name ?? null,
+    };
     const autoDebit = {
       available: (await isFeatureEnabled('razorpay_gateway_active', organizationId)) && (await isFeatureEnabled('auto_debit', organizationId)),
       firstChargeAt: paidUntil,
@@ -153,6 +163,7 @@ export async function POST(req: Request) {
         },
         currentSubscription,
         autoDebit,
+        change,
         plan: {
           id: plan.id,
           name: plan.name,

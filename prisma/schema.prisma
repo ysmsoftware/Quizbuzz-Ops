@@ -319,6 +319,12 @@ model OrganizationSubscription {
   // Our own wording of why the last automatic charge failed. Raw gateway text stays in the audit log.
   lastPaymentError   String?
   lastPaymentErrorAt DateTime?
+  // A change that waits for the period end: a downgrade, a shorter cycle, or ops moving a group of orgs at renewal.
+  // The job applies it at currentPeriodEnd; an auto-debit charge for that plan applies it too.
+  scheduledPlanId       String?
+  scheduledBillingCycle BillingCycle?
+  scheduledReason       String?
+  scheduledById         String?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -359,6 +365,8 @@ model SubscriptionOverride {
   removedAt      DateTime?
   removedById    String?
   removedReason  String?
+  // Set when an Event Pass booking gave it. Cancelling the booking removes it.
+  bookingId      String?
   createdAt      DateTime     @default(now())
 
   subscription OrganizationSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
@@ -582,6 +590,8 @@ enum OpsMessageTemplate {
   INVOICE_ISSUED
   INVOICE_REMINDER
   CONTRACT_ENDING
+  CREDIT_NOTE_ISSUED
+  SUBSCRIPTION_CHANGE_SCHEDULED
   // This system has no auto-renewal/card-on-file yet —
   // every purchase is a manual, advance, one-time charge for a fixed period.
   // There is no "we tried to charge you and it failed" state to notify
@@ -760,6 +770,10 @@ model Invoice {
   razorpayLinkId   String?           @unique
   razorpayLinkUrl  String?
   razorpayLinkStatus String?
+  // Total of its credit notes. A paid invoice is never changed or voided: a credit note offsets it.
+  creditedAmount   Decimal           @default(0) @db.Decimal(12, 2)
+  // Set on an AI credit top-up invoice: paying it adds these credits.
+  aiCredits        Int?
 
   lastReminderDays Int?
   createdById      String?
@@ -767,6 +781,7 @@ model Invoice {
   updatedAt        DateTime          @updatedAt
 
   payments         OpsPayment[]
+  creditNotes      CreditNote[]
 
   @@index([organizationId])
   @@index([status, dueAt])
@@ -815,6 +830,7 @@ model BillingSettings {
   upiId         String?
   invoicePrefix  String  @default("INV")
   receiptPrefix  String  @default("REC")
+  creditNotePrefix String @default("CN")
   updatedAt     DateTime @updatedAt
 
   @@map("billing_settings")
@@ -945,6 +961,12 @@ model ContestBooking {
   paymentReference      String?
   opsPaymentId          String?       @unique
 
+  // UPFRONT pays the calculator price. REVENUE_SHARE pays nothing and we keep commissionPercent of each fee.
+  payOption             String        @default("UPFRONT")
+  commissionPercent     Decimal?      @db.Decimal(5, 2)
+  // The main app's contest it's for, once the organizer has made it. Revenue share writes its commission there.
+  contestId             String?
+
   createdById           String
   createdByName         String
 
@@ -958,4 +980,50 @@ model ContestBooking {
   @@index([organizationId])
   @@index([quotedAt])
   @@map("contest_bookings")
+}
+
+// Offsets an issued invoice, in full or part, with the same GST split. Numbered from BillingSequence (CN/26-27/00001).
+// With a refund it records how the money went back; without one it just reduces what's owed.
+model CreditNote {
+  id               String   @id
+  number           String   @unique
+  invoiceId        String
+  invoice          Invoice  @relation(fields: [invoiceId], references: [id])
+  organizationId   String
+  // The payment refunded, when there is one.
+  paymentId        String?
+  subtotal         Decimal  @db.Decimal(12, 2)
+  cgstAmount       Decimal  @db.Decimal(12, 2)
+  sgstAmount       Decimal  @db.Decimal(12, 2)
+  igstAmount       Decimal  @db.Decimal(12, 2)
+  total            Decimal  @db.Decimal(12, 2)
+  reason           String
+  // RAZORPAY, BANK_TRANSFER or NONE.
+  refundMethod     String
+  refundReference  String?
+  razorpayRefundId String?  @unique
+  // Ops chose to end the org's access with it: the org moved to Free.
+  endedAccess      Boolean  @default(false)
+  createdById      String?
+  createdAt        DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@map("credit_notes")
+}
+
+// AI credits bought once (valid 12 months), added on top of the plan's monthly allowance.
+model AiCreditTopUp {
+  id             String   @id
+  organizationId String
+  credits        Int
+  // The paid invoice that bought them. Null for credits ops granted for free.
+  invoiceId      String?  @unique
+  reason         String?
+  expiresAt      DateTime
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, expiresAt])
+  @@map("ai_credit_top_ups")
 }

@@ -17,6 +17,8 @@ interface CurrentPlanCardProps {
   /** Resends the SUBSCRIPTION_RENEWAL_REMINDER email — only meaningful for an active subscription with a future period end. */
   onResendReminder?: () => Promise<{ sent: boolean }>;
   isResendingReminder?: boolean;
+  scheduledPlanName?: string | null;
+  onCancelScheduled?: () => void;
 }
 
 export default function CurrentPlanCard({
@@ -27,6 +29,8 @@ export default function CurrentPlanCard({
   payments = [],
   onResendReminder,
   isResendingReminder,
+  scheduledPlanName,
+  onCancelScheduled,
 }: CurrentPlanCardProps) {
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
 
@@ -132,6 +136,13 @@ export default function CurrentPlanCard({
             <p>Payment: {subscription.collectionMethod === 'PAY_ONLINE' ? 'pays online each renewal' : subscription.collectionMethod.toLowerCase().replace('_', ' ')}</p>
           )}
           {subscription.lastPaymentError && <p className="text-destructive">Last charge failed: {subscription.lastPaymentError}</p>}
+          {subscription.scheduledChange && (
+            <p>
+              Changes to <strong className="text-foreground">{scheduledPlanName}</strong> on {format(new Date(subscription.scheduledChange.on), 'MMM d, yyyy')}
+              {subscription.scheduledChange.reason && ` (${subscription.scheduledChange.reason})`}.{' '}
+              {onCancelScheduled && <button type="button" onClick={onCancelScheduled} className="text-primary hover:underline">Cancel change</button>}
+            </p>
+          )}
         </div>
 
         {/* Payment Receipt — our own record of the last successful charge,

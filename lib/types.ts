@@ -227,7 +227,7 @@ export interface OrganizationSubscription {
   organizationId: string;
   planId: string;
   status: 'active' | 'past_due' | 'restricted' | 'expired' | 'cancelled';
-  billingCycle?: 'MONTHLY' | 'ANNUAL';
+  billingCycle?: 'MONTHLY' | 'HALF_YEARLY' | 'ANNUAL' | 'CUSTOM';
   periodMonths?: number;
   currentPeriodStart: string;
   currentPeriodEnd: string;
@@ -236,6 +236,8 @@ export interface OrganizationSubscription {
   /** The live Razorpay mandate, when collectionMethod is AUTO_DEBIT. */
   autoDebit: { id: string; status: string; paymentMethod: string | null; nextChargeAt: string | null } | null;
   lastPaymentError: string | null;
+  /** Waiting for the period end. */
+  scheduledChange: { planId: string; billingCycle: string | null; reason: string | null; on: string } | null;
   contractStart: string | null;
   contractEnd: string | null;
   poNumber: string | null;
@@ -417,7 +419,12 @@ export interface BookingPricingBreakdown {
   addOnsCost: number;
   subtotal: number;
   margin: number;
+  /** What the booking charges before GST: the Event Pass price, or the cost-plus total on older bookings. */
   total: number;
+  /** The Event Pass quote the price came from. Absent on bookings made before it. */
+  eventPass?: import('@/lib/pricing/event-pass').EventPassQuote;
+  /** Our cost plus margin, kept as a floor check. */
+  costFloor?: number;
 }
 
 export interface ContestBooking {

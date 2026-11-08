@@ -6,7 +6,9 @@ import { prisma } from '../../db/ops-prisma';
 import { assertOrgExists } from '../organizations/org-exists';
 import { invoiceDocument, pdfResponse, receiptDocument } from './billing-documents';
 import { invoicesService as service } from './invoices.service';
-import { billingSettingsSchema, invoiceActionSchema, issueInvoiceSchema, listInvoicesSchema, recordPaymentSchema, voidPaymentSchema } from './invoices.validator';
+import { issueCreditNote } from './credit-notes';
+import { creditNoteDocument } from './billing-documents';
+import { billingSettingsSchema, creditNoteSchema, invoiceActionSchema, issueInvoiceSchema, listInvoicesSchema, recordPaymentSchema, voidPaymentSchema } from './invoices.validator';
 
 const BILLING = [PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN];
 const SUPER = [PlatformAdminRole.SUPER_ADMIN];
@@ -69,6 +71,19 @@ export class InvoicesController {
         'Cache-Control': 'private, no-store',
       },
     });
+  }
+
+  async creditNote(req: Request, id: string) {
+    const admin = await requireRole(SUPER);
+    const note = await issueCreditNote(id, await parseRequest(req, creditNoteSchema), actorOf(admin));
+    return okResponse(note, `Credit note ${note.number} issued.`);
+  }
+
+  async creditNoteDocument(id: string, creditNoteId: string) {
+    await getSessionAdmin();
+    const note = await prisma.creditNote.findFirst({ where: { id: creditNoteId, invoiceId: id } });
+    if (!note) return errorResponse('Credit note not found', 'NOT_FOUND', null, 404);
+    return pdfResponse(await creditNoteDocument(note));
   }
 
   async getSettings() {

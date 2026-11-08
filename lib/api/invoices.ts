@@ -42,6 +42,30 @@ export interface Invoice {
   razorpayLinkStatus: string | null;
   createdAt: string;
   payments: InvoicePayment[];
+  creditedAmount: string;
+  creditNotes: CreditNote[];
+}
+
+export interface CreditNote {
+  id: string;
+  number: string;
+  total: string;
+  reason: string;
+  refundMethod: 'RAZORPAY' | 'BANK_TRANSFER' | 'NONE';
+  refundReference: string | null;
+  razorpayRefundId: string | null;
+  paymentId: string | null;
+  endedAccess: boolean;
+  createdAt: string;
+}
+
+export interface CreditNoteBody {
+  amount: number;
+  reason: string;
+  refundMethod: CreditNote['refundMethod'];
+  paymentId?: string;
+  refundReference?: string;
+  endAccess: boolean;
 }
 
 export interface InvoiceList { rows: Invoice[]; total: number; page: number; limit: number }
@@ -89,6 +113,7 @@ export interface BillingSettings {
   upiId: string | null;
   invoicePrefix: string;
   receiptPrefix: string;
+  creditNotePrefix: string;
 }
 
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) });
@@ -106,6 +131,7 @@ export const issueInvoice = (orgId: string, body: IssueInvoiceBody) =>
 export const recordInvoicePayment = (id: string, body: RecordPaymentBody) => apiRequest(`/api/v1/ops/invoices/${id}/payments`, json('POST', body));
 export const voidInvoicePayment = (id: string, paymentId: string, reason: string) => apiRequest(`/api/v1/ops/invoices/${id}/payments/${paymentId}`, json('DELETE', { reason }));
 export const actOnInvoice = (id: string, body: InvoiceAction) => apiRequest(`/api/v1/ops/invoices/${id}`, json('POST', body));
+export const issueCreditNote = (id: string, body: CreditNoteBody) => apiRequest(`/api/v1/ops/invoices/${id}/credit-notes`, json('POST', body));
 export const getBillingSettings = () => apiRequest<BillingSettings | null>('/api/v1/ops/billing/settings');
 export const saveBillingSettings = (body: BillingSettings) => apiRequest('/api/v1/ops/billing/settings', json('PUT', body));
 

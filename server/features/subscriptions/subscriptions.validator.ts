@@ -13,6 +13,15 @@ export const changePlanSchema = z.object({
   planId: z.string().min(1, 'Plan ID is required'),
   billingCycle: z.enum(['MONTHLY', 'HALF_YEARLY', 'ANNUAL']).optional(),
   reason: z.string().optional(),
+  // period_end keeps the current plan until the paid time runs out, then switches.
+  when: z.enum(['now', 'period_end']).default('now'),
+});
+
+export const migrateSubscribersSchema = z.object({
+  toPlanId: z.string().min(1),
+  when: z.enum(['now', 'renewal']),
+  dryRun: z.boolean().default(true),
+  reason: z.string().trim().min(1, 'Reason is required'),
 });
 
 export const addOverrideSchema = z.object({
@@ -37,6 +46,7 @@ export const addOverrideSchema = z.object({
 });
 
 export const updateAccessSchema = z.object({
+  currentPeriodStart: z.string().datetime({ offset: true }).optional(),
   currentPeriodEnd: z.string().datetime({ offset: true }).optional(),
   graceDays: z.number().int().min(0).max(365).optional(),
   contractStart: z.string().datetime({ offset: true }).nullable().optional(),

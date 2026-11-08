@@ -11,6 +11,7 @@ import SubscriptionsRepository from '../subscriptions/subscriptions.repository';
 import { lapseStatusAt } from '../subscriptions/access-dates';
 import { oldestUnpaidDueAt } from '../subscriptions/access-input';
 import { finishSubscriptionPayment } from '../invoices/subscription-paid';
+import { queryMainDb } from '../../db/main-db-pool';
 import { ownerFailureReason } from './failure-reason';
 
 /**
@@ -73,23 +74,22 @@ async function razorpayPlanId(plan: SubscriptionPlan, cycle: BillingCycle, amoun
   return id;
 }
 
+const planPricing = (plan: SubscriptionPlan) => ({
+  allowsMonthly: plan.allowsMonthly,
+  allowsHalfYearly: plan.allowsHalfYearly,
+  allowsAnnual: plan.allowsAnnual,
+  monthlyPrice: plan.monthlyPrice != null ? Number(plan.monthlyPrice) : null,
+  halfYearlyPrice: plan.halfYearlyPrice != null ? Number(plan.halfYearlyPrice) : null,
+  annualPrice: plan.annualPrice != null ? Number(plan.annualPrice) : null,
+});
+
 /** Sets up a mandate. With paid time left, the first charge is when it ends, so nobody pays twice for the same days. */
 export async function startAutoDebit(input: { organizationId: string; plan: SubscriptionPlan; cycle: BillingCycle; adminEmail?: string | null }) {
   const { organizationId, plan, cycle } = input;
   const p = PERIODS[cycle];
   if (!p || !autoDebitCycle(cycle)) throw new ConflictError('Automatic payment is available for monthly and 6-month billing.');
 
-  const base = resolvePlanCyclePrice(
-    {
-      allowsMonthly: plan.allowsMonthly,
-      allowsHalfYearly: plan.allowsHalfYearly,
-      allowsAnnual: plan.allowsAnnual,
-      monthlyPrice: plan.monthlyPrice != null ? Number(plan.monthlyPrice) : null,
-      halfYearlyPrice: plan.halfYearlyPrice != null ? Number(plan.halfYearlyPrice) : null,
-      annualPrice: plan.annualPrice != null ? Number(plan.annualPrice) : null,
-    },
-    cycle,
-  );
+  const base = resolvePlanCyclePrice(planPricing(plan), cycle);
   const pricing = calculateSubscriptionPricing(base);
   const amountPaise = Math.round(pricing.totalAmount * 100);
 
@@ -177,9 +177,14 @@ export async function applyState(row: RazorpaySubscription, state: RzpSubscripti
     const status = sub.status === 'CANCELLED'
       ? lapseStatusAt({ kind: sub.plan.kind, currentPeriodEnd: sub.currentPeriodEnd, graceDays: sub.graceDays, overdueInvoiceDueAt: await oldestUnpaidDueAt(sub.organizationId) })
       : sub.status;
+    // A mandate for another plan that starts at the period end is a scheduled change.
+    const other = row.planId !== sub.planId || row.billingCycle !== sub.billingCycle;
     await prisma.organizationSubscription.update({
       where: { id: sub.id },
-      data: { razorpaySubscriptionId: row.id, collectionMethod: 'AUTO_DEBIT', status, cancelledAt: status === sub.status ? sub.cancelledAt : null },
+      data: {
+        razorpaySubscriptionId: row.id, collectionMethod: 'AUTO_DEBIT', status, cancelledAt: status === sub.status ? sub.cancelledAt : null,
+        ...(other && row.startAt ? { scheduledPlanId: row.planId, scheduledBillingCycle: row.billingCycle, scheduledReason: 'Automatic renewal set up for this plan' } : {}),
+      },
     });
     await syncOrgPlanLimitsCache(sub.organizationId).catch((err) => console.error(`[autodebit] cache sync for ${sub.organizationId}:`, err));
     await writeAuditLogEntry(RAZORPAY_ACTOR, 'subscription.autodebit_on', AuditTargetType.SUBSCRIPTION, sub.id, sub.plan.name, {
@@ -210,7 +215,8 @@ export async function applyState(row: RazorpaySubscription, state: RzpSubscripti
 }
 
 /** One successful charge: a payment, the plan period it pays for, its invoice and receipt. Safe to repeat. */
-export async function applyCharge(row: RazorpaySubscription, charge: { paymentId: string; amountPaise: number; periodStart: Date | null }) {
+export async function applyCharge(chargedRow: RazorpaySubscription, charge: { paymentId: string; amountPaise: number; periodStart: Date | null }) {
+  let row = chargedRow;
   let payment = await prisma.opsPayment.findUnique({ where: { razorpayPaymentId: charge.paymentId } });
   if (payment?.subscriptionId) return;
 
@@ -252,6 +258,25 @@ export async function applyCharge(row: RazorpaySubscription, charge: { paymentId
   // A late repair of an older charge records the money without moving dates back.
   const sub = await prisma.organizationSubscription.findUnique({ where: { organizationId: row.organizationId } });
   const start = charge.periodStart ?? new Date();
+
+  // A change scheduled for this renewal (a downgrade, or ops moving the plan to a new version) rides on the
+  // charge only if the mandate's amount is that plan's price. Otherwise the owner keeps the old price until
+  // they approve a new mandate, and the job applies the change a day later.
+  if (sub?.scheduledPlanId && sub.scheduledPlanId !== row.planId && sub.currentPeriodEnd <= new Date(start.getTime() + 60 * 60_000)) {
+    const target = await prisma.subscriptionPlan.findUnique({ where: { id: sub.scheduledPlanId } });
+    const cycle = sub.scheduledBillingCycle ?? row.billingCycle;
+    let price: number | null = null;
+    try {
+      price = target && cycle === row.billingCycle && autoDebitCycle(cycle) ? calculateSubscriptionPricing(resolvePlanCyclePrice(planPricing(target), cycle)).totalAmount : null;
+    } catch {
+      price = null;
+    }
+    if (target && price === Number(row.amount)) {
+      row = await prisma.razorpaySubscription.update({ where: { id: row.id }, data: { planId: target.id } });
+      await prisma.opsPayment.update({ where: { id: payment.id }, data: { planId: target.id } });
+      payment = { ...payment, planId: target.id };
+    }
+  }
   const end = new Date(start);
   end.setMonth(end.getMonth() + periodMonthsForCycle(row.billingCycle));
   if (sub && sub.planId === row.planId && sub.currentPeriodEnd >= end) {
@@ -319,8 +344,14 @@ export async function stopAutoDebit(organizationId: string, actor: AuditActor, w
 /** Hourly: catch up with anything a webhook missed, and drop mandates never authorised. */
 export async function reconcileAutoDebits(now = new Date()): Promise<{ checked: number; abandoned: number; failures: number }> {
   if (!razorpayAuth()) return { checked: 0, abandoned: 0, failures: 0 };
-  const rows = await prisma.razorpaySubscription.findMany({ where: { status: { in: LIVE } } });
+  let rows = await prisma.razorpaySubscription.findMany({ where: { status: { in: LIVE } } });
   let checked = 0, abandoned = 0, failures = 0;
+  // An org deleted anywhere, even outside ops, must never be charged again.
+  const deleted = rows.length
+    ? new Set((await queryMainDb<{ id: string }>(`SELECT id FROM organizations WHERE id = ANY($1) AND "isDeleted" = true`, [[...new Set(rows.map((r) => r.organizationId))]])).map((o) => o.id))
+    : new Set<string>();
+  for (const orgId of deleted) await stopAutoDebit(orgId, RAZORPAY_ACTOR, 'Organization is deleted');
+  rows = rows.filter((r) => !deleted.has(r.organizationId));
   for (const row of rows) {
     try {
       const state = await razorpayCall<RzpSubscription>(`subscriptions/${row.id}`, 'GET');

@@ -2,6 +2,7 @@ import { IEntitlementsRepository, EntitlementsRepository } from './entitlements.
 import { computeEffectiveLimits, LIMIT_FIELDS, LimitField, PLAN_FEATURES } from '../subscriptions/effective-limits';
 import { computeAccessDates } from '../subscriptions/access-dates';
 import { oldestUnpaidDueAt } from '../subscriptions/access-input';
+import { prisma } from '../../db/ops-prisma';
 
 export interface IEntitlementsService {
   syncOrgPlanLimitsCache(orgId: string): Promise<void>;
@@ -57,6 +58,8 @@ export class EntitlementsService implements IEntitlementsService {
       downgradeAt: dates.downgradeAt?.toISOString() ?? null,
       ...Object.fromEntries(LIMIT_FIELDS.map((field) => [field, effective[field].value])),
       commissionPercent: base.commissionPercent != null ? Number(base.commissionPercent) : null,
+      // One-time packs on top of aiCreditsPerMonth. The AI module subtracts what's been used.
+      aiTopUpCredits: (await prisma.aiCreditTopUp.aggregate({ where: { organizationId: orgId, expiresAt: { gt: new Date() } }, _sum: { credits: true } }))._sum.credits ?? 0,
       features,
       computedAt: new Date().toISOString(),
     };

@@ -5,6 +5,8 @@ import {
   getOrganizationSubscription,
   assignInitialSubscriptionPlan,
   changeOrganizationPlan,
+  cancelScheduledPlanChange,
+  type PlanChangeInput,
   addSubscriptionOverride,
   removeSubscriptionOverride,
   getPlanChangeHistory,
@@ -46,7 +48,7 @@ export function useSubscription(orgId: string) {
   });
 
   const changePlanMutation = useMutation({
-    mutationFn: ({ planId }: { planId: string }) => changeOrganizationPlan(orgId, planId),
+    mutationFn: (input: PlanChangeInput) => changeOrganizationPlan(orgId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations'] });
       queryClient.invalidateQueries({ queryKey: ['plans'] });
@@ -76,6 +78,14 @@ export function useSubscription(orgId: string) {
 
   const updateAccessMutation = useMutation({
     mutationFn: (input: AccessUpdate) => updateSubscriptionAccess(orgId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+    },
+  });
+
+  const cancelScheduledMutation = useMutation({
+    mutationFn: () => cancelScheduledPlanChange(orgId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations'] });
       queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
@@ -112,6 +122,7 @@ export function useSubscription(orgId: string) {
     updateAccess: updateAccessMutation.mutateAsync,
     isUpdatingAccess: updateAccessMutation.isPending,
 
+    cancelScheduledChange: cancelScheduledMutation.mutateAsync,
     resendReminder: resendReminderMutation.mutateAsync,
     isResendingReminder: resendReminderMutation.isPending,
   };

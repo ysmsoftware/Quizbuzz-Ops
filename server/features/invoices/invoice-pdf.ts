@@ -1,3 +1,4 @@
+import type { CreditNote } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 import fontkit from '@pdf-lib/fontkit';
@@ -15,6 +16,7 @@ import { round2 } from './invoice-math';
 const fileSafe = (v: string) => v.replace(/[^\w-]/g, '-');
 export const invoiceFileName = (inv: Pick<Invoice, 'invoiceNumber'>) => `Invoice-${fileSafe(inv.invoiceNumber)}.pdf`;
 export const receiptFileName = (receiptNumber: string) => `Receipt-${fileSafe(receiptNumber)}.pdf`;
+export const creditNoteFileName = (number: string) => `Credit-note-${fileSafe(number)}.pdf`;
 
 const inr = (v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const longDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Kolkata' });
@@ -139,9 +141,11 @@ async function drawDocument(inv: Invoice, spec: DocSpec): Promise<Uint8Array> {
   rightText(s.legalName ?? '', RIGHT, y, 12, bold);
   y -= 28;
 
+  // Values line up after the widest label, so a long one ("Credit note number") never runs into its value.
+  const valueX = LEFT + Math.max(80, ...spec.meta.map(([label]) => bold.widthOfTextAtSize(label, 9) + 10));
   spec.meta.forEach(([label, value], i) => {
     text(label, LEFT, y, 9, bold);
-    text(value, LEFT + 80, y, 9, i === 0 ? bold : regular);
+    text(value, valueX, y, 9, i === 0 ? bold : regular);
     y -= 13;
   });
   y -= 12;
@@ -305,5 +309,30 @@ export async function renderReceiptPdf(inv: Invoice, payment: OpsPayment, paymen
     history,
     notes: sacNote(inv),
     footer: `${payment.receiptNumber ?? ''} · ${paid} paid on ${date}`,
+  });
+}
+
+const REFUND_LINE: Record<string, string> = {
+  RAZORPAY: 'Refunded through Razorpay to the original payment method.',
+  BANK_TRANSFER: 'Refunded by bank transfer',
+  NONE: 'No refund: this reduces the amount owed on the invoice.',
+};
+
+/** Same layout, scaled to the credited amount and naming the invoice it offsets. */
+export async function renderCreditNotePdf(inv: Invoice, cn: CreditNote): Promise<Uint8Array> {
+  const credited: Invoice = {
+    ...inv,
+    subtotal: cn.subtotal, cgstAmount: cn.cgstAmount, sgstAmount: cn.sgstAmount, igstAmount: cn.igstAmount, total: cn.total,
+    description: `Credit against ${inv.invoiceNumber}: ${inv.description}`,
+  };
+  const amount = inr(Number(cn.total));
+  const refund = cn.refundMethod === 'BANK_TRANSFER' && cn.refundReference ? `${REFUND_LINE.BANK_TRANSFER}, reference ${cn.refundReference}.` : REFUND_LINE[cn.refundMethod];
+  return drawDocument(credited, {
+    title: 'Credit Note',
+    meta: [['Credit note number', cn.number], ['Date of issue', longDate(cn.createdAt)], ['Original invoice', inv.invoiceNumber], ...gstMeta(inv)],
+    headline: `${amount} credited`,
+    rows: [...chargeRows(credited).slice(0, -1), { label: 'Total credited', amount: Number(cn.total), bold: true }],
+    notes: [`Reason: ${cn.reason}`, refund ?? '', ...sacNote(inv)].filter(Boolean),
+    footer: `${cn.number} · ${amount} credited against ${inv.invoiceNumber}`,
   });
 }

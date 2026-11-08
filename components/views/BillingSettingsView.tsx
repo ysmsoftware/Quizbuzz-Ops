@@ -10,7 +10,7 @@ import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 
 const EMPTY: BillingSettings = {
   legalName: '', gstin: '', sacCode: '', address: '', state: '', email: '', phone: '',
-  bankName: '', accountName: '', accountNumber: '', ifsc: '', upiId: '', invoicePrefix: 'INV', receiptPrefix: 'REC',
+  bankName: '', accountName: '', accountNumber: '', ifsc: '', upiId: '', invoicePrefix: 'INV', receiptPrefix: 'REC', creditNotePrefix: 'CN',
 };
 
 const TEXT_FIELDS: Array<{ key: keyof BillingSettings; label: string; required?: boolean; hint?: string }> = [
@@ -28,6 +28,7 @@ const TEXT_FIELDS: Array<{ key: keyof BillingSettings; label: string; required?:
   { key: 'upiId', label: 'UPI ID' },
   { key: 'invoicePrefix', label: 'Invoice number prefix', required: true, hint: 'INV/26-27/00001. Up to 4 letters: GST allows 16 characters in all.' },
   { key: 'receiptPrefix', label: 'Receipt number prefix', required: true, hint: 'REC/26-27/00001. Up to 4 letters.' },
+  { key: 'creditNotePrefix', label: 'Credit note number prefix', required: true, hint: 'CN/26-27/00001. Up to 4 letters.' },
 ];
 
 export default function BillingSettingsView() {

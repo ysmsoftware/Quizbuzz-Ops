@@ -19,6 +19,7 @@ import {
 } from '@/lib/pricing/subscriptionPricing';
 import { errorMessage } from '@/lib/errors';
 import { canBuyPlan } from '@/server/features/plans/can-buy-plan';
+import { changeTiming } from '@/server/features/subscriptions/plan-change';
 
 // Short-lived per org+plan+cycle lock so a double-click, two open tabs, or a
 // retried request can't race two concurrent calls past the active-subscription
@@ -125,8 +126,19 @@ export async function POST(req: Request) {
     // downgrade/early-renewal flow, and gets prorated below instead of blocked.
     const currentSub = await prisma.organizationSubscription.findUnique({
       where: { organizationId },
+      include: { plan: true },
     });
     const now = new Date();
+
+    // Downgrades and shorter cycles wait for the period end: nothing to pay now.
+    if (currentSub && changeTiming(currentSub, { plan, cycle: billingCycle }, now) === 'period_end') {
+      return errorResponse(
+        `This change starts when your current plan ends on ${currentSub.currentPeriodEnd.toISOString().slice(0, 10)}. Schedule it instead.`,
+        'SCHEDULE_INSTEAD',
+        { on: currentSub.currentPeriodEnd.toISOString() },
+        409
+      );
+    }
     const hasActiveSub =
       !!currentSub && currentSub.status === 'ACTIVE' && currentSub.currentPeriodEnd > now;
 

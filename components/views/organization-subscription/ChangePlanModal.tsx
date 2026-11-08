@@ -9,7 +9,9 @@ import { formatInr } from '@/lib/format';
 interface ChangePlanModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (selectedPlanId: string, reason: string) => Promise<void>;
+  onSubmit: (input: { planId: string; reason: string; when: 'now' | 'period_end'; billingCycle?: 'MONTHLY' | 'HALF_YEARLY' | 'ANNUAL' }) => Promise<void>;
+  /** Set when the org has paid time left, so the change can wait for it. */
+  periodEnd?: string | null;
   plans: SubscriptionPlan[];
   currentPlanId: string;
   isSubmitting: boolean;
@@ -22,16 +24,21 @@ export default function ChangePlanModal({
   plans,
   currentPlanId,
   isSubmitting,
+  periodEnd,
 }: ChangePlanModalProps) {
   const [selectedPlanId, setSelectedPlanId] = useState(currentPlanId);
   const [reason, setReason] = useState('');
+  const [when, setWhen] = useState<'now' | 'period_end'>('now');
+  const [cycle, setCycle] = useState<'' | 'MONTHLY' | 'HALF_YEARLY' | 'ANNUAL'>('');
+  const selected = plans.find((p) => p.id === selectedPlanId);
+  const cycles = selected ? ([['MONTHLY', selected.allowsMonthly], ['HALF_YEARLY', selected.allowsHalfYearly], ['ANNUAL', selected.allowsAnnual]] as const).filter(([, ok]) => ok).map(([c]) => c) : [];
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlanId || selectedPlanId === currentPlanId) return;
-    await onSubmit(selectedPlanId, reason);
+    await onSubmit({ planId: selectedPlanId, reason, when, billingCycle: cycle || undefined });
   };
 
   return (
@@ -101,6 +108,24 @@ export default function ChangePlanModal({
               </div>
             </div>
 
+            {cycles.length > 1 && (
+              <div>
+                <label htmlFor="cp-cycle" className="block font-semibold text-foreground mb-1">Billing cycle</label>
+                <select id="cp-cycle" value={cycle} onChange={(e) => setCycle(e.target.value as typeof cycle)} className="w-full px-3 py-2 rounded-md bg-background border border-input">
+                  <option value="">The plan&apos;s default</option>
+                  {cycles.map((c) => <option key={c} value={c}>{c === 'MONTHLY' ? 'Monthly' : c === 'HALF_YEARLY' ? 'Every 6 months' : 'Yearly'}</option>)}
+                </select>
+              </div>
+            )}
+
+            {periodEnd && new Date(periodEnd) > new Date() && (
+              <fieldset className="space-y-1">
+                <legend className="block font-semibold text-foreground mb-1">When</legend>
+                <label className="flex items-center gap-2"><input type="radio" name="cp-when" checked={when === 'now'} onChange={() => setWhen('now')} /> Now, with a fresh period</label>
+                <label className="flex items-center gap-2"><input type="radio" name="cp-when" checked={when === 'period_end'} onChange={() => setWhen('period_end')} /> At the period end, {new Date(periodEnd).toLocaleDateString()}: they keep what they paid for</label>
+              </fieldset>
+            )}
+
             <div>
               <label className="block font-semibold text-foreground mb-1">Reason / Notes for Audit Log</label>
               <input
@@ -125,7 +150,7 @@ export default function ChangePlanModal({
                 disabled={isSubmitting || !selectedPlanId || selectedPlanId === currentPlanId}
                 className="px-3.5 py-1.5 text-xs font-semibold rounded-md bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50"
               >
-                {isSubmitting ? 'Migrating...' : 'Confirm Plan Switch'}
+                {isSubmitting ? 'Saving...' : when === 'period_end' ? 'Schedule change' : 'Confirm Plan Switch'}
               </button>
             </div>
           </form>

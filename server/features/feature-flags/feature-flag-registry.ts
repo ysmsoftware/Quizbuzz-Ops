@@ -170,6 +170,16 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     accessModel: 'OPT_IN',
   },
   {
+    key: 'ai_top_ups',
+    label: 'AI credit top-ups',
+    description: 'Lets the organization’s owner buy one-time AI credit packs from the Billing page. Turn on only where AI question generation is live.',
+    // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
+  {
     key: 'ambassador_program_enabled',
     label: 'Ambassador Program',
     description:

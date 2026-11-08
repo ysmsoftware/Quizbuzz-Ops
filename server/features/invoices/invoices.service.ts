@@ -32,6 +32,14 @@ function endOfDayIst(date: Date): Date {
   return new Date(ist.getTime() - 5.5 * 3600_000);
 }
 
+/** INV/26-27/00001, REC/…, CN/…: one gapless series per prefix and financial year. */
+export async function nextDocumentNumber(tx: Tx, prefix: string, at: Date): Promise<string> {
+  const fy = financialYear(at);
+  const key = `${prefix}/${fy}`;
+  const row = await tx.billingSequence.upsert({ where: { key }, create: { key, last: 1 }, update: { last: { increment: 1 } } });
+  return `${prefix}/${fy}/${String(row.last).padStart(5, '0')}`;
+}
+
 export class InvoicesService {
   private entitlements = new EntitlementsService();
 
@@ -58,7 +66,10 @@ export class InvoicesService {
         orderBy: q.overdue ? { dueAt: 'asc' } : { createdAt: 'desc' },
         skip: (q.page - 1) * q.limit,
         take: q.limit,
-        include: { payments: { orderBy: { createdAt: 'asc' }, include: { proof: { select: { fileName: true } } } } },
+        include: {
+          payments: { orderBy: { createdAt: 'asc' }, include: { proof: { select: { fileName: true } } } },
+          creditNotes: { orderBy: { createdAt: 'asc' } },
+        },
       }),
       prisma.invoice.count({ where }),
     ]);
@@ -77,14 +88,11 @@ export class InvoicesService {
     return { name: r.name, gstin: r.gstNumber, address: r.billingAddress, state: r.state, email: r.primaryContactEmail };
   }
 
-  private async nextNumber(tx: Tx, prefix: string, at: Date): Promise<string> {
-    const fy = financialYear(at);
-    const key = `${prefix}/${fy}`;
-    const row = await tx.billingSequence.upsert({ where: { key }, create: { key, last: 1 }, update: { last: { increment: 1 } } });
-    return `${prefix}/${fy}/${String(row.last).padStart(5, '0')}`;
+  private nextNumber(tx: Tx, prefix: string, at: Date): Promise<string> {
+    return nextDocumentNumber(tx, prefix, at);
   }
 
-  async issue(organizationId: string, input: IssueInvoiceInput, actor: AuditActor) {
+  async issue(organizationId: string, input: IssueInvoiceInput, actor: AuditActor, extra: { aiCredits?: number } = {}) {
     if (input.collectionMethod === 'COMPLIMENTARY' && actor.role !== PlatformAdminRole.SUPER_ADMIN) {
       throw new ValidationError(null, 'Only a super admin can grant a complimentary plan.');
     }
@@ -134,6 +142,7 @@ export class InvoicesService {
           seller: settings as unknown as Prisma.InputJsonValue,
           buyer: buyer as unknown as Prisma.InputJsonValue,
           createdById: actor.id,
+          aiCredits: extra.aiCredits ?? null,
         },
       }),
     );
@@ -233,6 +242,10 @@ export class InvoicesService {
         });
       }
     }
+    if (fresh.aiCredits) {
+      const { grantPaidTopUp } = await import('./ai-credits');
+      await grantPaidTopUp(fresh);
+    }
     await prisma.invoice.update({ where: { id: fresh.id }, data: { accessGrantedAt: new Date() } });
   }
 
@@ -244,7 +257,8 @@ export class InvoicesService {
     const amountPaid = round2(live.reduce((sum, p) => sum + n(p.amount), 0));
     const tdsAmount = round2(live.reduce((sum, p) => sum + n(p.tdsAmount), 0));
     const closed = inv.status === 'VOID' || inv.status === 'WRITTEN_OFF';
-    const status = closed ? inv.status : settledStatus(n(inv.total), amountPaid, tdsAmount);
+    // A credit note lowers what's owed; a fully credited unpaid invoice is closed when the credit note is issued.
+    const status = closed ? inv.status : settledStatus(round2(n(inv.total) - n(inv.creditedAmount)), amountPaid, tdsAmount);
     return tx.invoice.update({
       where: { id: invoiceId },
       data: {

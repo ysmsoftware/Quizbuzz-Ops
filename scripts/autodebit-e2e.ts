@@ -226,7 +226,30 @@ async function main() {
   assert.equal((await prisma.razorpaySubscription.findUniqueOrThrow({ where: { id: fourth.body.data.subscriptionId } })).status, 'cancelled');
   step('plan cancelled: mandate cancelled too');
 
-  // 9. Other apps' and Razorpay's own payments on the account are acknowledged, not refused.
+  // 9. Downgrade on auto-debit: a mandate for the cheaper plan starts at the period end, shows as the scheduled
+  // change, and its first charge switches the plan.
+  const proEnd = new Date(Date.now() + 10 * 24 * 60 * 60_000);
+  await prisma.organizationSubscription.update({
+    where: { organizationId: ORG },
+    data: { planId: 'plan_edu_pro_500', status: 'ACTIVE', cancelledAt: null, collectionMethod: 'PAY_ONLINE', razorpaySubscriptionId: null, currentPeriodStart: new Date(), currentPeriodEnd: proEnd },
+  });
+  const down = await post('/api/v1/billing-portal/subscription/autodebit', { token: handoff('edu-basic'), billingCycle: 'MONTHLY' });
+  assert.equal(down.body.data.firstChargeAt, proEnd.toISOString());
+  await webhook('subscription.authenticated', { subscription: { entity: { id: down.body.data.subscriptionId, status: 'authenticated', payment_method: 'upi' } } });
+  s = await sub();
+  assert.equal(s.plan.slug, 'edu-pro-500', 'still on Pro until it ends');
+  assert.equal(s.scheduledPlanId, 'plan_edu_basic');
+  await webhook('subscription.charged', {
+    subscription: { entity: { id: down.body.data.subscriptionId, status: 'active', current_start: secs(proEnd), current_end: secs(addMonths(proEnd, 1)) } },
+    payment: { entity: { id: 'pay_e2e_ad_down', amount: 283082 } },
+  });
+  s = await sub();
+  assert.equal(s.plan.slug, 'edu-basic');
+  assert.equal(s.scheduledPlanId, null);
+  assert.equal(s.currentPeriodStart.getTime(), new Date(secs(proEnd) * 1000).getTime());
+  step('downgrade on auto-debit: Basic mandate waits for Pro to end, then its first charge switches the plan');
+
+  // 10. Other apps' and Razorpay's own payments on the account are acknowledged, not refused.
   await webhook('payment.captured', { payment: { entity: { id: 'pay_other', amount: 100 } } });
   await webhook('payment.failed', { payment: { entity: { id: 'pay_other2', order_id: 'order_unknown' } } });
   await webhook('subscription.charged', { subscription: { entity: { id: 'sub_not_ours', status: 'active' } }, payment: { entity: { id: 'pay_x', amount: 100 } } });

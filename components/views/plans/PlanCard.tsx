@@ -5,8 +5,7 @@ import { SubscriptionPlan } from '@/lib/types';
 import { 
   Edit3, EyeOff, Check, X, Users, Trophy, HelpCircle, 
   ShieldCheck, Download, Globe, Lock, Layers, Building2,
-  type LucideIcon,
-} from 'lucide-react';
+  type LucideIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 import { formatInr } from '@/lib/format';
 
@@ -14,10 +13,12 @@ interface PlanCardProps {
   plan: SubscriptionPlan;
   onEdit: (plan: SubscriptionPlan) => void;
   onDeactivate: (plan: SubscriptionPlan) => void;
+  /** Move everyone on this plan to another. Super admins only. */
+  onMoveSubscribers?: (plan: SubscriptionPlan) => void;
   orgCount?: number;
 }
 
-export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: PlanCardProps) {
+export default function PlanCard({ plan, onEdit, onDeactivate, onMoveSubscribers, orgCount = 0 }: PlanCardProps) {
   const isFree =
     (plan.allowsMonthly ? plan.monthlyPrice === 0 : true) &&
     (plan.allowsAnnual ? plan.annualPrice === 0 : true);
@@ -61,6 +62,17 @@ export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: P
             >
               <Edit3 className="h-4 w-4" />
             </button>
+            {onMoveSubscribers && activeCount > 0 && (
+              <button
+                type="button"
+                onClick={() => onMoveSubscribers(plan)}
+                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                title="Move subscribers to another plan"
+                aria-label="Move subscribers to another plan"
+              >
+                <Users className="h-4 w-4" />
+              </button>
+            )}
             {plan.isActive && (
               <button
                 type="button"

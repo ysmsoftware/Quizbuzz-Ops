@@ -1,5 +1,6 @@
 'use client';
 
+import type { PlanChangeInput } from '@/lib/api/organizations';
 import React, { useState } from 'react';
 import { useSubscription } from '@/lib/hooks/useSubscription';
 import { usePlans } from '@/lib/hooks/usePlans';
@@ -7,6 +8,8 @@ import { useToast } from '@/components/ui/Toast';
 import { Organization, SubscriptionOverride } from '@/lib/types';
 import { AccessUpdate, OrgPayment } from '@/lib/api/organizations';
 import CurrentPlanCard from './organization-subscription/CurrentPlanCard';
+import AiCreditsCard from './organization-subscription/AiCreditsCard';
+import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import QuotaUsageGrid from './organization-subscription/QuotaUsageGrid';
 import LimitOverridesTable from './organization-subscription/LimitOverridesTable';
 import PlanChangeHistoryTable from './organization-subscription/PlanChangeHistoryTable';
@@ -33,6 +36,8 @@ export default function OrganizationSubscriptionTab({
   // Another org's private plan is never an option here.
   const plans = allPlans.filter((p) => !p.organizationId || p.organizationId === organization.id);
   const { toast } = useToast();
+  const { admin: currentAdmin } = useCurrentAdmin();
+  const canGrantCredits = currentAdmin?.role === 'SUPER_ADMIN';
   const {
     subscription,
     isSubLoading,
@@ -50,6 +55,7 @@ export default function OrganizationSubscriptionTab({
     isResendingReminder,
     updateAccess,
     isUpdatingAccess,
+    cancelScheduledChange,
   } = useSubscription(organization.id);
 
   // Modals
@@ -95,7 +101,7 @@ export default function OrganizationSubscriptionTab({
         <ChangePlanModal
           isOpen={isChangePlanOpen}
           onClose={() => setIsChangePlanOpen(false)}
-          onSubmit={async (selectedPlanId) => {
+          onSubmit={async ({ planId: selectedPlanId }) => {
             try {
               await assignInitialPlan(selectedPlanId);
               const nextPlan = plans.find((p) => p.id === selectedPlanId);
@@ -117,11 +123,15 @@ export default function OrganizationSubscriptionTab({
   const currentPlan = plans.find((p) => p.id === subscription.planId || p.slug === subscription.planId);
 
   // Change Plan submit
-  const handleChangePlanSubmit = async (selectedPlanId: string) => {
+  const handleChangePlanSubmit = async (input: PlanChangeInput) => {
     try {
-      await changePlan({ planId: selectedPlanId });
-      const nextPlan = plans.find((p) => p.id === selectedPlanId);
-      toast('Plan Migrated', `Migrated ${organization.name} to "${nextPlan?.name || selectedPlanId}" plan.`, 'success');
+      await changePlan(input);
+      const nextPlan = plans.find((p) => p.id === input.planId);
+      toast(
+        input.when === 'period_end' ? 'Change scheduled' : 'Plan Migrated',
+        input.when === 'period_end' ? `${organization.name} moves to "${nextPlan?.name}" when the paid period ends.` : `Migrated ${organization.name} to "${nextPlan?.name || input.planId}" plan.`,
+        'success',
+      );
       setIsChangePlanOpen(false);
       if (onPlanChanged) onPlanChanged();
     } catch (err) {
@@ -193,6 +203,15 @@ export default function OrganizationSubscriptionTab({
           payments={subscriptionPayments}
           onResendReminder={handleResendReminder}
           isResendingReminder={isResendingReminder}
+          scheduledPlanName={subscription.scheduledChange ? plans.find((p) => p.id === subscription.scheduledChange?.planId)?.name ?? 'another plan' : null}
+          onCancelScheduled={async () => {
+            try {
+              await cancelScheduledChange();
+              toast('Change cancelled', 'They stay on their current plan.', 'success');
+            } catch (err) {
+              toast('Could not cancel it', errorMessage(err), 'error');
+            }
+          }}
         />
 
         <QuotaUsageGrid
@@ -200,6 +219,8 @@ export default function OrganizationSubscriptionTab({
           usage={usage}
         />
       </div>
+
+      <AiCreditsCard organizationId={organization.id} perMonth={subscription.effectiveLimits.aiCreditsPerMonth?.value ?? null} canGrant={!!canGrantCredits} />
 
       {/* Active Limit Overrides Table */}
       <LimitOverridesTable
@@ -222,6 +243,7 @@ export default function OrganizationSubscriptionTab({
         plans={plans}
         currentPlanId={subscription.planId}
         isSubmitting={isChangingPlan}
+        periodEnd={subscription.planKind === 'FREE' ? null : subscription.currentPeriodEnd}
       />
 
       {isAccessOpen && (

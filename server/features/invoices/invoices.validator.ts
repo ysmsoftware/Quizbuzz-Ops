@@ -16,6 +16,7 @@ export const billingSettingsSchema = z.object({
   upiId: z.string().trim().nullable().optional(),
   invoicePrefix: z.string().trim().min(1).max(4).regex(/^[A-Z0-9-]+$/, 'Capital letters, digits and hyphens only'),
   receiptPrefix: z.string().trim().min(1).max(4).regex(/^[A-Z0-9-]+$/, 'Capital letters, digits and hyphens only'),
+  creditNotePrefix: z.string().trim().min(1).max(4).regex(/^[A-Z0-9-]+$/, 'Capital letters, digits and hyphens only').default('CN'),
 });
 
 export const issueInvoiceSchema = z.object({
@@ -79,3 +80,12 @@ export const listInvoicesSchema = z.object({
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 export type BillingSettingsInput = z.infer<typeof billingSettingsSchema>;
+
+export const creditNoteSchema = z.object({
+  amount: z.number().positive(),
+  reason: z.string().trim().min(3, 'Give a reason').max(500),
+  refundMethod: z.enum(['RAZORPAY', 'BANK_TRANSFER', 'NONE']),
+  paymentId: z.string().optional(),
+  refundReference: z.string().trim().max(100).optional(),
+  endAccess: z.boolean().default(false),
+});

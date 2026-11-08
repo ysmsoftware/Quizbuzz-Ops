@@ -6,6 +6,7 @@ import { computeAccessDates, lapseStatusAt, LapseStatus } from '../features/subs
 import { oldestUnpaidDueAt } from '../features/subscriptions/access-input';
 import { reminderDue } from './reminder-due';
 import { reconcileAutoDebits } from '../features/autodebit/autodebit.service';
+import { applyDueScheduledChanges } from '../features/subscriptions/plan-change';
 import { orgOwnerNotifier } from '../notifications/org-owner-notifier';
 import { writeAuditLogEntry, SYSTEM_ACTOR } from '../audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
@@ -101,6 +102,7 @@ export async function runSubscriptionReconciliationJob(): Promise<Reconciliation
   const now = new Date();
   const freePlansAssigned = await assignFreePlanToNewOrgs();
   const autoDebit = await reconcileAutoDebits(now);
+  const scheduledChanges = await applyDueScheduledChanges(now);
   const invoiceReminders = await sendInvoiceReminders(now);
   const contractReminders = await sendContractReminders(now);
 
@@ -185,9 +187,9 @@ export async function runSubscriptionReconciliationJob(): Promise<Reconciliation
     }
   }
 
-  const result = { freePlansAssigned, invoiceReminders, contractReminders, remindersSent, statusChanges, synced, syncFailures, autoDebitAbandoned: autoDebit.abandoned, autoDebitFailures: autoDebit.failures };
+  const result = { freePlansAssigned, invoiceReminders, contractReminders, remindersSent, statusChanges, synced, syncFailures, autoDebitAbandoned: autoDebit.abandoned, autoDebitFailures: autoDebit.failures, scheduledChanges };
   // This runs hourly, so the audit log only hears about runs that did something.
-  if (freePlansAssigned || invoiceReminders || contractReminders || remindersSent || statusChanges || syncFailures || autoDebit.abandoned || autoDebit.failures) {
+  if (freePlansAssigned || invoiceReminders || contractReminders || remindersSent || statusChanges || syncFailures || autoDebit.abandoned || autoDebit.failures || scheduledChanges) {
     await writeAuditLogEntry(SYSTEM_ACTOR, 'system.cache_reconciled', AuditTargetType.SUBSCRIPTION, 'system_reconciliation', 'Subscription Sync Reconciler', { ...result });
     console.log('[JOB] Subscription reconciliation:', result);
   }

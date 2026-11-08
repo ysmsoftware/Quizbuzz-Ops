@@ -92,6 +92,25 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
       <p>Your <strong>${escape(p.planName)}</strong> contract ends on ${escape(p.contractEnd)}, in ${escape(p.daysLeft)} days. Please talk to your QuizBuzz contact to renew it.</p>
     `),
   }),
+  CREDIT_NOTE_ISSUED: (p) => ({
+    subject: `Credit note ${p.creditNoteNumber} for invoice ${p.invoiceNumber}`,
+    html: wrap(`
+      <p>Hi ${escape(p.adminName)},</p>
+      <p>We've issued credit note <strong>${escape(p.creditNoteNumber)}</strong> for ₹${escape(Number(p.amount).toFixed(2))} against invoice ${escape(p.invoiceNumber)}.</p>
+      <p>Reason: ${escape(p.reason)}</p>
+      ${p.refundLine ? `<p>${escape(p.refundLine)}</p>` : ''}
+      <p>The credit note is attached and is also on your Billing page.</p>
+    `),
+  }),
+  SUBSCRIPTION_CHANGE_SCHEDULED: (p) => ({
+    subject: `Your plan changes to ${p.toPlan} on ${p.on}`,
+    html: wrap(`
+      <p>Hi ${escape(p.adminName)},</p>
+      <p>You stay on <strong>${escape(p.fromPlan)}</strong> until ${escape(p.on)}. From then your plan is <strong>${escape(p.toPlan)}</strong>, billed ${escape(p.cycle)} at a time.</p>
+      ${p.needsNewMandate ? '<p>Your automatic payment is set for your current plan. To renew automatically at the new price, turn on automatic renewal again from your Billing page.</p>' : ''}
+      <p>Changed your mind? You can keep your current plan from the Billing page until then.</p>
+    `),
+  }),
   SUBSCRIPTION_PAST_DUE: (p) => ({
     subject: `Renew your ${p.planName} plan by ${p.restrictAt}`,
     html: wrap(`

@@ -35,6 +35,7 @@ function fieldLabel(field: string): string {
 }
 
 export interface UpdateAccessFields {
+  currentPeriodStart?: Date;
   currentPeriodEnd?: Date;
   graceDays?: number;
   contractStart?: Date | null;
@@ -119,6 +120,9 @@ export class SubscriptionsService implements ISubscriptionsService {
           nextChargeAt: (mandate.currentEnd ?? mandate.startAt)?.toISOString() ?? null,
         },
         lastPaymentError: sub.lastPaymentError,
+        scheduledChange: sub.scheduledPlanId
+          ? { planId: sub.scheduledPlanId, billingCycle: sub.scheduledBillingCycle, reason: sub.scheduledReason, on: sub.currentPeriodEnd.toISOString() }
+          : null,
         contractStart: sub.contractStart?.toISOString() ?? null,
         contractEnd: sub.contractEnd?.toISOString() ?? null,
         poNumber: sub.poNumber,
@@ -415,7 +419,9 @@ export class SubscriptionsService implements ISubscriptionsService {
     if (!plan) throw new NotFoundError('Subscription plan not found');
     if (plan.kind === 'FREE') throw new ConflictError('The Free plan has no end date. Change the plan first.');
 
+    const currentPeriodStart = input.currentPeriodStart ?? sub.currentPeriodStart;
     const currentPeriodEnd = input.currentPeriodEnd ?? sub.currentPeriodEnd;
+    if (currentPeriodEnd <= currentPeriodStart) throw new ValidationError(null, 'The cycle must end after it starts.');
     const graceDays = input.graceDays ?? sub.graceDays;
     const status = sub.status === 'CANCELLED'
       ? 'CANCELLED'
@@ -427,6 +433,8 @@ export class SubscriptionsService implements ISubscriptionsService {
       contractNotes: input.contractNotes,
     };
     const updated = await this.repo.updateAccess(orgId, {
+      // The start also anchors the monthly usage window in the main app.
+      currentPeriodStart,
       currentPeriodEnd,
       graceDays,
       status,
@@ -439,8 +447,10 @@ export class SubscriptionsService implements ISubscriptionsService {
     await writeAuditLogEntry(actor, 'subscription.access_updated', AuditTargetType.SUBSCRIPTION, sub.id, plan.name, {
       organizationId: orgId,
       reason: input.reason,
-      from: { currentPeriodEnd: sub.currentPeriodEnd.toISOString(), graceDays: sub.graceDays, status: sub.status },
-      to: { currentPeriodEnd: currentPeriodEnd.toISOString(), graceDays, status, ...contract },
+      from: { currentPeriodStart: sub.currentPeriodStart.toISOString(), currentPeriodEnd: sub.currentPeriodEnd.toISOString(), graceDays: sub.graceDays, status: sub.status },
+      to: { currentPeriodStart: currentPeriodStart.toISOString(), currentPeriodEnd: currentPeriodEnd.toISOString(), graceDays, status, ...contract },
+      // Razorpay charges on its own schedule: moving dates doesn't move an auto-debit charge.
+      autoDebit: sub.collectionMethod === 'AUTO_DEBIT',
     });
     return updated;
   }

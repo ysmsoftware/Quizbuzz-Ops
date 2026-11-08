@@ -109,6 +109,11 @@ export class SubscriptionsRepository implements ISubscriptionsRepository {
       update: {
         planId: params.planId,
         status: params.status,
+        // A payment for a plan supersedes any change that was waiting.
+        scheduledPlanId: null,
+        scheduledBillingCycle: null,
+        scheduledReason: null,
+        scheduledById: null,
         billingCycle: params.billingCycle,
         periodMonths: params.periodMonths,
         currentPeriodStart: params.currentPeriodStart,

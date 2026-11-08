@@ -192,10 +192,22 @@ export async function POST(req: Request) {
     const pricing = calculateSubscriptionPricing(proratedBaseAmount);
     const amountInPaise = Math.round(pricing.totalAmount * 100);
 
-    // Idempotency: reuse an existing non-terminal order for this exact
-    // org + plan + cycle instead of minting a new Razorpay order every time
-    // the admin double-clicks Pay, reloads, or retries after a network blip.
-    const existing = await prisma.opsPayment.findFirst({
+    // Unused credit can cover the whole price (e.g. yearly Basic -> monthly Pro). Razorpay can't take
+    // an order under ₹1, and a free switch must not be a checkout, so stop with a clear message.
+    if (amountInPaise < 100) {
+      return errorResponse(
+        'Your unused time already covers this plan. Please contact us to switch without paying.',
+        'CREDIT_COVERS_PRICE',
+        null,
+        409
+      );
+    }
+
+    // Idempotency: reuse an open order for this exact org + plan + cycle instead of minting a new one on
+    // a double-click, reload or retry. Only while its price is still today's: the credit for unused time
+    // shrinks daily and plan prices change, so an old order would otherwise buy a full period too cheap.
+    const REUSE_WINDOW_MS = 30 * 60_000;
+    const openOrders = await prisma.opsPayment.findMany({
       where: {
         organizationId,
         planId: plan.id,
@@ -206,6 +218,14 @@ export async function POST(req: Request) {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const isFresh = (p: (typeof openOrders)[number]) =>
+      Math.round(Number(p.amount) * 100) === amountInPaise && now.getTime() - p.createdAt.getTime() < REUSE_WINDOW_MS;
+    const existing = openOrders.find(isFresh);
+    // A late payment on a closed order is still honoured: the webhook accepts any non-PAID row.
+    const stale = openOrders.filter((p) => !isFresh(p));
+    if (stale.length) {
+      await prisma.opsPayment.updateMany({ where: { id: { in: stale.map((p) => p.id) } }, data: { status: 'FAILED' } });
+    }
 
     if (existing) {
       return okResponse(

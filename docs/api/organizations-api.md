@@ -299,6 +299,8 @@ None.
 - **`403 Forbidden`**: Operator lacks `SUPER_ADMIN` role.
 - **`400 Bad Request`**: Reason string missing or under 3 characters.
 
+Suspending is **no new activity only**: scheduled and live contests keep running, and **auto-debit keeps running**. Only deleting an org cancels its mandate (§10).
+
 ---
 
 ### 9. Reactivate Organization
@@ -324,3 +326,30 @@ None.
   "message": "Organization reactivated successfully."
 }
 ```
+
+---
+
+### 10. Delete Organization (soft delete)
+`DELETE /api/v1/ops/organizations/[orgId]`
+
+- **Purpose**: Hide an organization everywhere without destroying its data. Reversible. The owner is not emailed.
+- **Access**: `SUPER_ADMIN`.
+- **Body:** `{ "reason": string }`
+- **Effects:**
+  - The org is marked deleted in the main app's database and drops out of lists, counts and revenue figures.
+  - **Its auto-debit is cancelled at once** at Razorpay, so a deleted org is never charged. The hourly job also cancels mandates of orgs deleted anywhere else in the main app.
+  - The subscription row is left alone.
+  - Audit entry `org.deleted`, with the reason and whether the org was suspended.
+- **Response:** `{ "success": true, "data": null, "message": "Organization deleted. It is hidden from lists and can be restored." }`
+- **Errors:** `404` · `409` (already deleted) · `403`.
+
+---
+
+### 11. Restore Organization
+`POST /api/v1/ops/organizations/[orgId]/restore`
+
+- **Purpose**: Undo a soft delete. The org returns to Suspended if it had an open suspension, otherwise Active. No email is sent.
+- **Access**: `SUPER_ADMIN`.
+- **Body:** `{ "reason"?: string }`
+- **Does not bring the auto-debit mandate back.** The owner turns automatic renewal on again from their Billing page.
+- **Response:** `{ "success": true, "data": null, "message": "Organization restored." }`

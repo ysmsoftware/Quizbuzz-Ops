@@ -233,3 +233,26 @@ Same shape as a single item from (1).
 
 - No `POST`/`DELETE` on the base `feature-flags` resource — flags are managed via migration + seed, not ad hoc admin creation. Org overrides, by contrast, are designed to be created/removed ad hoc from the dashboard.
 - RBAC is a single flat `FEATURE_FLAG_MANAGE` permission (see `lib/hooks/useAuth.ts`'s `hasPermission()`), granted to `SUPER_ADMIN` only — no per-flag or per-org variation.
+
+---
+
+## Access models and billing flags
+
+Each flag has an `accessModel`:
+
+| Model | Meaning |
+|---|---|
+| `GLOBAL` | The global switch decides for everyone. If the flag supports org overrides, an override carves out an exception for one org |
+| `OPT_IN` | Off for every org until it is granted to that org with an override. The global switch only makes the flag **grantable**, and turning it off is a **kill switch** for all. The main app mirrors the list in `OPT_IN_ONLY_FLAGS` (`backend/src/common/feature-flags.ts`), so a new OPT_IN flag must be added in both places |
+
+Flags that drive billing (`server/features/feature-flags/feature-flag-registry.ts`, last checked 2026-11-08):
+
+| Key | Model | Default | What it does |
+|---|---|---|---|
+| `plan_enforcement` | `GLOBAL` | off | On: plan limits, plan features and restriction after a lapse are enforced. Off: nothing is refused and each would-be refusal is logged as `WOULD_BLOCK` in `plan_usage_check_logs`. Also the kill switch for enforcement |
+| `razorpay_gateway_active` | `GLOBAL` | on | Online payments: checkout orders, auto-debit and contest registration payments. Off: `403 FEATURE_DISABLED` |
+| `auto_debit` | `OPT_IN` | on | The org's owner may turn on automatic renewal (UPI AutoPay, card or eMandate) for monthly and 6-month plans. Needs `razorpay_gateway_active` too |
+| `ai_top_ups` | `OPT_IN` | on | The org's owner may buy AI credit packs from the Billing page. Turn it on only where AI question generation is live |
+
+The plan can also switch features off for an org (see [`entitlements-api.md`](./entitlements-api.md)). An active override set here beats the plan, so ops can give one org a feature its plan lacks. That plan layer applies only while `plan_enforcement` is on.
+

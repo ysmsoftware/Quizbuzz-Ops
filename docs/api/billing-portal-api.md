@@ -1,6 +1,15 @@
 # Billing Portal API Specification
 
-The Billing Portal API domain powers the standalone checkout flow at `/billing/checkout` — the handoff destination when an org admin clicks "Select Plan" / "Pay" in the main app. It resolves a signed handoff token into a checkout session, creates a Razorpay order, and confirms payment. **The Razorpay webhook is the only endpoint permitted to mark a payment `PAID`** — every other endpoint in this domain is either read-only or limited to the `CREATED → PENDING` transition.
+The Billing Portal API covers everything outside ops that talks to ops about money:
+- the checkout page at `/billing/checkout`;
+- the main app's owner Billing page, through the main app's relay;
+- the main app's "Talk to sales" form;
+- a public Event Pass quote;
+- the Razorpay webhook.
+
+**Only the Razorpay webhook can mark online money as received.** Every other endpoint does one of three things: reads data, creates an order or mandate that still has to be paid, or acts on the org named in a signed token.
+
+**Last checked:** 2026-11-08 (`feature/subscriptions`).
 
 ---
 
@@ -9,171 +18,313 @@ The Billing Portal API domain powers the standalone checkout flow at `/billing/c
 
 ---
 
+## Tokens
+
+Every endpoint except the webhook, the quote and the plan list takes a JWT. The main app signs it with `BILLING_HANDOFF_SECRET` and ops verifies it, so the secret must be the same on both apps. In production, ops refuses billing calls with `503 GATEWAY_NOT_CONFIGURED` if the secret is missing, shorter than 16 characters, or the published default.
+
+| Token | Signed by | Life | Claims | Used by |
+|---|---|---|---|---|
+| Handoff | Main app `POST /onboarding/handoff` (owner only) | 10 min | `organizationId, adminId, adminEmail, adminName, planSlug` | `session`, `subscription/order`, `subscription/autodebit`, `subscription/schedule` |
+| Billing account | Main app `/billing/*` relay (owner only) | 1 min | `organizationId, adminEmail, purpose: "billing_account"` | `account` |
+| Lead | Main app `POST /onboarding/contact-sales` | 1 min | `organizationId, name, email, phone, organization, message, learners, source` | `leads` |
+
+An invalid or expired token returns `401 UNAUTHENTICATED`.
+
 ## Trust model
 
 | Endpoint | Caller | Can write |
 |---|---|---|
-| `POST /session` | Browser (checkout page load) | audit log only |
-| `POST /subscription/order` | Browser (checkout page) | `OpsPayment` status `CREATED` |
-| `POST /subscription/verify` | Browser (Razorpay `handler` callback) | `OpsPayment` status `CREATED → PENDING` only |
-| `GET /subscription/status` | Browser (polling) | none (read-only) |
-| `POST /razorpay/webhook` | **Razorpay servers only**, signed | `OpsPayment` status `→ PAID` / `→ FAILED`, subscription assignment |
-
-No endpoint other than the webhook can ever write `PAID`. A forged or replayed call to any other endpoint can, at most, move an order to `PENDING` — a UX signal, not a financial one.
+| `GET /plans` | Anyone | nothing |
+| `POST /event-pass/quote` | Anyone | nothing |
+| `POST /session` | Checkout page | audit log only |
+| `POST /subscription/order` | Checkout page | `OpsPayment` `CREATED` |
+| `POST /subscription/verify` | Razorpay checkout callback in the browser | `OpsPayment` `CREATED → PENDING` only |
+| `GET /subscription/status` | Checkout page (polling) | nothing |
+| `POST /subscription/autodebit` | Checkout page | a Razorpay subscription waiting for authorisation |
+| `POST /subscription/schedule` | Checkout page | a scheduled plan change (no money) |
+| `POST /account` | Main app relay | owner actions on their own org: cancel, resume, stop auto-debit, keep plan, pay links |
+| `POST /leads` | Main app | a `SalesLead` |
+| `POST /razorpay/webhook` | **Razorpay only**, signed | payments `PAID` / `FAILED`, invoices settled, mandates, plan assignment |
 
 ---
 
 ## Endpoints
 
-### 1. Verify Checkout Session
+### 1. List plans on sale
+`GET /api/v1/billing-portal/plans`
+
+Lists public plans that are on sale: active, sellable and not private to one org, ordered by price.
+
+**Response `data`:** an array of
+`{ id, name, slug, description, currency, allowsMonthly, allowsHalfYearly, allowsAnnual, audience, monthlyPrice, halfYearlyPrice, annualPrice, maxContestsPerCycle, maxParticipantsPerContest, maxQuestionsPerContest, maxOrgMembers, maxLearners, maxCandidatesPerMonth, aiCreditsPerMonth, features: string[], featureFlags: { proctoring, certBranding, prioritySupport, analyticsExport, customDomain } }`
+
+- Prices are in rupees, before GST. A `null` price means the plan doesn't offer that cycle.
+- A `null` limit means unlimited.
+- `audience` is `ORGANIZER`, `EDUCATION`, `BUSINESS` or `null`.
+
+---
+
+### 2. Verify checkout session
 `POST /api/v1/billing-portal/session`
 
-- **Purpose**: Verifies the main-app-to-ops handoff JWT and returns the plan/org details the checkout page renders.
-- **Auth**: Handoff JWT (`BILLING_HANDOFF_SECRET`, no default — the app fails to boot if this env var is unset).
+**Body:** `{ "token": "<handoff token>" }`
 
-#### Request Body
-```json
-{ "token": "<handoff JWT>" }
-```
+Checks the token and the plan, and returns what the checkout page shows. Two rules decide who can buy a plan:
+- a private plan can only be bought by its own org;
+- a plan that isn't on sale can only be bought by an org already on it.
 
-#### Success (`200 OK`)
+Writes `billing_portal.checkout_started` to the audit log.
+
+**Response `data`:**
+
 ```json
 {
-  "success": true,
-  "data": {
-    "session": {
-      "organizationId": "org_123",
-      "organizationName": "TechTutors Academy",
-      "adminId": "admin_1",
-      "adminEmail": "owner@techtutors.example",
-      "adminName": "Jane Doe"
-    },
-    "plan": {
-      "id": "plan_growth",
-      "name": "Growth",
-      "slug": "growth",
-      "description": "For growing organizations running regular quizzes.",
-      "currency": "INR",
-      "allowsMonthly": true,
-      "allowsAnnual": true,
-      "monthlyPrice": 2999,
-      "annualPrice": 29999,
-      "features": ["10 contests per month", "Up to 1000 participants per contest"]
-    }
-  }
+  "session": { "organizationId": "…", "organizationName": "ABC College", "organizationSlug": "abc", "adminId": "…", "adminEmail": "…", "adminName": "…" },
+  "currentSubscription": {
+    "planId": "…", "planName": "Pro 500", "billingCycle": "MONTHLY",
+    "currentPeriodStart": "2026-11-08T00:00:00.000Z", "currentPeriodEnd": "2026-12-08T00:00:00.000Z",
+    "lastPaidBaseAmount": 2999
+  },
+  "autoDebit": { "available": true, "firstChargeAt": "2026-12-08T00:00:00.000Z", "current": null },
+  "change": { "scheduledCycles": ["MONTHLY"], "on": "2026-12-08T00:00:00.000Z", "currentPlanName": "Pro 500" },
+  "plan": { "id": "…", "name": "Basic", "slug": "basic", "description": "…", "currency": "INR", "allowsMonthly": true, "allowsHalfYearly": true, "allowsAnnual": true, "monthlyPrice": 999, "halfYearlyPrice": 5499, "annualPrice": 9999, "features": ["…"] }
 }
 ```
 
-A plan's `monthlyPrice`/`annualPrice` are independent, admin-set values — annual is never derived as `monthlyPrice × 12`. A plan may offer only one cycle (`allowsMonthly: false` for an annual-only tier with a fixed rate, or vice versa).
+- `currentSubscription`: set only while the current subscription is ACTIVE and not yet expired. The page uses it for the proration estimate. `lastPaidBaseAmount` is the last amount actually paid, which is the most an upgrade can credit.
+- `autoDebit.available`: the `razorpay_gateway_active` and `auto_debit` flags are both on for the org.
+- `autoDebit.firstChargeAt`: when the first automatic charge would happen. It is the end of the paid period if more than 15 minutes of a paid plan are left. If it is `null`, the charge happens at authorisation.
+- `autoDebit.current`: set when the org already pays by auto-debit. Choosing auto-debit again then changes the payment method.
+- `change.scheduledCycles`: the cycles for which this purchase would be a **downgrade**, or a shorter cycle on the same plan, and so takes effect only at `on`. For those cycles the page offers "Switch to X on date" (`/subscription/schedule`) instead of payment.
+
+**Errors:** `400 VALIDATION_ERROR` (no token, bad payload) · `401` · `404 NOT_FOUND` (plan missing, inactive or not buyable by this org) · `503 GATEWAY_NOT_CONFIGURED`.
 
 ---
 
-### 2. Create Subscription Order
+### 3. Create a one-time payment order
 `POST /api/v1/billing-portal/subscription/order`
 
-- **Purpose**: Creates (or reuses) a Razorpay order and the corresponding `OpsPayment` row.
-- **Idempotent**: if a non-terminal (`CREATED`/`PENDING`) order already exists for the same organization + plan + cycle, it is reused instead of minting a duplicate Razorpay order.
+**Body:** `{ "token": "<handoff token>", "billingCycle": "MONTHLY" | "HALF_YEARLY" | "ANNUAL" }`
 
-#### Request Body
-```json
-{ "token": "<handoff JWT>", "billingCycle": "MONTHLY" }
+Creates an `OpsPayment` (status `CREATED`) and a Razorpay order. Ops works out the amount itself; nothing in the body sets it.
+
+**Pricing:**
 ```
-`billingCycle` must be `MONTHLY` or `ANNUAL`, and the plan must offer that cycle.
+base  = plan price for the cycle − credit for unused time on the current plan (upgrades only)
+gst   = round(base × 0.18, 2)
+total = base + gst                      (no gateway-fee line)
+```
 
-#### Success (`200 OK`)
+- The credit for unused time is never more than the amount last paid.
+- A retry reuses an open (`CREATED` or `PENDING`) order for the same plan and cycle (message: `Existing payment order reused.`), but only if its amount is still today's and it's under 30 minutes old. The credit for unused time shrinks daily, so an older open order is marked `FAILED` and a new one is made. A late payment on a closed order is still honoured: the webhook accepts any order that isn't already `PAID`.
+- An 8-second lock per org, plan and cycle stops two orders being created at once.
+
+**Response `data`:**
+
 ```json
 {
-  "success": true,
-  "data": {
-    "paymentId": "01K...",
-    "orderId": "order_...",
-    "amount": 306978,
-    "currency": "INR",
-    "keyId": "rzp_live_...",
-    "planName": "Growth",
-    "billingCycle": "MONTHLY",
-    "pricing": {
-      "baseAmount": 2999,
-      "gatewayFeeAmount": 59.98,
-      "gstAmount": 10.8,
-      "totalAmount": 3069.78
-    }
-  }
+  "paymentId": "01J…",
+  "orderId": "order_…",
+  "amount": 117882,
+  "currency": "INR",
+  "keyId": "rzp_live_…",
+  "planName": "Pro 500",
+  "pricing": { "baseAmount": 999, "gatewayFeeAmount": 0, "gstAmount": 179.82, "totalAmount": 1178.82, "creditApplied": 2000 },
+  "billingCycle": "MONTHLY"
 }
 ```
+`amount` is in **paise**, for Razorpay checkout. `pricing` is in rupees.
 
-`amount` is in paise and is exactly `pricing.totalAmount × 100` — the same number the checkout page displays. Pricing formula: gateway fee = 2% of `baseAmount`; GST = 18% of the gateway fee (not of the base); total = base + fee + GST. See `lib/pricing/subscriptionPricing.ts` — the single function both this route and the checkout page call, so display and charge can never drift apart.
+**Errors:**
 
-In production, if Razorpay keys aren't configured, this endpoint fails with `503` rather than minting an order id nothing can ever legitimately pay against.
+| Status | Code | When |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | No token, bad `billingCycle`, or the plan doesn't offer that cycle |
+| 401 | `UNAUTHENTICATED` | Bad token |
+| 403 | `FEATURE_DISABLED` | `razorpay_gateway_active` off for this org |
+| 404 | `NOT_FOUND` | Plan missing or not buyable by this org |
+| 409 | `SCHEDULE_INSTEAD` | A downgrade or shorter cycle: nothing is charged now. `details.on` is the date. Use `/subscription/schedule` |
+| 409 | `CREDIT_COVERS_PRICE` | The credit for unused time covers the whole price (under ₹1 to pay), e.g. yearly Basic to monthly Pro. Razorpay can't take it and a free switch isn't a checkout: the org should contact us |
+| 409 | `ALREADY_SUBSCRIBED` | Already on this plan and cycle with paid time left |
+| 429 | `CONFLICT` | Another order for this plan is being created right now |
+| 502 | `GATEWAY_ERROR` | Razorpay refused or didn't answer |
+| 503 | `GATEWAY_NOT_CONFIGURED` | No Razorpay keys, or no handoff secret |
+
+If the org is on auto-debit, paying once stops the mandate when the payment lands, so the same period is never charged twice.
 
 ---
 
-### 3. Verify Payment Signature
+### 4. Verify payment signature
 `POST /api/v1/billing-portal/subscription/verify`
 
-- **Purpose**: Called by the browser from Razorpay checkout.js's `handler` callback once the widget reports success. Verifies the Razorpay *payment* signature (`HMAC-SHA256(orderId|paymentId, RAZORPAY_KEY_SECRET)`, timing-safe compare) and, if valid, moves the order `CREATED → PENDING`.
-- **This is a UX signal only.** It can never write `PAID` — that is the webhook's job alone. If the webhook has already confirmed payment (or already marked it failed) by the time this call arrives, the guarded update matches zero rows and is treated as a no-op, not an error.
+**Body:** `{ "razorpayOrderId": "…", "razorpayPaymentId": "…", "razorpaySignature": "…" }`
 
-#### Request Body
-```json
-{
-  "razorpayOrderId": "order_...",
-  "razorpayPaymentId": "pay_...",
-  "razorpaySignature": "..."
-}
-```
+Checks Razorpay's checkout signature: `HMAC_SHA256(orderId|paymentId, RAZORPAY_KEY_SECRET)`, compared timing-safe. If it's valid, the order moves from `CREATED` to `PENDING` so the page can show "confirming". **This never marks anything paid.** If the webhook has already updated the order, nothing changes and the call still succeeds.
 
-#### Success (`200 OK`)
-```json
-{ "success": true, "data": { "verified": true } }
-```
+**Response `data`:** `{ "verified": true }`
+**Errors:** `400 VALIDATION_ERROR` · `400 INVALID_SIGNATURE` · `503 GATEWAY_NOT_CONFIGURED`.
 
 ---
 
-### 4. Poll Payment Status
+### 5. Poll status
 `GET /api/v1/billing-portal/subscription/status?paymentId=<id>`
+`GET /api/v1/billing-portal/subscription/status?subscriptionId=<id>`
 
-- **Purpose**: Read-only status check. The checkout page polls this every 2.5s (up to 90s) after calling `/verify`, and only redirects to the main app's success page once this returns `PAID`.
+- **One-time order:** `{ "paymentId", "status": "CREATED" | "PENDING" | "PAID" | "FAILED", "paidAt" }`.
+- **Auto-debit:** `{ "subscriptionId", "status" }`, using Razorpay's subscription status (`created`, `authenticated`, `active`, `pending`, `halted`, `cancelled`, `completed`…). Setup is done once it's `authenticated` or `active`.
 
-#### Success (`200 OK`)
-```json
-{
-  "success": true,
-  "data": { "paymentId": "01K...", "status": "PAID", "paidAt": "2026-07-29T06:51:00.554Z" }
-}
-```
-
-`status` is one of `CREATED`, `PENDING`, `PAID`, `FAILED`, `REFUNDED`.
+**Errors:** `400` (neither parameter) · `404`.
 
 ---
 
-### 5. Razorpay Webhook
+### 6. Set up auto-debit
+`POST /api/v1/billing-portal/subscription/autodebit`
+
+**Body:** `{ "token": "<handoff token>", "billingCycle": "MONTHLY" | "HALF_YEARLY" }`
+
+Creates a Razorpay subscription that the owner then authorises in Razorpay's checkout, by UPI AutoPay, card or eMandate. There is one Razorpay plan per combination of our plan, cycle and amount, so a price change creates a new one. A mandate runs for up to 5 years.
+
+When the first charge happens:
+- **No paid time left:** charged at authorisation.
+- **Paid time left:** the first charge is on the current end date; nothing is charged today.
+- **Already on auto-debit** (changing the payment method): the new mandate starts at the end date. The old one is cancelled once the new one is authorised.
+- **Moving to a cheaper plan:** the mandate starts at the period end and shows as the scheduled change. Its first charge switches the plan.
+
+**Response `data`:**
+```json
+{ "subscriptionId": "sub_…", "keyId": "rzp_live_…", "planName": "Pro 500", "amount": 3538.82, "firstChargeAt": "2026-12-08T00:00:00.000Z" }
+```
+`amount` is per charge, in rupees, including GST. The hourly job cancels mandates that haven't been authorised within 24 hours.
+
+**Errors:** `400` (yearly isn't offered on auto-debit) · `401` · `403 FEATURE_DISABLED` (`auto_debit` or `razorpay_gateway_active` off) · `404` · `502 GATEWAY_ERROR` · `503`.
+
+---
+
+### 7. Schedule a downgrade
+`POST /api/v1/billing-portal/subscription/schedule`
+
+**Body:** `{ "token": "<handoff token>", "billingCycle": "MONTHLY" | "HALF_YEARLY" | "ANNUAL" }`
+
+For a downgrade, or a shorter cycle on the same plan. Nothing is charged, and the change takes effect at the end of the current period. It's stored on the subscription as `scheduledPlanId` and `scheduledBillingCycle`, and the owner gets a `SUBSCRIPTION_CHANGE_SCHEDULED` email.
+
+**Response `data`:** `{ "on": "2026-12-08T00:00:00.000Z" }`
+**Errors:** `409 PAY_INSTEAD` (the change starts now: an upgrade, or no paid time left) · `400` · `401` · `404`.
+
+**Timing rule** (`server/features/subscriptions/plan-timing.ts`):
+- Plans are compared on their monthly rate.
+- A higher rate starts now and is prorated.
+- A lower rate, or the same plan on a shorter cycle, waits for the period end.
+- With no paid time left (Free or lapsed), every change starts now.
+
+---
+
+### 8. Owner billing account
+`POST /api/v1/billing-portal/account`
+
+Only the main app's `/api/v1/billing/*` relay calls this, after checking the caller is the org's OWNER.
+
+**Body:** `{ "token": "<billing account token>", "action"?: string, "invoiceId"?: string, "paymentId"?: string, "creditNoteId"?: string, "credits"?: number }`
+
+| `action` | What it does | Returns |
+|---|---|---|
+| *(none)* | Nothing | Billing summary |
+| `cancel` | Cancels a self-serve plan at the end of the period and stops auto-debit. Sends the `SUBSCRIPTION_CANCELLED` email | Summary |
+| `resume` | Undoes a cancel; the status goes back to what the dates say. Does **not** restart auto-debit | Summary |
+| `stop_autodebit` | Cancels the mandate at Razorpay immediately | Summary |
+| `cancel_scheduled_change` | Drops a pending downgrade | Summary |
+| `buy_ai_credits` | Issues an invoice for an AI credit pack (`credits` is 500, 2000 or 10000) | `{ url }`, the pay link |
+| `pay` | Reuses or creates a pay link for an open online invoice | `{ url }` |
+| `pdf` | Invoice PDF (`invoiceId`) | `application/pdf` |
+| `receipt` | Receipt PDF (`invoiceId`, `paymentId`) | `application/pdf` |
+| `credit_note` | Credit note PDF (`creditNoteId`) | `application/pdf` |
+
+Every lookup is limited to the org in the token. The summary's fields are described in §1 of the main app's `backend/docs/billing_api.md`.
+
+**Errors:** `401` · `404 NOT_FOUND` · `409 CONFLICT` (account-managed plan; invoice paid by bank transfer; online payment unavailable) · `403 FEATURE_DISABLED` (`ai_top_ups` off) · `400` (not a credit pack).
+
+---
+
+### 9. Record a sales lead
+`POST /api/v1/billing-portal/leads`
+
+**Body:** `{ "token": "<lead token>" }`
+
+Creates a `SalesLead` with status `NEW`, shown on the ops Leads page.
+
+**Response `data`:** `{ "id": "…" }`
+**Errors:** `400 VALIDATION_ERROR` · `401` · `503 GATEWAY_NOT_CONFIGURED`.
+
+---
+
+### 10. Event Pass quote (public)
+`POST /api/v1/billing-portal/event-pass/quote`
+
+Uses the same formula that ops bookings charge (`lib/pricing/event-pass.ts`), so a landing-page calculator shows real prices. No auth.
+
+**Body:**
+
+| Field | Type | Notes |
+|---|---|---|
+| `participants` | int, 1–1,000,000 | required |
+| `extraContests` | int, 0–5 | +25% of the base price each |
+| `aiQuestionsHundreds` | int, 0–100 | AI questions, priced per 100 |
+| `whatsapp` | boolean | priced per participant |
+| `engineer` | boolean | an engineer on the day |
+| `entryFee` | number or null | if set, the revenue-share alternative is also returned |
+
+**Response `data`** (real output for `{ "participants": 1000, "entryFee": 100 }`):
+```json
+{
+  "participants": 1000, "basePrice": 8999, "extraContestsPrice": 0, "aiQuestionsPrice": 0, "whatsappPrice": 0, "engineerPrice": 0,
+  "price": 8999, "gst": 1619.82, "total": 10618.82, "perHead": 9,
+  "talkToUs": false, "soloIsCheaper": false,
+  "revenueShare": { "percent": 15, "netPerRegistration": 97.64, "sharePerRegistration": 14.65, "payoutPerRegistration": 82.99, "estimatedShare": 14646, "breakEvenRegistrations": 615 }
+}
+```
+- `price` is before GST. It's interpolated between the tier sheet's participant anchors and rounded up to the next price ending in 99.
+- `talkToUs`: over 25,000 participants, we quote by hand.
+- `revenueShare`: `null` without an `entryFee`. Our share is 15% of the net fee (after the gateway fee and its GST), at least ₹5 per registration. `estimatedShare` assumes every participant registers. Above `breakEvenRegistrations`, paying upfront is cheaper for the customer. Revenue-share bookings themselves are on hold.
+
+**Errors:** `400 VALIDATION_ERROR`.
+
+---
+
+### 11. Razorpay webhook
 `POST /api/v1/billing-portal/razorpay/webhook`
 
-- **Purpose**: Server-to-server callback from Razorpay. The single source of truth for whether money actually moved.
-- **Auth**: `x-razorpay-signature` header, HMAC-SHA256 over the raw request body using `RAZORPAY_WEBHOOK_SECRET` — a secret dedicated to this webhook, never falling back to `RAZORPAY_KEY_SECRET`. Compared with `crypto.timingSafeEqual`. Missing secret, missing header, or a signature mismatch → `400`/`503`, request rejected outright — verification is never silently skipped.
-- **Idempotent**: the `OpsPayment` update is guarded (`status NOT IN ('PAID')` for capture, `NOT IN ('PAID','FAILED')` for failure) so redelivery never re-runs `assignPlan` or duplicates the audit log entry. If a prior delivery marked the payment `PAID` but failed before finishing plan assignment (e.g. a transient downstream error), a redelivery resumes that work instead of short-circuiting as "already processed" — resumability is keyed off whether `subscriptionId` has been backfilled, not just the payment status.
-- **Amount-verified**: the webhook's reported amount is compared against the `OpsPayment.amount` computed at order-creation time; a mismatch is logged and the payment is *not* marked `PAID`.
-- **Plan resolution is server-authoritative**: the plan to assign comes from `OpsPayment.planId` (set at order-creation time from the verified handoff token), never from any client- or webhook-body-supplied `planSlug`.
+Called server to server, by Razorpay only. This is the only place that decides whether online money arrived.
 
-Handled events: `payment.captured` (→ `PAID`, assigns the subscription with the `billingCycle`/`periodMonths` recorded on the `OpsPayment` at order-creation time), `payment.failed` (→ `FAILED`). All other events are acknowledged with `200` and ignored.
+- **Signature:** the `x-razorpay-signature` header holds an HMAC-SHA256 of the raw body, keyed with `RAZORPAY_WEBHOOK_SECRET` (never `RAZORPAY_KEY_SECRET`) and compared timing-safe. A missing secret returns `503`; a missing or wrong signature returns `400`.
+- **Each event runs once:** events are stored by `x-razorpay-event-id` in `RazorpayWebhookEvent`. An event that was already processed is acknowledged and skipped. A failed attempt stays unprocessed, so Razorpay's retry runs it again.
+- **Payments that aren't ours** get `200`, never `400`. That covers another app on the same Razorpay account, and auto-debit charges, which have no order of ours. A `400` would make Razorpay retry and then disable the webhook after a day.
 
----
+| Event | Effect |
+|---|---|
+| `payment.captured` (our order) | The amount is checked against the order; a mismatch is logged and the payment isn't marked paid. Otherwise the payment becomes `PAID`, a tax invoice and receipt are issued and emailed, and the plan is assigned from the order's `planId` and cycle, never from the request. If an earlier delivery stopped halfway, this one finishes the work |
+| `payment.failed` (our order) | Payment becomes `FAILED` |
+| `payment.failed` (an auto-debit charge) | Matched to its subscription through Razorpay's invoice. Records the failure reason in our own wording and sets the status to Past due. Emails the owner on the first failure |
+| `payment_link.paid`, `payment_link.partially_paid` | Settles the linked invoice in full or in part, issues the receipt, and applies its access and any AI credits |
+| `payment_link.expired`, `payment_link.cancelled` | Updates the invoice's link status |
+| `subscription.*` (`authenticated`, `activated`, `charged`, `pending`, `halted`, `cancelled`, `completed`, `paused`, `resumed`, `updated`) | Re-reads the subscription from Razorpay, because events can arrive out of order, and applies its state. **`charged`**: records a PAID payment (`RAZORPAY_SUBSCRIPTION`) that extends the period from the old end date, with an invoice, a receipt and emails, and applies a scheduled plan if the charge is for it. **`halted`**: emails the owner that retries have stopped. **`cancelled`** from the bank or UPI app: moves the org back to paying online |
+| anything else | `200`, ignored |
 
-## Pricing formula
+**Razorpay dashboard:** enable all the events above for this URL.
 
-```
-gatewayFee = round(baseAmount × 0.02, 2)
-gst        = round(gatewayFee × 0.18, 2)
-total      = baseAmount + gatewayFee + gst
-```
-
-`baseAmount` is always the plan's own price for the selected cycle (`monthlyPrice` or `annualPrice`) — never a derived value. A plan can offer an annual price that is *not* `monthlyPrice × 12` (e.g. a promotional rate, or an annual-only plan with no monthly price at all).
+The hourly job also re-reads every live mandate and records any charge whose webhook was missed. An older charge never moves dates back.
 
 ---
 
 ## Data model notes
 
-- `OpsPayment` stores a full receipt per payment: `baseAmount`, `gatewayFeeAmount`, `gstAmount`, `amount` (grand total), `billingCycle`, `periodMonths`, `planId` — not just a final total.
-- `OrganizationSubscription` records the `billingCycle`/`periodMonths` actually purchased for the current period, independent of what the plan's `allowsMonthly`/`allowsAnnual` say today (a plan's cycle availability can change after a subscription was created under it).
-- `OpsPaymentStatus` progresses `CREATED → PENDING → PAID` (or `→ FAILED`), mirroring the main app's payment state machine. `CREATED` is set at order-creation time, before the browser has done anything; `PENDING` reflects the browser reporting checkout.js completion; `PAID`/`FAILED` are webhook-only.
+- `OpsPayment`:
+  - Amount fields: `baseAmount`, `gstAmount`, `amount` (the total) and `creditApplied`.
+  - What was bought: `billingCycle`, `periodMonths` and `planId`.
+  - Links and documents: `invoiceId` and `receiptNumber`, plus refund and void fields.
+  - `source`: `RAZORPAY_ORDER`, `RAZORPAY_LINK`, `RAZORPAY_SUBSCRIPTION`, `BANK_TRANSFER`, `CHEQUE`, `UPI_DIRECT` or `OTHER`.
+  - Status goes `CREATED → PENDING → PAID`, or `FAILED`; a refunded payment later shows `REFUNDED`. For Razorpay money, only the webhook sets `PAID` or `FAILED`.
+- `RazorpaySubscription`: one row per mandate. It stores the Razorpay id, plan, cycle, amount, `paymentMethod` (`card`, `upi` or `emandate`), status, `startAt` and `currentEnd`. `OrganizationSubscription.razorpaySubscriptionId` points to the live one.
+- `OrganizationSubscription`:
+  - `collectionMethod`: `AUTO_DEBIT`, `PAY_ONLINE`, `OFFLINE` or `COMPLIMENTARY`.
+  - The period and `graceDays`, the contract fields, and `lastPaymentError`.
+  - The scheduled change: `scheduledPlanId`, `scheduledBillingCycle`, `scheduledReason` and `scheduledById`.
+- Ops stores amounts in rupees (`Decimal`). Paise are used only at the Razorpay boundary.

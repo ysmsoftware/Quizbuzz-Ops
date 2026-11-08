@@ -2,6 +2,8 @@
 
 The Contest Booking & Pricing Calculator API manages high-concurrency contest infrastructure quotes, custom add-on pricing rules, calculation breakdown estimations, and end-to-end booking lifecycles (`QUOTED` → `PAID` → `PROVISIONED` → `COMPLETED` / `CANCELLED`) with automatic billing ledger synchronization.
 
+**Last checked:** 2026-11-08 (`feature/subscriptions`). A booking is an **Event Pass**: it charges the Event Pass price (`lib/pricing/event-pass.ts`, the same formula as the public quote in `billing-portal-api.md` §10) and, once provisioned, raises the org's limits for the event.
+
 ---
 
 ## Base Path
@@ -11,8 +13,8 @@ The Contest Booking & Pricing Calculator API manages high-concurrency contest in
 
 ## Authentication & Authorization
 All endpoints require a valid Ops Admin session cookie (`ops_session`). Role access control is enforced at the controller level:
-- **Read Operations**: Available to all authorized admin roles (`SUPER_ADMIN`, `BILLING_ADMIN`, `OPS_ADMIN`, `SUPPORT_LEAD`, `READ_ONLY`).
-- **Write / Mutation Operations**: Restricted to `SUPER_ADMIN`, `BILLING_ADMIN`, and `OPS_ADMIN` roles.
+- **Read Operations**: every ops role (`SUPER_ADMIN`, `BILLING_ADMIN`, `SUPPORT`).
+- **Write / Mutation Operations**: `SUPER_ADMIN` and `BILLING_ADMIN`.
 
 ---
 
@@ -173,7 +175,7 @@ All endpoints require a valid Ops Admin session cookie (`ops_session`). Role acc
 `POST /api/v1/ops/bookings`
 
 - **Purpose**: Calculate and persist a new contest infrastructure booking quote for an existing organization or new prospective customer.
-- **Access**: `SUPER_ADMIN`, `BILLING_ADMIN`, `OPS_ADMIN`
+- **Access**: `SUPER_ADMIN`, `BILLING_ADMIN`
 - **Audit Event**: `booking.created`
 
 #### Request Body
@@ -223,7 +225,9 @@ All endpoints require a valid Ops Admin session cookie (`ops_session`). Role acc
       "addOnsCost": 13000,
       "subtotal": 19325,
       "margin": 6763.75,
-      "total": 26088.75
+      "total": 39998,
+      "costFloor": 26088.75,
+      "eventPass": { "participants": 5000, "basePrice": 34999, "engineerPrice": 4999, "price": 39998, "gst": 7199.64, "total": 47197.64, "…": "…" }
     },
     "desiredStartTime": "2026-09-01T09:00:00.000Z",
     "quotedAt": "2026-07-29T12:10:00.000Z",
@@ -235,6 +239,11 @@ All endpoints require a valid Ops Admin session cookie (`ops_session`). Role acc
   "message": "Contest booking quote created successfully."
 }
 ```
+
+#### Pricing
+- `pricingBreakdown.total` is what the booking charges: the **Event Pass price** before GST (`eventPass.price`). `addOnsSelected.prioritySupport` adds the engineer-on-the-day add-on.
+- `costFloor` is the older cost-plus total (base fee, compute, cache, questions, add-ons and margin from the pricing config). It stays so ops can see when a price is below our cost; the calculator warns "below the cost floor".
+- The pricing config (§1–2) now only drives the cost floor.
 
 ---
 
@@ -293,9 +302,16 @@ All endpoints require a valid Ops Admin session cookie (`ops_session`). Role acc
 `PATCH /api/v1/ops/bookings/[id]/status`
 
 - **Purpose**: Advance booking lifecycle state (`quoted` → `paid` → `provisioned` → `completed` or `cancelled`).
-- **Access**: `SUPER_ADMIN`, `BILLING_ADMIN`, `OPS_ADMIN`
+- **Access**: `SUPER_ADMIN`, `BILLING_ADMIN`
 - **Audit Event**: `booking.status_updated`
-- **Side Effect**: Transitioning to `paid` automatically generates an `OpsPayment` record in the billing ledger.
+- **Side Effects**:
+  - `paid`: generates an `OpsPayment` record in the billing ledger.
+  - `provisioned`: **grants the Event Pass** (`server/features/bookings/event-pass-grants.ts`). The booking must be linked to an organization (`409` otherwise), and an org without a subscription is put on Free first. Limit overrides tagged with the booking's `bookingId` are added to the org, expiring **30 days** after the event start (or now, if that's later), and only where the event needs more than the org already has:
+    - `maxParticipantsPerContest` and `maxQuestionsPerContest` raised to the booking's counts (`ABSOLUTE`);
+    - `maxContestsPerCycle` +2 (`ADDITIVE`), unless already unlimited;
+    - `featureProctoring`, `featureCertBranding`, `featureAnalyticsExport` turned on where the plan lacks them.
+    The main app's cache is refreshed, and the grant is recorded as `booking.limits_granted`. Provisioning twice adds nothing.
+  - `cancelled`: removes every override the booking granted (reason: "Booking cancelled: …"), and refreshes the cache.
 
 #### Request Body
 ```json
@@ -305,6 +321,9 @@ All endpoints require a valid Ops Admin session cookie (`ops_session`). Role acc
   "paymentReference": "pay_O1928371029"
 }
 ```
+For `cancelled`, send `cancellationReason`.
+
+> Revenue share instead of payment (`payOption`, `commissionPercent`, `contestId` on the booking) is **on hold**. Those columns exist but are unused.
 
 #### Status Transition Rules
 - `quoted` → `paid` or `cancelled`

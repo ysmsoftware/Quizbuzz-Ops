@@ -78,7 +78,7 @@ The amount still due is `total − amountPaid − tdsAmount − creditedAmount`.
 | `billingCycle` | `MONTHLY` \| `HALF_YEARLY` \| `ANNUAL` \| `CUSTOM` | Required with `planId`. `CUSTOM` is a contract with its own end date |
 | `periodEnd` | ISO datetime | Required for `CUSTOM` and `COMPLIMENTARY` |
 
-**Response `data`:** `{ invoice, linkError }`. The owner is emailed the invoice, with the pay link for online invoices. `linkError` is set when the invoice was issued but Razorpay didn't create a link; retry with `create_link`.
+**Response `data`:** `{ invoice, linkError }`. The owner is emailed the invoice. For an online invoice the email's button opens their Billing page, where they pay. The email never carries a Razorpay link or bank details: someone paying by direct transfer is told to contact us. `linkError` is set when the invoice was issued but Razorpay didn't create a link; retry with `create_link`.
 
 **Errors:**
 - `400`: validation, or the end date isn't after the start date.
@@ -136,7 +136,7 @@ A Razorpay payment can't be voided; refund it with a credit note instead (`409`)
 
 | `action` | Extra fields | Who | Effect |
 |---|---|---|---|
-| `create_link` | — | Billing | Creates a Razorpay pay link for an open invoice. The due date must be in the future |
+| `create_link` | — | Billing | Creates a Razorpay pay link for an open invoice. The link expires on the due date; for an overdue invoice it expires 7 days from now and the due date stays as it was |
 | `resend` | — | Billing | Emails the open invoice to the owner again |
 | `extend_due` | `dueAt`, `reason` | Billing | New due date (in the future). Extends the link and rebuilds the PDF |
 | `write_off` | `reason` | Super | Gives up on what's still owed. Status `WRITTEN_OFF` |

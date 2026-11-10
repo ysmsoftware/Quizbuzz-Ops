@@ -69,7 +69,7 @@ async function sendInvoiceReminders(now: Date): Promise<number> {
       balance: Number(inv.total) - Number(inv.amountPaid) - Number(inv.tdsAmount),
       dueDate: isoDay(inv.dueAt),
       daysLeft,
-      payLink: inv.razorpayLinkStatus === 'created' ? inv.razorpayLinkUrl : null,
+      payOnline: inv.collectionMethod === 'PAY_ONLINE',
     });
     if (ok) {
       await prisma.invoice.update({ where: { id: inv.id }, data: { lastReminderDays: stage } });

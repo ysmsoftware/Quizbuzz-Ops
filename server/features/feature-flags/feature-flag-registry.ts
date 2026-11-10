@@ -162,12 +162,12 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     key: 'auto_debit',
     label: 'Auto-debit subscriptions',
     description:
-      'Lets the organization’s owner turn on automatic renewal (UPI AutoPay, card or eMandate through Razorpay Subscriptions) for monthly and 6-month plans.',
-    // OPT_IN: global on only makes it grantable, so it goes live one org at a time. Mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+      'Lets every organization’s owner choose automatic renewal (UPI AutoPay, card or eMandate through Razorpay Subscriptions) for monthly and 6-month plans. On is the normal state. Off is a kill switch: nobody can set up new automatic renewals, and mandates already running keep charging.',
+    // Standard subscription behaviour: available to everyone, chosen by the owner at checkout. No per-organization switch.
     defaultEnabled: true,
     severity: FeatureFlagSeverity.WARNING,
-    supportsOrgOverride: true,
-    accessModel: 'OPT_IN',
+    supportsOrgOverride: false,
+    accessModel: 'GLOBAL',
   },
   {
     key: 'ai_top_ups',

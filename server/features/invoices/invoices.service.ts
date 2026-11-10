@@ -173,18 +173,22 @@ export class InvoicesService {
     });
   }
 
-  /** The invoice stands even if Razorpay is down: ops can retry the link from the invoice. */
-  private async attachLink(invoiceId: string): Promise<string | null> {
+  /**
+   * The invoice stands even if Razorpay is down: ops can retry the link from the invoice. A link normally
+   * expires on the due date; for an overdue invoice the caller passes a later expiry.
+   */
+  private async attachLink(invoiceId: string, expiresAt?: Date): Promise<string | null> {
     const inv = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
     const buyer = inv.buyer as unknown as Buyer;
     const owner = await new OrganizationsRepository().getOwnerContact(inv.organizationId);
     try {
       const link = await createPaymentLink({
         invoiceId: inv.id,
-        reference: inv.invoiceNumber,
+        // Razorpay wants a reference per link, so a replacement link gets a suffix. Payments match by link id, not reference.
+        reference: inv.razorpayLinkId ? `${inv.invoiceNumber}-${Date.now().toString(36)}` : inv.invoiceNumber,
         amountRupees: round2(n(inv.total) - n(inv.amountPaid) - n(inv.tdsAmount)),
         description: inv.description,
-        expiresAt: inv.dueAt,
+        expiresAt: expiresAt ?? inv.dueAt,
         customer: { name: buyer.name, email: buyer.email ?? owner?.email ?? null },
       });
       await prisma.invoice.update({ where: { id: inv.id }, data: { razorpayLinkId: link.id, razorpayLinkUrl: link.url, razorpayLinkStatus: 'created' } });
@@ -197,7 +201,6 @@ export class InvoicesService {
 
   private async emailIssued(invoiceId: string): Promise<boolean> {
     const inv = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
-    const seller = inv.seller as unknown as BillingSettingsInput;
     return orgOwnerNotifier.notify(inv.organizationId, 'INVOICE_ISSUED', {
       invoiceNumber: inv.invoiceNumber,
       description: inv.description,
@@ -205,8 +208,8 @@ export class InvoicesService {
       gstAmount: round2(n(inv.total) - n(inv.subtotal)),
       total: n(inv.total),
       dueDate: inv.dueAt.toISOString().slice(0, 10),
-      payLink: inv.razorpayLinkUrl,
-      bank: inv.collectionMethod === 'OFFLINE' ? { name: seller.bankName, account: seller.accountName, number: seller.accountNumber, ifsc: seller.ifsc, upi: seller.upiId } : null,
+      // The email sends them to the Billing page to pay. Bank details are never emailed: offline payers talk to us.
+      payOnline: inv.collectionMethod === 'PAY_ONLINE',
     });
   }
 
@@ -396,8 +399,9 @@ export class InvoicesService {
     }
     if (input.action === 'create_link') {
       if (!open) throw new ConflictError('Only an unpaid invoice can have a payment link.');
-      if (inv.dueAt <= new Date()) throw new ConflictError('Move the due date forward first: a link can\'t expire in the past.');
-      const linkError = await this.attachLink(invoiceId);
+      // An overdue invoice can still be paid: its link lives a week from now, and the due date stays as it was.
+      const now = new Date();
+      const linkError = await this.attachLink(invoiceId, inv.dueAt > now ? inv.dueAt : new Date(now.getTime() + 7 * 86_400_000));
       if (linkError) throw new ConflictError(linkError);
       await forgetDocuments(invoiceId, 'INVOICE');
       return prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });

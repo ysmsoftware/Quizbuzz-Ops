@@ -245,14 +245,14 @@ Invoice numbers look like `INV/26-27/00012`, receipts `REC/26-27/00009`, credit 
 | **When do they get access?** | **Now, before payment**: usable straight away, restricted automatically if unpaid after the due date plus grace. **On payment**: nothing changes until it's paid in full |
 | **Description on the invoice** | e.g. the partner deal it belongs to |
 
-The owner is emailed the invoice, with the pay link if online.
+The owner is emailed the invoice. For an online invoice the email has a **Pay** button that opens their Billing page. Bank details are never emailed: for a direct transfer the email asks them to contact us, and we reach out too.
 
 ### Actions on an invoice
 
 | Action | Who | Notes |
 |---|---|---|
 | **Download PDF** | All | The same saved file the owner and the email get |
-| **Create pay link** | Billing | For an online invoice that lost or never had a link |
+| **Create pay link** | Billing | For an online invoice that lost or never had a link. On an overdue invoice the link lasts 7 days and the due date stays |
 | **Resend email** | Billing | Emails the owner again |
 | **Change due date** | Billing | Rebuilds the PDF and extends the link |
 | **Record payment** | Billing | See below |
@@ -301,12 +301,9 @@ What follows:
 
 Razorpay Subscriptions charge the customer each cycle by **UPI AutoPay, card or eMandate**. Only for self-serve plans billed **monthly or every 6 months**. Yearly is always paid upfront.
 
-### Turning it on for a customer
+### Who can use it
 
-It's an opt-in flag, so it goes live one org at a time:
-1. **Feature Flags → `auto_debit`**: global on, then **Grant access** for the org.
-2. `razorpay_gateway_active` must be on.
-3. The owner then sees **Turn on automatic renewal** on their Billing page, or "Renew automatically" at checkout.
+Everyone. There is nothing to turn on per customer: any owner on a self-serve plan billed monthly or every 6 months can choose **Renew automatically** at checkout, or **Turn on automatic renewal** on their Billing page. **Feature Flags → `auto_debit`** is a platform-wide switch, on by default, and `razorpay_gateway_active` must be on too. Switching `auto_debit` off is a kill switch: nobody can set up a new mandate, and mandates already running keep charging.
 
 ### What you see
 
@@ -400,7 +397,7 @@ Billing-related flags:
 | Flag | Type | What it does |
 |---|---|---|
 | `plan_enforcement` | Global | Off: limits are only logged (`WOULD_BLOCK`). On: they are refused |
-| `auto_debit` | Opt-in | The owner may set up automatic renewal |
+| `auto_debit` | Global | Every owner may choose automatic renewal. Off stops new setups; running mandates keep charging |
 | `ai_top_ups` | Opt-in | The owner may buy AI credit packs |
 | `razorpay_gateway_active` | Global | Online payments and checkout |
 
@@ -462,7 +459,7 @@ Create the new plan version, then **Move subscribers** from the old one, **At ea
 |---|---|
 | "Billing is unavailable" on the customer's Billing page, or checkout fails at once | `BILLING_HANDOFF_SECRET` must be set to the same value (16+ characters) on the main app and ops |
 | Issuing an invoice is refused | Billing Settings not filled in |
-| Owner doesn't see **Turn on automatic renewal** | `auto_debit` granted to the org? `razorpay_gateway_active` on? Plan is self-serve, monthly or 6-month, and paid online? |
+| Owner doesn't see **Turn on automatic renewal** | `auto_debit` and `razorpay_gateway_active` on (Feature Flags)? Plan is self-serve, monthly or 6-month, and paid online? |
 | A Razorpay payment isn't showing | Razorpay webhook events enabled for the ops webhook URL. The hourly job also catches missed auto-debit charges |
 | Limits aren't blocking anything | `plan_enforcement` is off. Rows are logged as `WOULD_BLOCK` |
 | Customer is blocked but says they paid | Find the invoice. If paid by bank, record it. If paid online, check Payments for the Razorpay payment and the webhook status |

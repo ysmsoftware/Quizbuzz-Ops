@@ -251,7 +251,7 @@ Flags that drive billing (`server/features/feature-flags/feature-flag-registry.t
 |---|---|---|---|
 | `plan_enforcement` | `GLOBAL` | off | On: plan limits, plan features and restriction after a lapse are enforced. Off: nothing is refused and each would-be refusal is logged as `WOULD_BLOCK` in `plan_usage_check_logs`. Also the kill switch for enforcement |
 | `razorpay_gateway_active` | `GLOBAL` | on | Online payments: checkout orders, auto-debit and contest registration payments. Off: `403 FEATURE_DISABLED` |
-| `auto_debit` | `OPT_IN` | on | The org's owner may turn on automatic renewal (UPI AutoPay, card or eMandate) for monthly and 6-month plans. Needs `razorpay_gateway_active` too |
+| `auto_debit` | `GLOBAL`, no org override | on | Every owner may choose automatic renewal (UPI AutoPay, card or eMandate) at checkout, for monthly and 6-month plans. Off is a kill switch: nobody can set up a new mandate, and running ones keep charging. Needs `razorpay_gateway_active` too |
 | `ai_top_ups` | `OPT_IN` | on | The org's owner may buy AI credit packs from the Billing page. Turn it on only where AI question generation is live |
 
 The plan can also switch features off for an org (see [`entitlements-api.md`](./entitlements-api.md)). An active override set here beats the plan, so ops can give one org a feature its plan lacks. That plan layer applies only while `plan_enforcement` is on.

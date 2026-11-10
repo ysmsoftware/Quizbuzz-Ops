@@ -187,7 +187,8 @@ export async function handleAccountRequest(req: Request): Promise<Response> {
       return pdfResponse(await invoiceDocument(invoice));
     }
 
-    const usable = invoice.razorpayLinkUrl && invoice.razorpayLinkStatus === 'created';
+    // A link expires on the due date, so an overdue invoice gets a fresh one below.
+    const usable = invoice.razorpayLinkUrl && invoice.razorpayLinkStatus === 'created' && invoice.dueAt > new Date();
     if (usable) return okResponse({ url: invoice.razorpayLinkUrl }, 'Pay link.');
     if (invoice.collectionMethod !== 'PAY_ONLINE') throw new ConflictError('This invoice is paid by bank transfer. The details are in the PDF.');
     const updated = (await invoicesService.act(invoice.id, { action: 'create_link' }, { id: null, email: claims.adminEmail ?? 'owner', name: 'Organization owner', role: 'org-owner' })) as { razorpayLinkUrl?: string | null };

@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     if (!organizationId || !planSlug) return errorResponse('Invalid handoff payload', 'VALIDATION_ERROR', null, 400);
 
     if (!(await isFeatureEnabled('razorpay_gateway_active', organizationId)) || !(await isFeatureEnabled('auto_debit', organizationId))) {
-      return errorResponse('Automatic payment isn’t available for this organization yet. Please pay once instead.', 'FEATURE_DISABLED', { featureKey: 'auto_debit' }, 403);
+      return errorResponse('Automatic renewal is switched off right now. Please pay once instead.', 'FEATURE_DISABLED', { featureKey: 'auto_debit' }, 403);
     }
 
     const plan = await prisma.subscriptionPlan.findUnique({ where: { slug: planSlug } });

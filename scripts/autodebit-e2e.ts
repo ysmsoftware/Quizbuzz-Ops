@@ -50,7 +50,6 @@ async function cleanup() {
   await prisma.razorpaySubscription.deleteMany({ where: { organizationId: ORG } });
   await prisma.razorpayPlan.deleteMany({ where: { id: { startsWith: 'plan_test_' } } });
   await prisma.organizationSubscription.deleteMany({ where: { organizationId: ORG } });
-  await prisma.featureFlagOrgOverride.deleteMany({ where: { id: 'ffo_e2e_autodebit' } });
   await prisma.$executeRaw`DELETE FROM platform_audit_logs WHERE metadata::text LIKE ${'%' + ORG + '%'} OR "targetId" = ${ORG}`;
   if (madeSettings) {
     await prisma.billingSequence.deleteMany({});
@@ -77,9 +76,6 @@ async function setup() {
     update: {},
     create: { legalName: 'YSM Info Solution', gstin: '27ABCDE1234F1Z5', address: 'Pune', state: 'Maharashtra', email: 'billing@local.test', sacCode: '998314', updatedAt: new Date() },
   });
-  await prisma.featureFlagOrgOverride.create({
-    data: { id: 'ffo_e2e_autodebit', flagKey: 'auto_debit', organizationId: ORG, isEnabled: true, reason: 'e2e', createdById: 'e2e', createdByName: 'e2e' },
-  }).catch(() => {});
   const free = await prisma.subscriptionPlan.findUniqueOrThrow({ where: { slug: 'free' } });
   const now = new Date();
   await prisma.organizationSubscription.upsert({

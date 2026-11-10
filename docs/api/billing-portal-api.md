@@ -92,7 +92,7 @@ Writes `billing_portal.checkout_started` to the audit log.
 ```
 
 - `currentSubscription`: set only while the current subscription is ACTIVE and not yet expired. The page uses it for the proration estimate. `lastPaidBaseAmount` is the last amount actually paid, which is the most an upgrade can credit.
-- `autoDebit.available`: the `razorpay_gateway_active` and `auto_debit` flags are both on for the org.
+- `autoDebit.available`: the platform-wide flags `razorpay_gateway_active` and `auto_debit` are both on. `auto_debit` is on by default and has no per-organization setting.
 - `autoDebit.firstChargeAt`: when the first automatic charge would happen. It is the end of the paid period if more than 15 minutes of a paid plan are left. If it is `null`, the charge happens at authorisation.
 - `autoDebit.current`: set when the org already pays by auto-debit. Choosing auto-debit again then changes the payment method.
 - `change.scheduledCycles`: the cycles for which this purchase would be a **downgrade**, or a shorter cycle on the same plan, and so takes effect only at `on`. For those cycles the page offers "Switch to X on date" (`/subscription/schedule`) instead of payment.
@@ -233,7 +233,7 @@ Only the main app's `/api/v1/billing/*` relay calls this, after checking the cal
 | `stop_autodebit` | Cancels the mandate at Razorpay immediately | Summary |
 | `cancel_scheduled_change` | Drops a pending downgrade | Summary |
 | `buy_ai_credits` | Issues an invoice for an AI credit pack (`credits` is 500, 2000 or 10000) | `{ url }`, the pay link |
-| `pay` | Reuses or creates a pay link for an open online invoice | `{ url }` |
+| `pay` | Reuses the invoice's live pay link, or creates one. An overdue invoice always gets a new link, valid for 7 days; its due date doesn't change | `{ url }` |
 | `pdf` | Invoice PDF (`invoiceId`) | `application/pdf` |
 | `receipt` | Receipt PDF (`invoiceId`, `paymentId`) | `application/pdf` |
 | `credit_note` | Credit note PDF (`creditNoteId`) | `application/pdf` |

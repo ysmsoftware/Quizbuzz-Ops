@@ -360,7 +360,7 @@ An **Event Pass** is a one-off booking for a single big event, priced by partici
 
 ## 12. Billing Settings
 
-**Sidebar → Revenue → Billing Settings.** **Super admin only** to save. Invoices are refused until this is filled in.
+**Sidebar → Revenue → Billing & Revenue → Settings tab.** **Super admin only** to save. Invoices are refused until this is filled in.
 
 - **Company name, Address**: shown at the top of every invoice and receipt. **Billing email**, **Phone**.
 - **State**: decides CGST and SGST, or IGST, on each invoice. **GSTIN**: printed on every invoice and receipt. Both required.

@@ -1,5 +1,6 @@
-import BillingSettingsView from '@/components/views/BillingSettingsView';
+import { redirect } from 'next/navigation';
 
-export default function BillingSettingsPage() {
-  return <BillingSettingsView />;
+// Billing Settings now lives as a tab on the Billing page; this keeps old links working.
+export default function BillingSettingsRedirect() {
+  redirect('/dashboard/billing?tab=settings');
 }

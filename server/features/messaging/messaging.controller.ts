@@ -11,6 +11,7 @@ import { assertOrgExists } from '../organizations/org-exists';
 const TEMPLATE_CATALOG: { id: OpsMessageTemplate; name: string; variables: string[] }[] = [
   { id: 'BILLING_PAYMENT_SUCCESS', name: 'Billing: Payment Success', variables: ['adminName', 'planName', 'amount'] },
   { id: 'BILLING_RECEIPT', name: 'Billing: Receipt', variables: ['adminName', 'planName', 'billingCycle', 'baseAmount', 'creditApplied', 'gatewayFeeAmount', 'gstAmount', 'amount', 'paidAt', 'razorpayPaymentId'] },
+  { id: 'BILLING_AUTOPAY_STOPPED', name: 'Billing: Automatic Payment Stopped', variables: ['adminName', 'planName', 'paidUntil'] },
   { id: 'BILLING_PAYMENT_FAILED', name: 'Billing: Payment Failed', variables: ['adminName', 'planName', 'amount', 'reason'] },
   { id: 'SUBSCRIPTION_RENEWAL_REMINDER', name: 'Subscription: Renewal Reminder', variables: ['adminName', 'planName', 'currentPeriodEnd', 'daysRemaining'] },
   { id: 'INVOICE_ISSUED', name: 'Invoice: Issued', variables: ['adminName', 'invoiceNumber', 'description', 'subtotal', 'gstAmount', 'total', 'dueDate', 'payOnline'] },

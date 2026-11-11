@@ -3,7 +3,7 @@ import { prisma } from '@/server/db/ops-prisma';
 import { env } from '@/server/config/env';
 import SubscriptionsService from '@/server/features/subscriptions/subscriptions.service';
 import { invoicesService } from '@/server/features/invoices/invoices.service';
-import { finishSubscriptionPayment } from '@/server/features/invoices/subscription-paid';
+import { settleCapture } from '@/server/features/invoices/settle-capture';
 import { handleSubscriptionEvent, recordChargeFailure, stopAutoDebit, type RzpSubscription } from '@/server/features/autodebit/autodebit.service';
 import { orgOwnerNotifier } from '@/server/notifications/org-owner-notifier';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
@@ -156,102 +156,8 @@ export async function POST(req: Request) {
         return okResponse(null, 'Event acknowledged for unknown order');
       }
 
-      const expectedPaise = Math.round(Number(opsPayment.amount) * 100);
-      if (typeof paymentEntity.amount === 'number' && paymentEntity.amount !== expectedPaise) {
-        console.error('Razorpay webhook amount mismatch — refusing to mark payment PAID.', {
-          opsPaymentId: opsPayment.id,
-          expectedPaise,
-          razorpayPaise: paymentEntity.amount,
-        });
-        return okResponse(null, 'Event acknowledged, amount mismatch flagged');
-      }
-
-      let updatedPayment;
-      try {
-        updatedPayment = await prisma.opsPayment.update({
-          where: { razorpayOrderId, status: { notIn: ['PAID'] } },
-          data: {
-            status: 'PAID',
-            paidAt: new Date(),
-            razorpayPaymentId: razorpayPaymentId || opsPayment.razorpayPaymentId,
-            razorpaySignature: signature,
-          },
-        });
-      } catch (e) {
-        if ((e as { code?: string })?.code === 'P2025') {
-          // Already PAID. If the plan was already assigned (subscriptionId
-          // set), a concurrent delivery fully handled this — true no-op. If
-          // not, a prior delivery marked PAID but failed before finishing
-          // assignPlan/backfill/audit-log (e.g. a transient entitlements-
-          // sync error) — fall through and finish that work instead of
-          // leaving it stuck forever on every future retry.
-          if (opsPayment.subscriptionId) {
-            return okResponse(null, 'Already processed');
-          }
-          updatedPayment = opsPayment;
-        } else {
-          throw e;
-        }
-      }
-
-      if (updatedPayment.subscriptionId) {
-        return okResponse(null, 'Already processed');
-      }
-
-      if (!updatedPayment.planId) {
-        console.error('OpsPayment has no planId — cannot auto-assign subscription.', updatedPayment.id);
-        return okResponse(null, 'Payment marked PAID but plan could not be auto-assigned (missing planId)');
-      }
-
-      const billingCycle = (updatedPayment.billingCycle || 'MONTHLY') as BillingCycle;
-      const existingSub = await prisma.organizationSubscription.findUnique({ where: { organizationId: updatedPayment.organizationId } });
-      const lapsedRenewalStart =
-        existingSub?.planId === updatedPayment.planId && (existingSub?.status === 'PAST_DUE' || existingSub?.status === 'RESTRICTED')
-          ? existingSub.currentPeriodEnd
-          : undefined;
-      // linkedPaymentId makes the subscription upsert + this payment's
-      // subscriptionId backfill one atomic transaction — see the comment on
-      // assignPlan() for why that matters on webhook retry.
-      await subscriptionsService.assignPlan(
-        updatedPayment.organizationId,
-        updatedPayment.planId,
-        actor,
-        billingCycle,
-        // Renewing the same plan during grace continues from the old end date, so paying late buys no free days.
-        lapsedRenewalStart,
-        updatedPayment.id
-      );
-
-      await writeAuditLogEntry(
-        actor,
-        'billing_portal.payment_succeeded',
-        AuditTargetType.PAYMENT,
-        updatedPayment.id,
-        `Payment Succeeded - ₹${Number(updatedPayment.amount)}`,
-        {
-          organizationId: updatedPayment.organizationId,
-          razorpayOrderId,
-          razorpayPaymentId: updatedPayment.razorpayPaymentId,
-          planId: updatedPayment.planId,
-          billingCycle,
-          periodMonths: updatedPayment.periodMonths,
-          baseAmount: updatedPayment.baseAmount ? Number(updatedPayment.baseAmount) : null,
-          gatewayFeeAmount: updatedPayment.gatewayFeeAmount ? Number(updatedPayment.gatewayFeeAmount) : null,
-          gstAmount: updatedPayment.gstAmount ? Number(updatedPayment.gstAmount) : null,
-          amount: Number(updatedPayment.amount),
-          currency: updatedPayment.currency,
-        }
-      );
-
-      // Paying once replaces auto-debit: otherwise a failing mandate could still charge for the same
-      // period, or an old plan's mandate could charge after an upgrade. The owner can turn it on again.
-      await stopAutoDebit(updatedPayment.organizationId, actor, `Paid once with payment ${updatedPayment.id}`);
-      await finishSubscriptionPayment(updatedPayment, billingCycle);
-
-      return okResponse(
-        { paymentId: updatedPayment.id, status: 'PAID' },
-        'Payment processed and subscription updated successfully'
-      );
+      const done = await settleCapture({ opsPayment, razorpayOrderId, razorpayPaymentId, signature, amountPaise: paymentEntity.amount, actor });
+      return okResponse(done.data, done.message);
     }
 
     if (event === 'payment.failed') {

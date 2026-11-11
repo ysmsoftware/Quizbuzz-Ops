@@ -197,6 +197,14 @@ export async function applyState(row: RazorpaySubscription, state: RzpSubscripti
     await writeAuditLogEntry(RAZORPAY_ACTOR, 'subscription.autodebit_off', AuditTargetType.SUBSCRIPTION, sub.id, sub.plan.name, {
       organizationId: sub.organizationId, razorpaySubscriptionId: row.id, razorpayStatus: updated.status,
     });
+    // Cancelled outside our app (the owner's UPI app or bank): the paid time stays, but say so now, not at the period end.
+    // Turning it off from our Billing page clears the link first, so that path never reaches here.
+    if (sub.plan.kind !== 'FREE' && sub.currentPeriodEnd.getTime() > Date.now()) {
+      await orgOwnerNotifier.notify(sub.organizationId, 'BILLING_AUTOPAY_STOPPED', {
+        planName: sub.plan.name,
+        paidUntil: sub.currentPeriodEnd.toISOString().slice(0, 10),
+      });
+    }
   }
 
   // Once per failing spell: the first failed retry, then once more when Razorpay gives up.
@@ -341,6 +349,24 @@ export async function stopAutoDebit(organizationId: string, actor: AuditActor, w
   return live.length > 0;
 }
 
+/** Asks Razorpay where one mandate stands and brings our rows in line, including any charge it already took. Safe to repeat. */
+export async function reconcileRow(row: RazorpaySubscription, now = new Date()): Promise<'abandoned' | 'checked'> {
+  const state = await razorpayCall<RzpSubscription>(`subscriptions/${row.id}`, 'GET');
+  if (state.status === 'created' && row.createdAt.getTime() < now.getTime() - 24 * 60 * 60_000) {
+    await cancelAtRazorpay(row.id);
+    return 'abandoned';
+  }
+  const updated = await applyState(row, state);
+  if (AUTHORISED.includes(state.status) || FAILING.includes(state.status)) {
+    const { items } = await razorpayCall<{ items: RzpInvoice[] }>(`invoices?subscription_id=${row.id}&count=100`, 'GET');
+    const paid = items.filter((i) => i.status === 'paid' && i.payment_id).sort((a, b) => (a.billing_start ?? 0) - (b.billing_start ?? 0));
+    for (const inv of paid) {
+      await applyCharge(updated, { paymentId: inv.payment_id!, amountPaise: inv.amount_paid ?? Math.round(Number(row.amount) * 100), periodStart: fromSecs(inv.billing_start) });
+    }
+  }
+  return 'checked';
+}
+
 /** Hourly: catch up with anything a webhook missed, and drop mandates never authorised. */
 export async function reconcileAutoDebits(now = new Date()): Promise<{ checked: number; abandoned: number; failures: number }> {
   if (!razorpayAuth()) return { checked: 0, abandoned: 0, failures: 0 };
@@ -354,21 +380,8 @@ export async function reconcileAutoDebits(now = new Date()): Promise<{ checked: 
   rows = rows.filter((r) => !deleted.has(r.organizationId));
   for (const row of rows) {
     try {
-      const state = await razorpayCall<RzpSubscription>(`subscriptions/${row.id}`, 'GET');
-      if (state.status === 'created' && row.createdAt.getTime() < now.getTime() - 24 * 60 * 60_000) {
-        await cancelAtRazorpay(row.id);
-        abandoned++;
-        continue;
-      }
-      const updated = await applyState(row, state);
-      if (AUTHORISED.includes(state.status) || FAILING.includes(state.status)) {
-        const { items } = await razorpayCall<{ items: RzpInvoice[] }>(`invoices?subscription_id=${row.id}&count=100`, 'GET');
-        const paid = items.filter((i) => i.status === 'paid' && i.payment_id).sort((a, b) => (a.billing_start ?? 0) - (b.billing_start ?? 0));
-        for (const inv of paid) {
-          await applyCharge(updated, { paymentId: inv.payment_id!, amountPaise: inv.amount_paid ?? Math.round(Number(row.amount) * 100), periodStart: fromSecs(inv.billing_start) });
-        }
-      }
-      checked++;
+      if ((await reconcileRow(row, now)) === 'abandoned') abandoned++;
+      else checked++;
     } catch (err) {
       failures++;
       console.error(`[autodebit] Reconcile of ${row.id} failed:`, err);

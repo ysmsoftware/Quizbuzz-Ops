@@ -23,12 +23,15 @@ import { errorMessage } from '@/lib/errors';
 interface OrganizationSubscriptionTabProps {
   organization: Organization;
   onPlanChanged?: () => void;
+  /** Switches the org page to its Invoices tab. */
+  onOpenInvoices?: () => void;
   payments?: OrgPayment[];
 }
 
 export default function OrganizationSubscriptionTab({
   organization,
   onPlanChanged,
+  onOpenInvoices,
   payments,
 }: OrganizationSubscriptionTabProps) {
   const subscriptionPayments = (payments || []).filter((p) => p.source === 'subscription');
@@ -115,6 +118,7 @@ export default function OrganizationSubscriptionTab({
           plans={plans}
           currentPlanId=""
           isSubmitting={isAssigningInitialPlan}
+          onUseInvoice={() => { setIsChangePlanOpen(false); onOpenInvoices?.(); }}
         />
       </div>
     );
@@ -243,6 +247,7 @@ export default function OrganizationSubscriptionTab({
         plans={plans}
         currentPlanId={subscription.planId}
         isSubmitting={isChangingPlan}
+        onUseInvoice={() => { setIsChangePlanOpen(false); onOpenInvoices?.(); }}
         periodEnd={subscription.planKind === 'FREE' ? null : subscription.currentPeriodEnd}
       />
 

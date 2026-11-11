@@ -39,6 +39,16 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
       ${emailButton('View billing', billingUrl())}
     `),
   }),
+  BILLING_AUTOPAY_STOPPED: (p) => ({
+    subject: `Automatic payment for ${p.planName} was stopped`,
+    html: email(`Automatic payment for ${p.planName} was stopped`, 'Automatic payment was stopped', `
+      <p style="${P}">Hi ${escape(p.adminName)},</p>
+      <p style="${P}">The automatic payment for your <strong>${escape(p.planName)}</strong> plan was cancelled, for example from your UPI app or bank. Nothing is charged for the time you have already paid for.</p>
+      ${calloutBox(`Your plan stays active until <strong>${escape(p.paidUntil)}</strong>. After that, it will not renew unless you set up payment again.`, 'warning')}
+      ${emailButton('Set up payment again', billingUrl())}
+      <p style="${SMALL}">If you cancelled on purpose, you don't need to do anything.</p>
+    `),
+  }),
   BILLING_PAYMENT_FAILED: (p) => ({
     subject: `Payment failed — ${p.planName}`,
     html: email(`Your payment for ${p.planName} didn't go through`, "Your payment didn't go through", `

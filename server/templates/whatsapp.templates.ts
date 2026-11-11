@@ -20,6 +20,10 @@ const WHATSAPP_TEMPLATES: Record<OpsMessageTemplate, WhatsAppTemplateBuilder> = 
     campaignName: 'ops_billing_payment_success',
     templateParams: [p.adminName, p.planName, String(p.amount)],
   }),
+  BILLING_AUTOPAY_STOPPED: (p) => ({
+    campaignName: 'ops_billing_autopay_stopped',
+    templateParams: [p.adminName, p.planName, String(p.paidUntil)],
+  }),
   BILLING_PAYMENT_FAILED: (p) => ({
     campaignName: 'ops_billing_payment_failed',
     templateParams: [p.adminName, p.planName, String(p.amount)],

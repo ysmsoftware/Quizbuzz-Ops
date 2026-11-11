@@ -579,6 +579,7 @@ enum OpsMessageStatus {
 }
 
 enum OpsMessageTemplate {
+  BILLING_AUTOPAY_STOPPED
   BILLING_PAYMENT_SUCCESS
   // Itemized, resendable record of a payment — distinct from
   // BILLING_PAYMENT_SUCCESS's short immediate confirmation. Also triggered

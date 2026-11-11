@@ -62,7 +62,11 @@ const AUTO_CYCLES: string[] = ['MONTHLY', 'HALF_YEARLY'];
 
 const RAZORPAY_BRAND_TEAL = '#0d9488';
 const POLL_INTERVAL_MS = 2500;
-const POLL_MAX_ATTEMPTS = 36; // 90 seconds
+const POLL_MAX_MS = 3 * 60 * 1000;
+// A UPI payment can read "failed" and then flip to paid seconds later, so a failure is shown only once it has held this long.
+const FAILED_GRACE_MS = 45 * 1000;
+/** What a check can be about: only ever one of these two, never anything the URL says. */
+const RESUME_PATTERN = /^(paymentId|subscriptionId)=[A-Za-z0-9_-]{4,64}$/;
 
 type PayState = 'idle' | 'creating_order' | 'checkout_open' | 'confirming' | 'timeout';
 
@@ -82,6 +86,9 @@ function CheckoutContent() {
   const [chosenMode, setMode] = useState<PayMode | null>(asked === 'once' || asked === 'auto' ? asked : null);
 
   const pollStopRef = useRef<(() => void) | null>(null);
+  // Runs one check right now; set while a check is running. A phone coming back from its UPI app calls it.
+  const checkNowRef = useRef<(() => void) | null>(null);
+  const lastQueryRef = useRef<string | null>(null);
 
   const mainAppUrl = process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://localhost:3000';
   // Organizer URLs are /org/[orgSlug]/…; bare /org opens the signed-in user's active org (keeps the query).
@@ -111,6 +118,9 @@ function CheckoutContent() {
           // The Billing page passes the cycle the org is on, so "turn on automatic renewal" lands on it.
           const asked = searchParams.get('cycle') as BillingCycleChoice | null;
           setCycle(asked && cycles.includes(asked) ? asked : cycles[0] || null);
+          // Back from a UPI app (or the page was reloaded while paying): carry on checking the same payment.
+          const resume = searchParams.get('resume');
+          if (resume && RESUME_PATTERN.test(resume)) pollPaymentStatus(resume);
         } else {
           setError(res.message || 'Failed to verify checkout session.');
         }
@@ -121,7 +131,19 @@ function CheckoutContent() {
       })
       .finally(() => setLoading(false));
 
+    // iPhone Safari pauses this page while a UPI app is in front. The moment it is shown again, check at once
+    // instead of waiting for a timer that was frozen.
+    const onShown = () => {
+      if (document.visibilityState === 'visible') checkNowRef.current?.();
+    };
+    document.addEventListener('visibilitychange', onShown);
+    window.addEventListener('pageshow', onShown);
+    window.addEventListener('focus', onShown);
+
     return () => {
+      document.removeEventListener('visibilitychange', onShown);
+      window.removeEventListener('pageshow', onShown);
+      window.removeEventListener('focus', onShown);
       if (pollStopRef.current) pollStopRef.current();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- read once on load
@@ -175,46 +197,81 @@ function CheckoutContent() {
     sessionData.currentSubscription.billingCycle === cycle;
 
   function stopPolling() {
+    checkNowRef.current = null;
     if (pollStopRef.current) {
       pollStopRef.current();
       pollStopRef.current = null;
     }
   }
 
-  /** Waits for the webhook. One-time orders end PAID or FAILED; a mandate ends authorised or cancelled. */
-  function pollPaymentStatus(query: string) {
-    let attempts = 0;
-    setPayState('confirming');
+  /**
+   * Waits until the payment or mandate is settled. The server asks Razorpay itself on every check, so this
+   * does not depend on the webhook, on Razorpay's popup calling back, or on this page staying in front.
+   * One-time orders end PAID or FAILED; a mandate ends authorised or cancelled.
+   */
+  function pollPaymentStatus(query: string, quiet = false) {
+    stopPolling();
+    lastQueryRef.current = query;
+    const startedAt = Date.now();
+    let failedSince: number | null = null;
+    let running = false;
+    let done = false;
+    // quiet: started while Razorpay's window is open, so a phone that never gets the window's callback
+    // still lands on the result.
+    if (!quiet) setPayState('confirming');
 
-    const intervalId = setInterval(async () => {
-      attempts++;
+    const finish = (result: 'success' | 'failed') => {
+      done = true;
+      stopPolling();
+      window.location.href = billingUrl(`&subscription=${result}`);
+    };
+
+    const check = async () => {
+      if (running || done) return;
+      running = true;
       try {
-        const res = await fetch(`/api/v1/billing-portal/subscription/status?${query}`);
+        const res = await fetch(`/api/v1/billing-portal/subscription/status?${query}`, { cache: 'no-store' });
         const body = await res.json();
         const status = body?.data?.status;
 
-        if (status === 'PAID' || status === 'authenticated' || status === 'active') {
-          stopPolling();
-          window.location.href = billingUrl('&subscription=success');
-          return;
-        }
+        if (status === 'PAID' || status === 'authenticated' || status === 'active') return finish('success');
         if (status === 'FAILED' || status === 'cancelled' || status === 'expired') {
-          stopPolling();
-          window.location.href = billingUrl('&subscription=failed');
-          return;
+          failedSince ??= Date.now();
+          if (Date.now() - failedSince >= FAILED_GRACE_MS) return finish('failed');
+        } else {
+          failedSince = null;
         }
       } catch {
-        // transient network error while polling — keep trying until max attempts
+        // transient network error: keep trying until the time is up
+      } finally {
+        running = false;
       }
-
-      if (attempts >= POLL_MAX_ATTEMPTS) {
+      if (!done && Date.now() - startedAt >= POLL_MAX_MS) {
         stopPolling();
-        setPayState('timeout');
+        if (!quiet) setPayState('timeout');
       }
-    }, POLL_INTERVAL_MS);
+    };
 
+    const intervalId = setInterval(check, POLL_INTERVAL_MS);
     pollStopRef.current = () => clearInterval(intervalId);
+    checkNowRef.current = check;
+    void check();
   }
+
+  /** The address Razorpay sends a phone back to when it cannot call this page: it comes straight back here, checking. */
+  const returnUrl = (query: string) =>
+    `${window.location.origin}/billing/checkout/return?token=${encodeURIComponent(token ?? '')}&resume=${encodeURIComponent(query)}`;
+
+  /** Keeps the payment in the address, so a reload (iOS may reload a tab it paused) carries on checking it. */
+  const rememberPayment = (query: string) => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('resume', query);
+      window.history.replaceState(null, '', url.toString());
+    } catch {
+      /* address bar only; nothing depends on it */
+    }
+  };
 
   const handlePay = async () => {
     if (!cycle) {
@@ -259,6 +316,9 @@ function CheckoutContent() {
         name: 'QuizBuzz Subscription',
         description: `Plan: ${planName} (${cycle ? cycleLabel(cycle) : ''})`,
         order_id: orderId,
+        // Phones: when a UPI app finishes and this page can't be called back, Razorpay opens this instead.
+        callback_url: returnUrl(`paymentId=${paymentId}`),
+        redirect: false,
         prefill: {
           name: session.adminName || '',
           email: session.adminEmail || '',
@@ -285,6 +345,7 @@ function CheckoutContent() {
             // No status-changing call — the order simply stays CREATED/PENDING
             // and the admin can retry. The webhook remains the only writer
             // of a terminal status.
+            stopPolling();
             setPayState('idle');
           },
         },
@@ -293,6 +354,8 @@ function CheckoutContent() {
       setPayState('checkout_open');
       const rzp = new window.Razorpay(options);
       rzp.open();
+      rememberPayment(`paymentId=${paymentId}`);
+      pollPaymentStatus(`paymentId=${paymentId}`, true);
     } catch (err) {
       console.error('Payment error:', err);
       setPayError(errorMessage(err) || 'An unexpected error occurred processing payment.');
@@ -346,14 +409,18 @@ function CheckoutContent() {
       new window.Razorpay({
         key: keyId,
         subscription_id: subscriptionId,
+        callback_url: returnUrl(`subscriptionId=${subscriptionId}`),
+        redirect: false,
         name: 'QuizBuzz Subscription',
         description: `${planName}, renews ${cycleLabel(billingCycle).toLowerCase()}`,
         prefill: { name: session.adminName || '', email: session.adminEmail || '' },
         theme: { color: RAZORPAY_BRAND_TEAL },
         // Only the webhook changes anything; this just starts waiting for it.
         handler: () => pollPaymentStatus(`subscriptionId=${subscriptionId}`),
-        modal: { ondismiss: () => setPayState('idle') },
+        modal: { ondismiss: () => { stopPolling(); setPayState('idle'); } },
       }).open();
+      rememberPayment(`subscriptionId=${subscriptionId}`);
+      pollPaymentStatus(`subscriptionId=${subscriptionId}`, true);
     } catch (err) {
       setPayError(errorMessage(err) || 'An unexpected error occurred.');
       setPayState('idle');
@@ -420,10 +487,18 @@ function CheckoutContent() {
             </h2>
             <p className="text-muted-foreground text-sm mt-2">
               {payState === 'timeout'
-                ? "This is taking longer than usual. Your payment may still be processing — check back on the billing page in a few minutes before retrying."
+                ? "We haven't heard back yet. If money left your account, don't pay again: tap Check again and we'll confirm it with Razorpay. Any amount taken for a failed payment is refunded automatically."
                 : "We're verifying your payment with Razorpay. This usually takes a few seconds."}
             </p>
           </div>
+          {payState === 'timeout' && lastQueryRef.current && (
+            <button
+              onClick={() => pollPaymentStatus(lastQueryRef.current!)}
+              className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-colors text-sm cursor-pointer"
+            >
+              Check again
+            </button>
+          )}
           {payState === 'timeout' && (
             <button
               onClick={() => (window.location.href = billingUrl())}

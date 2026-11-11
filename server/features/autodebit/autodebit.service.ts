@@ -202,7 +202,7 @@ export async function applyState(row: RazorpaySubscription, state: RzpSubscripti
     if (sub.plan.kind !== 'FREE' && sub.currentPeriodEnd.getTime() > Date.now()) {
       await orgOwnerNotifier.notify(sub.organizationId, 'BILLING_AUTOPAY_STOPPED', {
         planName: sub.plan.name,
-        paidUntil: sub.currentPeriodEnd.toISOString().slice(0, 10),
+        paidUntil: sub.currentPeriodEnd.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
       });
     }
   }

@@ -39,9 +39,6 @@ export const PLAN_CATALOGUE: CataloguePlan[] = [
   { slug: 'biz-business', name: 'Business', description: 'For campus drives and company-wide certification.', audience: PlanAudience.BUSINESS, prices: [9999, 53999, 99990], contests: null, participants: null, questions: 500, members: 10, learners: null, candidates: 2000, aiCredits: 1000, features: ['certBranding', 'export', 'groups', 'gradebook', 'manualEmails', 'customDomain', 'prioritySupport'] },
 ];
 
-/** Earlier plans. Subscribers stay on them, but they're off sale. */
-const RETIRED_SLUGS = ['starter', 'starter-test', 'growth', 'scale', 'enterprise'];
-
 export async function syncPlanCatalogue(prisma: PrismaClient): Promise<string[]> {
   const created: string[] = [];
   const existing = new Set((await prisma.subscriptionPlan.findMany({ select: { slug: true } })).map((p) => p.slug));
@@ -106,12 +103,16 @@ export async function syncPlanCatalogue(prisma: PrismaClient): Promise<string[]>
   });
   await prisma.subscriptionPlan.updateMany({ where: { slug: 'free' }, data: { kind: PlanKind.FREE, isSellable: true } });
 
-  // `starter` was the old free plan: its orgs move to `free`, and it goes off sale with the others.
-  const starter = await prisma.subscriptionPlan.findUnique({ where: { slug: 'starter' }, select: { id: true } });
+  // `starter` was the old FREE plan (no price): its orgs move to `free`. This runs on every boot, so it must only touch
+  // that old plan. Ops now reuses the name for a paid Starter plan, and moving its subscribers would silently drop
+  // paying orgs to Free on the next deploy.
+  const starter = await prisma.subscriptionPlan.findUnique({ where: { slug: 'starter' }, select: { id: true, kind: true, monthlyPrice: true, annualPrice: true } });
   const freeRow = await prisma.subscriptionPlan.findUnique({ where: { slug: 'free' }, select: { id: true } });
-  if (starter && freeRow) {
+  const oldFreeStarter = !!starter && (starter.kind === PlanKind.FREE || (Number(starter.monthlyPrice ?? 0) === 0 && Number(starter.annualPrice ?? 0) === 0));
+  if (starter && freeRow && oldFreeStarter) {
     await prisma.organizationSubscription.updateMany({ where: { planId: starter.id }, data: { planId: freeRow.id } });
   }
-  await prisma.subscriptionPlan.updateMany({ where: { slug: { in: RETIRED_SLUGS } }, data: { isSellable: false } });
+  // The earlier plans were taken off sale once, long ago. Doing it on every boot would switch off any plan ops
+  // reuses or re-enables, so it is not repeated here.
   return created;
 }

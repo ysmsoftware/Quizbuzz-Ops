@@ -72,6 +72,9 @@ services:
       - SMTP_PASS=${SMTP_PASS}
       - SMTP_FROM=${SMTP_FROM:-${EMAIL_FROM}}
       - BILLING_HANDOFF_SECRET=${BILLING_HANDOFF_SECRET}
+      # The worker builds and sends the emails, so it needs the public site address for the logo and the
+      # buttons. Without it they point at http://localhost:3000.
+      - MAIN_APP_FRONTEND_URL=${MAIN_APP_FRONTEND_URL:-https://ysmquizbuzz.com}
     depends_on:
       - ops-redis
     networks:

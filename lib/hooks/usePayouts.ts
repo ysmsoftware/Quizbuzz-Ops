@@ -5,14 +5,12 @@ import {
   getPlatformPayoutAccounts,
   getPlatformRouteTransfers,
   getPlatformTransferSummary,
-  getRouteTransferQueueHealth,
   getOrgPayoutAccount,
   getOrgRouteTransfers,
   attachLinkedAccount,
   updatePayoutStatus,
   getPaymentTimeline,
   getNeedsAttention,
-  retryTransfer,
 } from '@/lib/api/payouts';
 import {
   PayoutAccountsListQueryParams,
@@ -40,15 +38,6 @@ export function usePlatformTransferSummary() {
     queryKey: ['payouts', 'summary'],
     queryFn: () => getPlatformTransferSummary(),
     staleTime: 30000,
-  });
-}
-
-export function useRouteTransferQueueHealth() {
-  return useQuery({
-    queryKey: ['payouts', 'queueHealth'],
-    queryFn: () => getRouteTransferQueueHealth(),
-    refetchInterval: 15000,
-    staleTime: 10000,
   });
 }
 
@@ -97,18 +86,6 @@ export function useNeedsAttention(params?: { page?: number; limit?: number }) {
     queryFn: () => getNeedsAttention(params),
     staleTime: 30000,
     refetchInterval: 60000,
-  });
-}
-
-export function useRetryTransfer() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (paymentId: string) => retryTransfer(paymentId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payouts'] });
-      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
-    },
   });
 }
 

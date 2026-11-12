@@ -5,11 +5,6 @@ import { AuditTargetType } from '@prisma/client';
 import { cache } from '../../cache/cache';
 import { env } from '../../config/env';
 import {
-  getRouteTransferQueueHealth as fetchQueueHealth,
-  RouteTransferQueueHealth,
-  enqueueForceRetryTransfer,
-} from './payouts-queue.service';
-import {
   PayoutAccountsListQueryParams,
   RouteTransfersListQueryParams,
   PlatformPayoutAccountItem,
@@ -39,7 +34,6 @@ export interface IPayoutsService {
     params: RouteTransfersListQueryParams
   ): Promise<{ data: PaymentRouteTransferItem[]; total: number; page: number; limit: number }>;
   getPlatformTransferSummary(): Promise<PlatformTransferSummary>;
-  getRouteTransferQueueHealth(): Promise<RouteTransferQueueHealth>;
   getPaymentTimeline(search: string): Promise<PaymentTimelineResponse>;
   getNeedsAttention(params: { page: number; limit: number }): Promise<{
     data: NeedsAttentionItem[];
@@ -47,7 +41,6 @@ export interface IPayoutsService {
     page: number;
     limit: number;
   }>;
-  retryTransfer(paymentId: string, actor: AuditActor): Promise<{ jobId: string }>;
   attachLinkedAccount(
     orgId: string,
     actor: AuditActor,
@@ -230,10 +223,6 @@ export class PayoutsService implements IPayoutsService {
 
     await cache.set(cacheKey, summary, env.PAYOUTS_SUMMARY_CACHE_TTL_SECONDS);
     return summary;
-  }
-
-  async getRouteTransferQueueHealth(): Promise<RouteTransferQueueHealth> {
-    return fetchQueueHealth();
   }
 
   /**
@@ -527,53 +516,6 @@ export class PayoutsService implements IPayoutsService {
     }));
 
     return { data, total, page: params.page, limit: params.limit };
-  }
-
-  /**
-   * Ops-triggered manual retry — the action behind "I looked at the chain of events,
-   * this is fixable, send it again". Refuses outright for an already-PROCESSED
-   * transfer (would double-pay the org) and requires an org+payment be found. The
-   * actual retry logic (fee recompute, Razorpay call, idempotent row reuse) lives in
-   * the main app's PayoutService — this only asks for it, via forceRetry: true on the
-   * job payload, and records who asked.
-   */
-  async retryTransfer(paymentId: string, actor: AuditActor): Promise<{ jobId: string }> {
-    // paymentId is an exact primary-key match, so this can only ever return 0 or 1 row.
-    const rows = await this.repo.findRegistrationsForTimeline(paymentId);
-    const row = rows[0];
-    if (!row || !row.paymentId) {
-      throw new NotFoundError('Payment not found');
-    }
-    if (!row.razorpayPaymentId) {
-      throw new ConflictError('This payment has no Razorpay payment id yet — nothing to transfer.');
-    }
-    if (row.transferStatus === 'PROCESSED') {
-      throw new ConflictError('This transfer already completed — retrying would risk paying the organization twice.');
-    }
-
-    const jobId = await enqueueForceRetryTransfer({
-      paymentId: row.paymentId,
-      organizationId: row.organizationId,
-      amount: Number(row.grossAmount),
-      razorpayPaymentId: row.razorpayPaymentId,
-      currency: row.currency || 'INR',
-    });
-
-    await writeAuditLogEntry(
-      actor,
-      'org.payout_transfer_retry_requested',
-      AuditTargetType.PAYMENT,
-      row.organizationId,
-      row.organizationName,
-      {
-        paymentId: row.paymentId,
-        transferId: row.transferId || null,
-        previousTransferStatus: row.transferStatus || 'none',
-        jobId,
-      }
-    );
-
-    return { jobId };
   }
 
   async attachLinkedAccount(

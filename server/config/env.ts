@@ -51,7 +51,6 @@ const envSchema = z.object({
   MESSAGE_WORKER_CONCURRENCY: z.coerce.number().default(10),
 
   PAYOUTS_SUMMARY_CACHE_TTL_SECONDS: z.coerce.number().default(60),
-  ROUTE_TRANSFER_QUEUE_PREFIX: z.string().default('quizbuzz'),
   // Thresholds for the "needs attention" view — mirrors the main app's own grace
   // windows (PAYOUT_RECONCILIATION_GRACE_PERIOD_MS / PAYOUT_STUCK_TRANSFER_RESUME_AFTER_MS)
   // so the dashboard doesn't flag something as a problem before the backend's own

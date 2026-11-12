@@ -26,7 +26,6 @@ export const KNOWN_QUEUES: QueueOption[] = [
   { value: 'quiz-timer-queue', label: 'quiz-timer-queue', instrumented: true },
   { value: 'capture-metadata-queue', label: 'capture-metadata-queue', instrumented: true },
   { value: 'export-queue', label: 'export-queue', instrumented: true },
-  { value: 'route-transfer-queue', label: 'route-transfer-queue (not instrumented)', instrumented: false },
   { value: 'analytics-queue', label: 'analytics-queue', instrumented: true },
   // Org-agnostic periodic sweeps — ScheduledJob.organizationId is a required
   // FK, and these process every org in one run, so they can never get a

@@ -81,33 +81,7 @@ The Payouts API domain manages connected Razorpay Route accounts, automated cont
 
 ---
 
-### 3. Route Transfer Queue Health & Telemetry
-`GET /api/v1/ops/payouts/queue-health`
-
-- **Purpose**: Monitor background transfer queue health, worker latency, and retry queue depth.
-- **Description**:
-  Inspects BullMQ queue states for route transfer workers. Returns active, waiting, delayed, and failed job counts.
-
-#### Responses
-```json
-{
-  "success": true,
-  "data": {
-    "status": "HEALTHY",
-    "waiting": 2,
-    "active": 1,
-    "completed": 4520,
-    "failed": 4,
-    "delayed": 0,
-    "averageLatencyMs": 340
-  },
-  "message": "Route transfer queue health retrieved."
-}
-```
-
----
-
-### 4. Payment Timeline & Audit Trail Search
+### 3. Payment Timeline & Audit Trail Search
 `GET /api/v1/ops/payouts/timeline`
 
 - **Purpose**: Trace complete end-to-end payment lifecycle from registration fee collection to Route transfer settlement.
@@ -140,7 +114,7 @@ The Payouts API domain manages connected Razorpay Route accounts, automated cont
 
 ---
 
-### 5. Needs Attention (Failed Transfers & Unlinked Accounts)
+### 4. Needs Attention (Failed Transfers & Unlinked Accounts)
 `GET /api/v1/ops/payouts/needs-attention`
 
 - **Purpose**: List accounts requiring operator intervention due to verification failures or failed transfer retries.
@@ -154,30 +128,7 @@ The Payouts API domain manages connected Razorpay Route accounts, automated cont
 
 ---
 
-### 6. Retry Failed Route Transfer
-`POST /api/v1/ops/payouts/transfers/[paymentId]/retry`
-
-- **Purpose**: Enqueue a manual retry for a failed route transfer.
-- **Description**:
-  Re-enqueues the transfer payload into BullMQ queue. Writes audit log entry for operator retry trigger.
-  Requires `SUPER_ADMIN` or `BILLING_ADMIN` role.
-
-#### Responses
-```json
-{
-  "success": true,
-  "data": {
-    "paymentId": "pay_880192",
-    "jobId": "job_retry_99102",
-    "status": "QUEUED"
-  },
-  "message": "Transfer retry enqueued."
-}
-```
-
----
-
-### 7. Link Razorpay Linked Account to Organization
+### 5. Link Razorpay Linked Account to Organization
 `POST /api/v1/ops/organizations/[orgId]/payout-account/link`
 
 - **Purpose**: Manually attach a Razorpay linked account ID (`acc_...`) to an organization.

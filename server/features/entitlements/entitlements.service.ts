@@ -48,6 +48,13 @@ export class EntitlementsService implements IEntitlementsService {
     // Falling to Free never takes away an org's way to get its own data out.
     if (expired) features.analyticsExport = true;
 
+    // Each pack separately, so the main app can expire them one by one and track what it spent from each.
+    const liveTopUps = await prisma.aiCreditTopUp.findMany({
+      where: { organizationId: orgId, expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: 'asc' },
+      select: { id: true, credits: true, expiresAt: true },
+    });
+
     const cachePayload = {
       billingCycle: sub.billingCycle,
       periodMonths: sub.periodMonths,
@@ -59,7 +66,8 @@ export class EntitlementsService implements IEntitlementsService {
       ...Object.fromEntries(LIMIT_FIELDS.map((field) => [field, effective[field].value])),
       commissionPercent: base.commissionPercent != null ? Number(base.commissionPercent) : null,
       // One-time packs on top of aiCreditsPerMonth. The AI module subtracts what's been used.
-      aiTopUpCredits: (await prisma.aiCreditTopUp.aggregate({ where: { organizationId: orgId, expiresAt: { gt: new Date() } }, _sum: { credits: true } }))._sum.credits ?? 0,
+      aiTopUpCredits: liveTopUps.reduce((sum, t) => sum + t.credits, 0),
+      aiTopUps: liveTopUps.map((t) => ({ id: t.id, credits: t.credits, expiresAt: t.expiresAt.toISOString() })),
       features,
       computedAt: new Date().toISOString(),
     };

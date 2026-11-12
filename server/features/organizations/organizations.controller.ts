@@ -1,6 +1,6 @@
 import { getSessionAdmin, requireRole } from '../../http/auth-guard';
 import { parseQueryParams, parseRequest } from '../../http/validation';
-import { orgListQuerySchema, createNoteSchema, suspendOrgSchema, reactivateOrgSchema, grantAiBonusSchema, createOrgSchema, updateOrgSchema, deleteOrgSchema, orgParticipantsQuerySchema } from './organizations.validator';
+import { orgListQuerySchema, createNoteSchema, suspendOrgSchema, reactivateOrgSchema, createOrgSchema, typeChangePreviewSchema, updateOrgSchema, deleteOrgSchema, orgParticipantsQuerySchema } from './organizations.validator';
 import type { ISubscriptionsService } from '../subscriptions/subscriptions.service';
 import type { AuditActor } from '../../audit/audit-writer';
 import { IOrganizationsService, OrganizationsService } from './organizations.service';
@@ -11,7 +11,7 @@ import { z } from 'zod';
 export class OrganizationsController {
   constructor(
     private service: IOrganizationsService = new OrganizationsService(),
-    // Used only to give a newly created org its plan (the default is the free "starter" plan).
+    // Used only to give a newly created org its plan (the default is the Free plan).
     private subscriptions?: Pick<ISubscriptionsService, 'assignPlan'>,
     private findPlanId?: (slug: string) => Promise<string | null>
   ) {}
@@ -31,7 +31,7 @@ export class OrganizationsController {
     // Subscription tab. It must not turn a successful create into an error response.
     let planAssigned = false;
     try {
-      const planId = input.planId ?? (this.findPlanId ? await this.findPlanId('starter') : null);
+      const planId = input.planId ?? (this.findPlanId ? await this.findPlanId('free') : null);
       if (planId && this.subscriptions) {
         await this.subscriptions.assignPlan(created.id, planId, actor);
         planAssigned = true;
@@ -48,6 +48,12 @@ export class OrganizationsController {
     const input = await parseRequest(req, updateOrgSchema);
     await this.service.updateOrganization(orgId, this.actorOf(admin), input);
     return okResponse(null, 'Organization updated successfully.');
+  }
+
+  async previewTypeChange(req: Request, orgId: string) {
+    await getSessionAdmin();
+    const { to } = parseQueryParams(req, typeChangePreviewSchema);
+    return okResponse(await this.service.previewTypeChange(orgId, to), 'Type change preview.');
   }
 
   async softDelete(req: Request, orgId: string) {
@@ -151,13 +157,6 @@ export class OrganizationsController {
     };
     await this.service.suspend(orgId, actor, input.reason);
     return okResponse(null, 'Organization suspended successfully.');
-  }
-
-  async grantAiBonusCredits(req: Request, orgId: string) {
-    const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN, PlatformAdminRole.BILLING_ADMIN]);
-    const input = await parseRequest(req, grantAiBonusSchema);
-    const result = await this.service.grantAiBonusCredits(orgId, this.actorOf(admin), input.amount, input.reason);
-    return okResponse(result, 'Bonus AI credits added.');
   }
 
   async reactivate(req: Request, orgId: string) {

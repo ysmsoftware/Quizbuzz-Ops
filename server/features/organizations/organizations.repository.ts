@@ -1,3 +1,5 @@
+import { cycleLabel as cycleLabelOf } from '../../../lib/pricing/subscriptionPricing';
+import type { OrgProfileType } from '../../../lib/constants/org-profile-types';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { queryMainDb, mainDbPool } from '../../db/main-db-pool';
@@ -8,21 +10,34 @@ import { paiseToRupees } from '../../../lib/format';
 import { INSTITUTION_FLAG_KEYS } from '../../../lib/constants/institution';
 import { effectiveOptInKeysSql } from '../institution/institution.repository';
 import { ownerNameSql, ownerEmailSql } from './org-owner.sql';
+import { confirmedRegistrationSql, registrationCountsSql } from './confirmed-registration.sql';
 import type { OrgSortField } from './organizations.validator';
-import { OrgMemberDetail, OrgContestDetail, OrgParticipantDetail } from './organizations.types';
+import { OrgMemberDetail, OrgContestDetail, OrgParticipantDetail, OrgPaymentDetail } from './organizations.types';
 
 export interface OrgListParams {
   page: number;
   limit: number;
   search?: string;
   status: 'all' | 'active' | 'suspended' | 'deleted';
-  /** Main-app plan slug (organizations."planSlug"); 'starter' also matches orgs with no plan recorded. */
+  /** Main-app plan slug (organizations."planSlug"); 'free' also matches the old 'starter' and orgs with no plan recorded. */
   planSlug?: string;
   /** Institution flag key, or 'any'. */
   feature?: string;
+  /** An OrgProfileType, or 'unset'. */
+  type?: string;
   sort?: OrgSortField;
   order?: 'asc' | 'desc';
 }
+
+// Main-app PaymentStatus -> the ledger's statuses (same failed/pending split as the registration counts).
+const CONTEST_FEE_STATUS: Record<string, OrgPaymentDetail['status']> = {
+  SUCCESS: 'PAID',
+  CREATED: 'PENDING',
+  PENDING: 'PENDING',
+  FAILED: 'FAILED',
+  CANCELLED: 'FAILED',
+  REFUNDED: 'REFUNDED',
+};
 
 export interface OrgParticipantsParams {
   page: number;
@@ -34,12 +49,23 @@ export interface OrgParticipantsParams {
   paymentStatus?: string;
 }
 
+/** Contests a type change would leave in an odd state (running contests are never blocked). */
+export interface TypeChangeImpact {
+  /** Not draft/finished, listed publicly. */
+  openPublicContests: number;
+  /** Not draft/finished, with paid registration. */
+  openPaidContests: number;
+  /** Not draft/finished, assigned to named people (they sign in through the portal). */
+  liveAssignedContests: number;
+}
+
 export interface CreateOrgWithOwnerInput {
   name: string;
   slug: string;
   ownerFirstName: string;
   ownerLastName: string;
   ownerEmail: string;
+  profileType?: OrgProfileType;
 }
 
 // Whitelist: the only strings that ever reach ORDER BY.
@@ -60,6 +86,8 @@ export interface IOrganizationsRepository {
   createOrganizationWithOwner(input: CreateOrgWithOwnerInput): Promise<{ organizationId: string; adminId: string; createdAdmin: boolean }>;
   updateMainDbOrganization(orgId: string, fields: { name?: string; logoUrl?: string | null }): Promise<void>;
   setMainDbOrganizationDeleted(orgId: string, deleted: boolean, isActiveAfter: boolean): Promise<void>;
+  setMainDbProfileType(orgId: string, profileType: OrgProfileType): Promise<void>;
+  getTypeChangeImpact(orgId: string): Promise<TypeChangeImpact>;
   hasOpenSuspension(orgId: string): Promise<boolean>;
   getOwnerContact(orgId: string): Promise<{ name: string; email: string } | null>;
   getOrganizationMembers(orgId: string): Promise<OrgMemberDetail[]>;
@@ -101,9 +129,15 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       where.search(['o.name', 'o.slug', ownerEmailSql('o')], params.search);
     }
     if (params.planSlug) {
-      // An org with no recorded plan is on the free starter plan (see OrganizationsService).
-      if (params.planSlug === 'starter') where.and(`(o."planSlug" = 'starter' OR o."planSlug" IS NULL)`);
+      // An org with no recorded plan is on the Free plan (see OrganizationsService).
+      if (params.planSlug === 'free') where.and(`(o."planSlug" IN ('free', 'starter') OR o."planSlug" IS NULL)`);
       else where.and('o."planSlug" = ?', params.planSlug);
+    }
+
+    if (params.type === 'unset') {
+      where.and(`NOT EXISTS (SELECT 1 FROM organization_profiles op WHERE op."organizationId" = o.id AND op."profileType" IS NOT NULL)`);
+    } else if (params.type) {
+      where.and(`EXISTS (SELECT 1 FROM organization_profiles op WHERE op."organizationId" = o.id AND op."profileType" = ?::"OrgProfileType")`, params.type);
     }
 
     if (params.feature) {
@@ -122,9 +156,11 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     const dataQuery = `
       SELECT
         o.id, o.name, o.slug, o."logoUrl", o."planSlug", o."createdAt", o."isActive", o."isDeleted",
-        (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id) as "memberCount",
+        (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id AND "isActive" = true) as "memberCount",
         (SELECT COUNT(*)::int FROM contests WHERE "organizationId" = o.id AND "isDeleted" = false) as "contestCount",
-        (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id) as "participantCount",
+        (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id AND ${confirmedRegistrationSql()}) as "participantCount",
+        ${registrationCountsSql('p."organizationId" = o.id')} as registrations,
+        (SELECT "profileType" FROM organization_profiles WHERE "organizationId" = o.id) as "profileType",
         ${ownerNameSql('o')} as "ownerName",
         ${ownerEmailSql('o')} as "ownerEmail",
         ${effectiveOptInKeysSql('o.id', dataKeysParam)} as features
@@ -149,9 +185,11 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     const rows = await queryMainDb(`
       SELECT 
         o.id, o.name, o.slug, o."logoUrl", o."planSlug", o."createdAt", o."isActive", o."isDeleted", o."onboardingStep", o."onboardingCompleted",
-        (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id) as "memberCount",
+        (SELECT "profileType" FROM organization_profiles WHERE "organizationId" = o.id) as "profileType",
+        (SELECT COUNT(*)::int FROM org_members WHERE "organizationId" = o.id AND "isActive" = true) as "memberCount",
         (SELECT COUNT(*)::int FROM contests WHERE "organizationId" = o.id AND "isDeleted" = false) as "contestCount",
-        (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id) as "participantCount",
+        (SELECT COUNT(*)::int FROM participants WHERE "organizationId" = o.id AND ${confirmedRegistrationSql()}) as "participantCount",
+        ${registrationCountsSql('p."organizationId" = o.id')} as registrations,
         ${ownerNameSql('o')} as "ownerName",
         ${ownerEmailSql('o')} as "ownerEmail"
       FROM organizations o
@@ -213,7 +251,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       }
       await client.query(
         `INSERT INTO organizations (id, name, slug, "isActive", "isDeleted", "onboardingStep", "onboardingCompleted", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, true, false, 'IDENTITY', false, NOW(), NOW())`,
+         VALUES ($1, $2, $3, true, false, 'USE_CASE', false, NOW(), NOW())`,
         [orgId, input.name, input.slug]
       );
       await client.query(
@@ -221,6 +259,13 @@ export class OrganizationsRepository implements IOrganizationsRepository {
          VALUES ($1, $2, $3, 'OWNER', NOW(), NOW(), true, NOW(), NOW())`,
         [memberId, orgId, adminId]
       );
+      if (input.profileType) {
+        await client.query(
+          `INSERT INTO organization_profiles (id, "organizationId", "profileType", "updatedAt")
+           VALUES ($1, $2, $3::"OrgProfileType", NOW())`,
+          [generateUlid(), orgId, input.profileType]
+        );
+      }
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -246,6 +291,30 @@ export class OrganizationsRepository implements IOrganizationsRepository {
     if (sets.length === 0) return;
     params.push(orgId);
     await queryMainDb(`UPDATE organizations SET ${sets.join(', ')}, "updatedAt" = NOW() WHERE id = $${params.length}`, params);
+  }
+
+  /** Set the org's type (creates the profile row if onboarding never did). Needs grant 007. */
+  async getTypeChangeImpact(orgId: string): Promise<TypeChangeImpact> {
+    const rows = await queryMainDb<TypeChangeImpact>(
+      `SELECT
+         COUNT(*) FILTER (WHERE audience = 'PUBLIC')::int AS "openPublicContests",
+         COUNT(*) FILTER (WHERE "paymentEnabled" = true)::int AS "openPaidContests",
+         COUNT(*) FILTER (WHERE audience = 'ASSIGNED')::int AS "liveAssignedContests"
+       FROM contests
+       WHERE "organizationId" = $1 AND "isDeleted" = false
+         AND status IN ('PUBLISHED', 'REGISTRATION_CLOSED', 'LIVE', 'EVALUATION')`,
+      [orgId]
+    );
+    return rows[0] ?? { openPublicContests: 0, openPaidContests: 0, liveAssignedContests: 0 };
+  }
+
+  async setMainDbProfileType(orgId: string, profileType: OrgProfileType): Promise<void> {
+    await queryMainDb(
+      `INSERT INTO organization_profiles (id, "organizationId", "profileType", "updatedAt")
+       VALUES ($1, $2, $3::"OrgProfileType", NOW())
+       ON CONFLICT ("organizationId") DO UPDATE SET "profileType" = EXCLUDED."profileType", "updatedAt" = NOW()`,
+      [generateUlid(), orgId, profileType]
+    );
   }
 
   async setMainDbOrganizationDeleted(orgId: string, deleted: boolean, isActiveAfter: boolean): Promise<void> {
@@ -327,7 +396,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
         c."questionSelection",
         COALESCE(pc.amount, 0) as "registrationFee",
         c."createdAt",
-        (SELECT COUNT(*)::int FROM participants WHERE "contestId" = c.id) as "participantCount"
+        (SELECT COUNT(*)::int FROM participants WHERE "contestId" = c.id AND ${confirmedRegistrationSql()}) as "participantCount",
+        ${registrationCountsSql('p."contestId" = c.id')} as registrations
       FROM contests c
       LEFT JOIN "PaymentConfig" pc ON pc."contestId" = c.id
       WHERE c."organizationId" = $1 AND c."isDeleted" = false
@@ -365,6 +435,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       // 100 previously turned a ₹1 fee into ₹0.01 on this tab.
       registrationFee: r.registrationFee,
       participantCount: r.participantCount,
+      registrations: r.registrations,
       revenueCollected: revenueMap.get(r.id) || 0,
       createdAt: new Date(r.createdAt).toISOString(),
     }));
@@ -434,16 +505,16 @@ export class OrganizationsRepository implements IOrganizationsRepository {
         pay.id,
         pay.amount,
         pay.status,
-        pay."paidAt" as date,
+        COALESCE(pay."paidAt", pay."createdAt") as date,
         pay.provider,
-        pay."razorpayPaymentId" as "referenceId",
+        COALESCE(pay."razorpayPaymentId", pay."razorpayOrderId") as "referenceId",
         c."firstName" || ' ' || COALESCE(c."lastName", '') as "payeeName",
         cont.title as "contestTitle"
       FROM payments pay
       JOIN contacts c ON pay."contactId" = c.id
       JOIN contests cont ON pay."contestId" = cont.id
-      WHERE pay."organizationId" = $1 AND pay.status = 'SUCCESS' AND pay."isDeleted" = false
-      ORDER BY pay."paidAt" DESC
+      WHERE pay."organizationId" = $1 AND pay."isDeleted" = false
+      ORDER BY date DESC
     `, [orgId]);
 
     const contestFeePayments = contestFeeRows.map(r => ({
@@ -453,7 +524,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       payeeName: r.payeeName,
       description: `Quiz Entry Fee: ${r.contestTitle}`,
       amount: r.amount / 100, // paise to INR
-      status: 'PAID' as const,
+      status: CONTEST_FEE_STATUS[r.status as string] ?? 'PENDING',
       paymentMethod: r.provider,
       date: new Date(r.date).toISOString(),
     }));
@@ -478,7 +549,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
 
     const mappedSubscriptionPayments = subscriptionPayments.map((p) => {
       const planName = (p.planId && planNameById.get(p.planId)) || 'Subscription';
-      const cycleLabel = p.billingCycle === 'ANNUAL' ? 'Annual' : p.billingCycle === 'MONTHLY' ? 'Monthly' : '';
+      const cycleLabel = p.billingCycle ? cycleLabelOf(p.billingCycle) : '';
       return {
         id: p.id,
         source: 'subscription' as const,
@@ -622,7 +693,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
    *    per-contest, not an org-wide total, so what actually matters for
    *    "how close is this org to hitting it" is their single fullest
    *    contest — not scoped to the cycle, since a contest created in an
-   *    earlier cycle can still be actively accepting registrations.
+   *    earlier cycle can still be actively accepting registrations. Only
+   *    confirmed registrations hold a seat.
    *  - memberCountUsed: same `isActive: true` count
    *    assertCanInviteMember() uses (includes pending invites).
    *  - aiCreditsUsed: this calendar month's spend (AI credits top up monthly,
@@ -655,7 +727,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
             SELECT COUNT(*) AS pc
             FROM participants p
             JOIN contests c ON c.id = p."contestId"
-            WHERE c."organizationId" = $1 AND c."isDeleted" = false
+            WHERE c."organizationId" = $1 AND c."isDeleted" = false AND ${confirmedRegistrationSql('p')}
             GROUP BY p."contestId"
           ) t
         ) AS "maxParticipantsInAContest",

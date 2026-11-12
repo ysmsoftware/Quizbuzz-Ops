@@ -5,13 +5,20 @@ import { writeAuditLogEntry } from '../../audit/audit-writer';
 import { AuditTargetType, OpsMessageTemplate } from '@prisma/client';
 import { SendMessageSchema, PaginationQuerySchema, MessagingListQuerySchema, PreviewMessageSchema } from './messaging.validator';
 import { IMessagingService, MessagingService } from './messaging.service';
+import { assertOrgExists } from '../organizations/org-exists';
 
 /** Template metadata for a future compose UI — channel-agnostic; the channel itself is fixed to EMAIL by the service layer. */
 const TEMPLATE_CATALOG: { id: OpsMessageTemplate; name: string; variables: string[] }[] = [
   { id: 'BILLING_PAYMENT_SUCCESS', name: 'Billing: Payment Success', variables: ['adminName', 'planName', 'amount'] },
   { id: 'BILLING_RECEIPT', name: 'Billing: Receipt', variables: ['adminName', 'planName', 'billingCycle', 'baseAmount', 'creditApplied', 'gatewayFeeAmount', 'gstAmount', 'amount', 'paidAt', 'razorpayPaymentId'] },
+  { id: 'BILLING_AUTOPAY_STOPPED', name: 'Billing: Automatic Payment Stopped', variables: ['adminName', 'planName', 'paidUntil'] },
   { id: 'BILLING_PAYMENT_FAILED', name: 'Billing: Payment Failed', variables: ['adminName', 'planName', 'amount', 'reason'] },
   { id: 'SUBSCRIPTION_RENEWAL_REMINDER', name: 'Subscription: Renewal Reminder', variables: ['adminName', 'planName', 'currentPeriodEnd', 'daysRemaining'] },
+  { id: 'INVOICE_ISSUED', name: 'Invoice: Issued', variables: ['adminName', 'invoiceNumber', 'description', 'subtotal', 'gstAmount', 'total', 'dueDate', 'payOnline'] },
+  { id: 'INVOICE_REMINDER', name: 'Invoice: Reminder', variables: ['adminName', 'invoiceNumber', 'description', 'balance', 'dueDate', 'daysLeft', 'payOnline'] },
+  { id: 'CONTRACT_ENDING', name: 'Contract: Ending', variables: ['adminName', 'planName', 'contractEnd', 'daysLeft'] },
+  { id: 'SUBSCRIPTION_PAST_DUE', name: 'Subscription: Past Due', variables: ['adminName', 'planName', 'currentPeriodEnd', 'restrictAt'] },
+  { id: 'SUBSCRIPTION_RESTRICTED', name: 'Subscription: Restricted', variables: ['adminName', 'planName', 'downgradeAt'] },
   { id: 'SUBSCRIPTION_EXPIRED', name: 'Subscription: Expired', variables: ['adminName', 'planName', 'currentPeriodEnd'] },
   { id: 'SUBSCRIPTION_CANCELLED', name: 'Subscription: Cancelled', variables: ['adminName', 'planName', 'effectiveDate'] },
   { id: 'SUBSCRIPTION_PLAN_CHANGED', name: 'Subscription: Plan Changed', variables: ['adminName', 'fromPlan', 'toPlan'] },
@@ -36,6 +43,7 @@ export class MessagingController {
   async sendMessage(req: Request) {
     const admin = await getSessionAdmin();
     const input = await parseRequest(req, SendMessageSchema);
+    await assertOrgExists(input.organizationId);
 
     // `input.channel` is always 'EMAIL' here — SendMessageSchema rejects
     // anything else before this line is reached (see messaging.validator.ts).
@@ -106,8 +114,19 @@ export class MessagingController {
   }
 
   async retryFailedMessages(orgId: string) {
-    await getSessionAdmin();
+    const admin = await getSessionAdmin();
+    const orgName = await assertOrgExists(orgId);
     const result = await this.service.retryFailedMessages(orgId);
+
+    await writeAuditLogEntry(
+      { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
+      'org.messages_bulk_retried',
+      AuditTargetType.ORGANIZATION,
+      orgId,
+      orgName,
+      { count: result.count }
+    );
+
     return okResponse(result, `Queued ${result.count} failed messages for retry.`);
   }
 }

@@ -3,6 +3,7 @@ import { queryMainDb } from '../../db/main-db-pool';
 
 export interface IEntitlementsRepository {
   getSubscriptionWithPlanAndActiveOverrides(orgId: string): Promise<any | null>;
+  findFreePlan(): Promise<any | null>;
   updateMainDbPlanLimitsCache(
     orgId: string,
     planSlug: string,
@@ -25,6 +26,10 @@ export class EntitlementsRepository implements IEntitlementsRepository {
         },
       },
     });
+  }
+
+  async findFreePlan(): Promise<any | null> {
+    return prisma.subscriptionPlan.findUnique({ where: { slug: 'free' } });
   }
 
   async updateMainDbPlanLimitsCache(

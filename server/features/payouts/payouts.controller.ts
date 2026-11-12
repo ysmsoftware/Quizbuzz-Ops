@@ -48,12 +48,6 @@ export class PayoutsController {
     return okResponse(result, 'Platform transfer summary retrieved.');
   }
 
-  async getRouteTransferQueueHealth(req: Request) {
-    await getSessionAdmin();
-    const result = await this.service.getRouteTransferQueueHealth();
-    return okResponse(result, 'Route transfer queue health retrieved.');
-  }
-
   async getPaymentTimeline(req: Request) {
     await getSessionAdmin();
     const query = parseQueryParams(req, paymentTimelineQuerySchema);
@@ -66,23 +60,6 @@ export class PayoutsController {
     const query = parseQueryParams(req, needsAttentionQuerySchema);
     const result = await this.service.getNeedsAttention(query);
     return okResponse(result, 'Needs-attention list retrieved.');
-  }
-
-  async retryTransfer(req: Request, paymentId: string) {
-    const admin = await requireRole([
-      PlatformAdminRole.SUPER_ADMIN,
-      PlatformAdminRole.BILLING_ADMIN,
-    ]);
-
-    const actor = {
-      id: admin.id,
-      email: admin.email,
-      name: admin.name,
-      role: admin.role,
-    };
-
-    const result = await this.service.retryTransfer(paymentId, actor);
-    return okResponse(result, 'Transfer retry enqueued.');
   }
 
   async attachLinkedAccount(req: Request, orgId: string) {

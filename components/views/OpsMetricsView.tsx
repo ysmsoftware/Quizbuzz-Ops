@@ -255,26 +255,26 @@ export default function OpsMetricsView() {
           <StatTile
             icon={Server}
             label="Reporting Instances"
-            value={fleet?.reportingInstances ?? 0}
+            value={fleet ? fleet.reportingInstances : '—'}
             sub={`${backendInstances.length} backend · ${workerInstances.length} worker`}
           />
           <StatTile
             icon={Wifi}
             label="Active WS Connections"
-            value={formatNumber((fleet?.totals.activeConnections ?? 0))}
+            value={fleet ? formatNumber(fleet.totals.activeConnections) : '—'}
             sub="fleet-wide, summed across backend instances"
             accent="text-emerald-500"
           />
           <StatTile
             icon={Cpu}
             label="Total RSS"
-            value={`${formatNumber((fleet?.totals.rssMb ?? 0))} MB`}
+            value={fleet ? `${formatNumber(fleet.totals.rssMb)} MB` : '—'}
             sub="resident memory, summed across all processes"
           />
           <StatTile
             icon={Timer}
             label="Total Heap Used"
-            value={`${formatNumber((fleet?.totals.heapUsedMb ?? 0))} MB`}
+            value={fleet ? `${formatNumber(fleet.totals.heapUsedMb)} MB` : '—'}
             sub="V8 heap, summed across all processes"
           />
         </div>

@@ -8,7 +8,6 @@ import {
   useAttachLinkedAccount,
   useUpdatePayoutStatus,
   usePlatformTransferSummary,
-  useRouteTransferQueueHealth,
 } from '@/lib/hooks/usePayouts';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import PayoutInvestigationPanel from '@/components/views/PayoutInvestigationPanel';
@@ -103,7 +102,6 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
 
   // --- 4. Platform Transfer Summary & Queue Health Queries ---
   const { data: transferSummary, isLoading: isLoadingTransferSummary } = usePlatformTransferSummary();
-  const { data: queueHealth, isLoading: isLoadingQueueHealth } = useRouteTransferQueueHealth();
 
   // Mutations for Payout Accounts Queue
   const attachMutation = useAttachLinkedAccount();
@@ -327,74 +325,6 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
           </button>
         </div>
       </div>
-
-      {/* Queue Health Card (BullMQ route-transfer-queue live state) */}
-      {(activeTab === 'payouts' || activeTab === 'transfers') && (
-        <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm space-y-3 font-sans">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-indigo-500/10 text-indigo-500 rounded-lg shrink-0">
-                <Layers className="h-4 w-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
-                  <span>Route Transfer Queue Health (BullMQ)</span>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Live Queue
-                  </span>
-                </h4>
-                <p className="text-[11px] text-muted-foreground">
-                  Real-time Redis state for main app&apos;s route-transfer-queue
-                </p>
-              </div>
-            </div>
-            {queueHealth?.failed ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-rose-600 bg-rose-500/10 border border-rose-500/20 rounded-lg">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                <span>{queueHealth.failed} job(s) failed retries</span>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-            <div className="p-3 bg-secondary/20 rounded-lg space-y-1">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Waiting</span>
-              <div className="text-base font-bold font-mono text-amber-600">
-                {isLoadingQueueHealth ? '...' : queueHealth?.waiting || 0}
-              </div>
-            </div>
-
-            <div className="p-3 bg-secondary/20 rounded-lg space-y-1">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Active</span>
-              <div className="text-base font-bold font-mono text-indigo-500">
-                {isLoadingQueueHealth ? '...' : queueHealth?.active || 0}
-              </div>
-            </div>
-
-            <div className="p-3 bg-secondary/20 rounded-lg space-y-1">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Delayed (Safety Window)</span>
-              <div className="text-base font-bold font-mono text-purple-500">
-                {isLoadingQueueHealth ? '...' : queueHealth?.delayed || 0}
-              </div>
-            </div>
-
-            <div className={`p-3 rounded-lg space-y-1 ${queueHealth?.failed ? 'bg-rose-500/10 border border-rose-500/20' : 'bg-secondary/20'}`}>
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Failed (Exhausted)</span>
-              <div className={`text-base font-bold font-mono ${queueHealth?.failed ? 'text-rose-600' : 'text-foreground'}`}>
-                {isLoadingQueueHealth ? '...' : queueHealth?.failed || 0}
-              </div>
-            </div>
-
-            <div className="p-3 bg-secondary/20 rounded-lg space-y-1">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase block">Completed</span>
-              <div className="text-base font-bold font-mono text-emerald-600">
-                {isLoadingQueueHealth ? '...' : queueHealth?.completed || 0}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* TAB 1: PAYMENTS LEDGER */}
       {activeTab === 'payments' && (
@@ -953,7 +883,7 @@ export default function BillingView({ initialTab = 'payments' }: BillingViewProp
       )}
 
       {/* TAB 4: INVESTIGATE — chain of events + needs-attention */}
-      {activeTab === 'investigate' && <PayoutInvestigationPanel canEdit={canEdit} />}
+      {activeTab === 'investigate' && <PayoutInvestigationPanel />}
 
       {/* Attach Linked Account Modal */}
       {isAttachModalOpen && (

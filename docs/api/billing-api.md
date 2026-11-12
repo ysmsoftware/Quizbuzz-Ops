@@ -1,152 +1,93 @@
 # Billing API Specification
 
-The Billing API domain manages platform-wide payment transaction auditing, billing revenue summaries, Razorpay webhooks, and billing portal checkout sessions.
+The Billing API is the ops desk's view of **contest registration money**: payments participants made to organizations, and a platform summary. It does not cover what organizations pay us.
+
+| Looking for | See |
+|---|---|
+| What an org pays QuizBuzz: checkout, auto-debit, webhook | [`billing-portal-api.md`](./billing-portal-api.md) |
+| Invoices, receipts, credit notes, Billing Settings, leads | [`invoices-api.md`](./invoices-api.md) |
+| An org's plan, dates and overrides | [`subscriptions-api.md`](./subscriptions-api.md) |
+| Payouts to organizations | [`payouts-api.md`](./payouts-api.md) |
+
+**Last checked:** 2026-11-08 (`feature/subscriptions`).
 
 ---
 
 ## Base Path
-`/api/v1/ops/billing` & `/api/v1/billing-portal`
+`/api/v1/ops/billing`
+
+Both endpoints need an ops session (any role).
 
 ---
 
 ## Endpoints
 
-### 1. List Platform Payments
+### 1. List platform payments
 `GET /api/v1/ops/billing/payments`
 
-- **Purpose**: Query, filter, and paginate through platform payment records across all organizations.
-- **Description**:
-  Queries payment transactions from DB with status filtering (`SUCCESS`, `FAILED`, `PENDING`, `REFUNDED`), organization filter, date range filters, and text search.
+Contest registration payments across every org, read from the main app's database.
 
-#### Request Parameters
-- **Query Parameters**:
-  - `page` (number, default: 1) - Page number.
-  - `limit` (number, default: 20) - Items per page.
-  - `status` (`all` | `SUCCESS` | `FAILED` | `PENDING` | `REFUNDED`, default: `all`) - Transaction status.
-  - `search` (string, optional) - Payment reference or payee search.
-  - `orgId` (string, optional) - Filter by organization ID.
-  - `dateFrom` (string, optional) - Start ISO date string.
-  - `dateTo` (string, optional) - End ISO date string.
-- **Headers**:
-  - `Cookie`: Session containing valid `ops_access_token` JWT.
+**Query:**
 
-#### Responses
+| Param | Notes |
+|---|---|
+| `page`, `limit` | default 1 and 20; `limit` is at most 100 |
+| `status` | `all` (default), `SUCCESS`, `FAILED`, `PENDING`, `REFUNDED` |
+| `search` | organization name or slug, contest title, payee email, or Razorpay payment id |
+| `orgId` | one organization |
+| `dateFrom`, `dateTo` | ISO dates |
 
-##### Success State (`200 OK`)
+**Response `data`:** `{ data, total, page, limit }`. Each item:
+
 ```json
 {
-  "success": true,
-  "data": {
-    "items": [
-      {
-        "id": "pay_99102",
-        "organizationId": "org_7712",
-        "organizationName": "Global Tech Institute",
-        "source": "subscription",
-        "referenceId": "order_Rzp9921048",
-        "amount": 4999,
-        "currency": "INR",
-        "status": "SUCCESS",
-        "paymentMethod": "UPI",
-        "createdAt": "2026-07-01T10:00:00.000Z"
-      }
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 20,
-      "totalItems": 320,
-      "totalPages": 16
-    }
-  },
-  "message": "Platform payments list retrieved."
+  "id": "…",
+  "organizationId": "…",
+  "organizationName": "ABC College",
+  "organizationSlug": "abc",
+  "contestId": "…",
+  "contestTitle": "National Aptitude Mock",
+  "payeeName": "A. Student",
+  "payeeEmail": "a@example.com",
+  "amount": 199,
+  "currency": "INR",
+  "status": "SUCCESS",
+  "provider": "RAZORPAY",
+  "razorpayPaymentId": "pay_…",
+  "paidAt": "2026-11-08T10:00:00.000Z",
+  "createdAt": "2026-11-08T09:58:00.000Z"
 }
 ```
 
+`amount` is in rupees (the main app stores paise).
+
 ---
 
-### 2. Platform Billing Revenue Summary
+### 2. Platform billing summary
 `GET /api/v1/ops/billing/summary`
 
-- **Purpose**: Fetch top-level financial summaries including MRR, ARR, active subscriptions count, and payment gateway health.
-- **Description**:
-  Computes Monthly Recurring Revenue (MRR), Annual Recurring Revenue (ARR), plan distribution breakdown, and monthly growth percentage.
+**Response `data`:**
 
-#### Responses
 ```json
 {
-  "success": true,
-  "data": {
-    "mrr": 320000,
-    "arr": 3840000,
-    "activeSubscriptions": 128,
-    "growthRateMonthOverMonth": 14.5,
-    "currency": "INR",
-    "planDistribution": {
-      "starter": 60,
-      "pro": 55,
-      "enterprise": 13
-    }
-  },
-  "message": "Platform billing & revenue summary retrieved."
+  "totalRevenueAllTime": 1250000,
+  "totalRevenueThisMonth": 84000,
+  "mrr": 320000,
+  "activeSubscriptionCount": 128,
+  "paymentsByStatus": { "SUCCESS": 4100, "FAILED": 220, "PENDING": 12, "REFUNDED": 30 },
+  "topOrganizationsByRevenue": [
+    { "organizationId": "…", "organizationName": "ABC College", "organizationSlug": "abc", "totalRevenue": 90000, "paymentCount": 450 }
+  ],
+  "currency": "INR"
 }
 ```
+
+- `totalRevenue*`, `paymentsByStatus` and `topOrganizationsByRevenue`: successful **contest registration payments** in the main app. Deleted orgs and payments are left out. This is money organizers collected, not QuizBuzz's own revenue.
+- `mrr`: the plan price of every `ACTIVE` subscription of a live org, with annual and 6-month plans divided into months. It's a list-price figure: it counts Free (₹0) plans, and doesn't net out complimentary, offline or discounted deals, or GST.
+- `activeSubscriptionCount`: `ACTIVE` subscriptions of live orgs, Free included.
 
 ---
 
-### 3. Verify Billing Portal Handoff Session
-`POST /api/v1/billing-portal/session`
+## Not here any more
 
-- **Purpose**: Verify JWT handoff token from main application and initialize checkout session context.
-- **Description**:
-  Verifies `BILLING_HANDOFF_SECRET` signature, resolves target organization and requested plan from Ops database, writes checkout started audit entry, and returns session context.
-
-#### Request Body
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
-
-#### Responses
-
-##### Success State (`200 OK`)
-```json
-{
-  "success": true,
-  "data": {
-    "session": {
-      "organizationId": "org_7712",
-      "organizationName": "Global Tech Institute",
-      "adminEmail": "director@globaltech.edu"
-    },
-    "plan": {
-      "id": "pln_pro",
-      "name": "Pro Business",
-      "slug": "pro",
-      "currency": "INR",
-      "allowsMonthly": true,
-      "allowsAnnual": true,
-      "monthlyPrice": 4999,
-      "annualPrice": 49999,
-      "features": [
-        "15 contests per month",
-        "Up to 2500 participants per contest",
-        "Advanced proctoring",
-        "Custom certificate branding",
-        "Analytics data export"
-      ]
-    }
-  }
-}
-```
-
-##### Failure States
-- **`400 Bad Request`**: Token missing or payload invalid.
-- **`401 Unauthorized`**: Token signature invalid or expired.
-- **`404 Not Found`**: Target plan slug inactive or non-existent.
-
----
-
-### 4. Razorpay Webhook Handler & Self-Serve Checkout
-
-`POST /api/v1/billing-portal/razorpay/webhook` (and the rest of the self-serve checkout flow — order creation, payment verification, status polling) is documented in full, including its trust model and signature verification requirements, in [`billing-portal-api.md`](./billing-portal-api.md).
+`POST /api/v1/billing-portal/session` and the rest of the checkout flow are documented in [`billing-portal-api.md`](./billing-portal-api.md).

@@ -5,6 +5,8 @@ import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
 import { generateUlid } from '../../utils/ulid';
 import { SubscriptionPlanDetail } from './plans.types';
+import { ConflictError, NotFoundError, ValidationError } from '../../http/errors';
+import { liveOrgIds } from '../organizations/org-exists';
 
 export interface IPlansService {
   getPlans(includeInactive?: boolean): Promise<SubscriptionPlanDetail[]>;
@@ -22,37 +24,7 @@ export class PlansService implements IPlansService {
     private subscriptionsRepo: ISubscriptionsRepository = new SubscriptionsRepository()
   ) {}
 
-  async getPlans(includeInactive = false): Promise<SubscriptionPlanDetail[]> {
-    const rawPlans = await this.repo.getPlans(includeInactive);
-    return rawPlans.map((p) => ({
-      id: p.id,
-      name: p.name,
-      slug: p.slug,
-      description: p.description || '',
-      currency: p.currency,
-      allowsMonthly: p.allowsMonthly,
-      allowsAnnual: p.allowsAnnual,
-      monthlyPrice: p.monthlyPrice != null ? Number(p.monthlyPrice) : null,
-      annualPrice: p.annualPrice != null ? Number(p.annualPrice) : null,
-      isActive: p.isActive,
-      maxContestsPerCycle: p.maxContestsPerCycle,
-      maxParticipantsPerContest: p.maxParticipantsPerContest,
-      maxQuestionsPerContest: p.maxQuestionsPerContest,
-      maxOrgMembers: p.maxOrgMembers,
-      featureProctoring: p.featureProctoring,
-      featureCertBranding: p.featureCertBranding,
-      featurePrioritySupport: p.featurePrioritySupport,
-      featureAnalyticsExport: p.featureAnalyticsExport,
-      featureCustomDomain: p.featureCustomDomain,
-      createdAt: p.createdAt.toISOString(),
-      updatedAt: p.updatedAt.toISOString(),
-      organizationCount: p.subscriptions.length,
-    }));
-  }
-
-  async getPlanById(id: string): Promise<SubscriptionPlanDetail | null> {
-    const p = await this.repo.getPlanById(id);
-    if (!p) return null;
+  private toDetail(p: any, live: Set<string>): SubscriptionPlanDetail {
     return {
       id: p.id,
       name: p.name,
@@ -60,42 +32,75 @@ export class PlansService implements IPlansService {
       description: p.description || '',
       currency: p.currency,
       allowsMonthly: p.allowsMonthly,
+      allowsHalfYearly: p.allowsHalfYearly,
       allowsAnnual: p.allowsAnnual,
       monthlyPrice: p.monthlyPrice != null ? Number(p.monthlyPrice) : null,
+      halfYearlyPrice: p.halfYearlyPrice != null ? Number(p.halfYearlyPrice) : null,
       annualPrice: p.annualPrice != null ? Number(p.annualPrice) : null,
       isActive: p.isActive,
+      isSellable: p.isSellable,
+      kind: p.kind,
+      audience: p.audience,
+      organizationId: p.organizationId,
       maxContestsPerCycle: p.maxContestsPerCycle,
       maxParticipantsPerContest: p.maxParticipantsPerContest,
       maxQuestionsPerContest: p.maxQuestionsPerContest,
       maxOrgMembers: p.maxOrgMembers,
+      maxLearners: p.maxLearners,
+      maxCandidatesPerMonth: p.maxCandidatesPerMonth,
+      aiCreditsPerMonth: p.aiCreditsPerMonth,
+      commissionPercent: p.commissionPercent != null ? Number(p.commissionPercent) : null,
       featureProctoring: p.featureProctoring,
       featureCertBranding: p.featureCertBranding,
       featurePrioritySupport: p.featurePrioritySupport,
       featureAnalyticsExport: p.featureAnalyticsExport,
       featureCustomDomain: p.featureCustomDomain,
+      featureLearnerGroups: p.featureLearnerGroups,
+      featureGradebook: p.featureGradebook,
+      featureAmbassadorCampaigns: p.featureAmbassadorCampaigns,
+      featureManualEmails: p.featureManualEmails,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
-      organizationCount: p.subscriptions.length,
+      organizationCount: p.subscriptions.filter((s: { organizationId: string }) => live.has(s.organizationId)).length,
     };
+  }
+
+  async getPlans(includeInactive = false): Promise<SubscriptionPlanDetail[]> {
+    const rawPlans = await this.repo.getPlans(includeInactive);
+    const live = await liveOrgIds(rawPlans.flatMap((p) => p.subscriptions.map((s: { organizationId: string }) => s.organizationId)));
+    return rawPlans.map((p) => this.toDetail(p, live));
+  }
+
+  async getPlanById(id: string): Promise<SubscriptionPlanDetail | null> {
+    const p = await this.repo.getPlanById(id);
+    if (!p) return null;
+    const live = await liveOrgIds(p.subscriptions.map((s: { organizationId: string }) => s.organizationId));
+    return this.toDetail(p, live);
   }
 
   private validateCyclePricing(input: {
     allowsMonthly?: boolean;
     allowsAnnual?: boolean;
+    allowsHalfYearly?: boolean;
     monthlyPrice?: number | null;
     annualPrice?: number | null;
+    halfYearlyPrice?: number | null;
   }) {
     const allowsMonthly = !!input.allowsMonthly;
     const allowsAnnual = !!input.allowsAnnual;
 
     if (!allowsMonthly && !allowsAnnual) {
-      throw new Error('A plan must offer at least one billing cycle (monthly or annual)');
+      throw new ValidationError(null, 'A plan must offer at least one billing cycle (monthly or annual)');
     }
     if (allowsMonthly && (input.monthlyPrice == null || input.monthlyPrice < 0)) {
-      throw new Error('monthlyPrice is required when the plan allows monthly billing');
+      throw new ValidationError(null, 'monthlyPrice is required when the plan allows monthly billing');
     }
     if (allowsAnnual && (input.annualPrice == null || input.annualPrice < 0)) {
-      throw new Error('annualPrice is required when the plan allows annual billing');
+      throw new ValidationError(null, 'annualPrice is required when the plan allows annual billing');
+    }
+    const allowsHalfYearly = !!input.allowsHalfYearly;
+    if (allowsHalfYearly && (input.halfYearlyPrice == null || input.halfYearlyPrice < 0)) {
+      throw new ValidationError(null, 'halfYearlyPrice is required when the plan allows 6-month billing');
     }
 
     return {
@@ -105,17 +110,26 @@ export class PlansService implements IPlansService {
       // from a previous edit can never be mistaken for a live price.
       monthlyPrice: allowsMonthly ? input.monthlyPrice : null,
       annualPrice: allowsAnnual ? input.annualPrice : null,
+      allowsHalfYearly,
+      halfYearlyPrice: allowsHalfYearly ? input.halfYearlyPrice : null,
     };
   }
 
   async createPlan(input: any, actor: AuditActor) {
     const planId = `plan_${input.slug.toLowerCase().replace(/\s+/g, '_')}_${generateUlid().slice(-6)}`;
     const cyclePricing = this.validateCyclePricing(input);
-    const plan = await this.repo.createPlan({
-      id: planId,
-      ...input,
-      ...cyclePricing,
-    });
+    const plan = await this.repo
+      .createPlan({
+        id: planId,
+        ...input,
+        ...cyclePricing,
+        // A private plan is never on sale, whatever the form sent.
+        ...(input.organizationId ? { isSellable: false, kind: 'CUSTOM' } : {}),
+      })
+      .catch((err: { code?: string }) => {
+        if (err.code === 'P2002') throw new ConflictError(`A plan with the slug "${input.slug}" already exists`);
+        throw err;
+      });
 
     await writeAuditLogEntry(
       actor,
@@ -131,13 +145,15 @@ export class PlansService implements IPlansService {
 
   async updatePlan(id: string, updates: any, actor: AuditActor) {
     const oldPlan = await this.repo.getPlanById(id);
-    if (!oldPlan) throw new Error('Subscription plan not found');
+    if (!oldPlan) throw new NotFoundError('Subscription plan not found');
 
     const cyclePricing = this.validateCyclePricing({
       allowsMonthly: updates.allowsMonthly ?? oldPlan.allowsMonthly,
       allowsAnnual: updates.allowsAnnual ?? oldPlan.allowsAnnual,
       monthlyPrice: updates.monthlyPrice ?? (oldPlan.monthlyPrice != null ? Number(oldPlan.monthlyPrice) : null),
       annualPrice: updates.annualPrice ?? (oldPlan.annualPrice != null ? Number(oldPlan.annualPrice) : null),
+      allowsHalfYearly: updates.allowsHalfYearly ?? oldPlan.allowsHalfYearly,
+      halfYearlyPrice: updates.halfYearlyPrice ?? (oldPlan.halfYearlyPrice != null ? Number(oldPlan.halfYearlyPrice) : null),
     });
 
     const updatedPlan = await this.repo.updatePlan(id, { ...updates, ...cyclePricing });
@@ -163,7 +179,9 @@ export class PlansService implements IPlansService {
   }
 
   async getImpact(id: string) {
-    const activeSubs = await this.subscriptionsRepo.findActiveSubscriptionsByPlanId(id);
+    const subs = await this.subscriptionsRepo.findActiveSubscriptionsByPlanId(id);
+    const live = await liveOrgIds(subs.map((s) => s.organizationId));
+    const activeSubs = subs.filter((s) => live.has(s.organizationId));
     return {
       organizationCount: activeSubs.length,
       organizations: activeSubs.map((s) => ({ id: s.organizationId })),

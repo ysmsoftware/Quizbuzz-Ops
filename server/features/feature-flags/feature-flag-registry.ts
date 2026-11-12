@@ -140,20 +140,12 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     accessModel: 'GLOBAL', // on for everyone; override carves out an exception
   },
   {
-    key: 'certificate_auto_delivery',
-    label: 'Certificate Auto-delivery',
-    description: 'Automatically deliver signed PDF certificates to participants completing a contest.',
-    defaultEnabled: true,
-    severity: FeatureFlagSeverity.STANDARD,
-    supportsOrgOverride: true,
-    accessModel: 'GLOBAL',
-  },
-  {
-    key: 'enhanced_analytics_pipeline',
-    label: 'Enhanced Analytics Pipeline',
-    description: 'Streams raw candidate responses to the high-concurrency analytical engine.',
-    defaultEnabled: true,
-    severity: FeatureFlagSeverity.STANDARD,
+    key: 'plan_enforcement',
+    label: 'Enforce Subscription Plans',
+    description:
+      'On: plan limits, plan features and restriction after a lapse are enforced. Off: nothing is refused, and each would-be refusal is logged as WOULD_BLOCK in the plan usage log. This is also the kill switch.',
+    defaultEnabled: false,
+    severity: FeatureFlagSeverity.WARNING,
     supportsOrgOverride: true,
     accessModel: 'GLOBAL',
   },
@@ -165,6 +157,27 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     severity: FeatureFlagSeverity.WARNING,
     supportsOrgOverride: true,
     accessModel: 'GLOBAL',
+  },
+  {
+    key: 'auto_debit',
+    label: 'Auto-debit subscriptions',
+    description:
+      'Lets every organization’s owner choose automatic renewal (UPI AutoPay, card or eMandate through Razorpay Subscriptions) for monthly and 6-month plans. On is the normal state. Off is a kill switch: nobody can set up new automatic renewals, and mandates already running keep charging.',
+    // Standard subscription behaviour: available to everyone, chosen by the owner at checkout. No per-organization switch.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.WARNING,
+    supportsOrgOverride: false,
+    accessModel: 'GLOBAL',
+  },
+  {
+    key: 'ai_top_ups',
+    label: 'AI credit top-ups',
+    description: 'Lets the organization’s owner buy one-time AI credit packs from the Billing page. Turn on only where AI question generation is live.',
+    // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
   },
   {
     key: 'ambassador_program_enabled',

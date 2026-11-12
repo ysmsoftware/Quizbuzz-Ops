@@ -3,25 +3,30 @@
 import React from 'react';
 import { Edit3, X } from 'lucide-react';
 import { motion } from 'motion/react';
+import { ORG_PROFILE_TYPES, type OrgProfileType } from '@/lib/constants/org-profile-types';
+import TypeChangeNotice from './TypeChangeNotice';
+
+export interface OrgEditFields {
+  name: string;
+  logoUrl: string;
+  profileType: OrgProfileType;
+}
 
 interface OrgEditModalProps {
+  orgId: string;
+  /** The saved type; null = never set (acts as Individual). */
+  savedType: OrgProfileType | null;
   isOpen: boolean;
   onClose: () => void;
-  editFields: {
-    name: string;
-    logoUrl: string;
-  };
-  setEditFields: React.Dispatch<
-    React.SetStateAction<{
-      name: string;
-      logoUrl: string;
-    }>
-  >;
+  editFields: OrgEditFields;
+  setEditFields: React.Dispatch<React.SetStateAction<OrgEditFields>>;
   isUpdating: boolean;
   onSubmit: (e: React.FormEvent) => void;
 }
 
 export default function OrgEditModal({
+  orgId,
+  savedType,
   isOpen,
   onClose,
   editFields,
@@ -70,6 +75,22 @@ export default function OrgEditModal({
             />
           </div>
 
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Organization type</label>
+            <select
+              value={editFields.profileType}
+              onChange={(e) => setEditFields(prev => ({ ...prev, profileType: e.target.value as OrgProfileType }))}
+              className="w-full px-3 py-2 text-xs bg-secondary/20 focus:bg-card border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground cursor-pointer"
+            >
+              {ORG_PROFILE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+            <p className="text-[10px] text-muted-foreground">
+              Changes which features they get by default, their labels, and what they can do (companies can&apos;t take fees,
+              give cash prizes or list contests publicly). The main app picks it up within a minute.
+            </p>
+            {editFields.profileType !== (savedType ?? 'INDIVIDUAL') && <TypeChangeNotice orgId={orgId} to={editFields.profileType} />}
+          </div>
+
           <p className="text-[10px] text-muted-foreground">The URL slug is fixed. Change the plan from the Subscription tab.</p>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-border/30">
@@ -85,7 +106,7 @@ export default function OrgEditModal({
               disabled={isUpdating}
               className="px-4 py-2 text-xs font-semibold rounded-md bg-primary text-primary-foreground hover:bg-primary/95 transition-all cursor-pointer"
             >
-              {isUpdating ? 'Saving profile...' : 'Save Changes'}
+              {isUpdating ? 'Saving profile...' : editFields.profileType !== (savedType ?? 'INDIVIDUAL') ? 'Confirm type change' : 'Save Changes'}
             </button>
           </div>
         </form>

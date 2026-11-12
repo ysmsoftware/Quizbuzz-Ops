@@ -4,6 +4,7 @@ import { Globe, User } from 'lucide-react';
 import { format } from 'date-fns';
 import { Organization, Contest, Member, SubscriptionPlan } from '@/lib/types';
 import StatusBadge from '@/components/ui/StatusBadge';
+import RegistrationCountsLine from '@/components/ui/RegistrationCountsLine';
 import { formatInr, formatNumber } from '@/lib/format';
 
 interface OrgOverviewTabProps {
@@ -42,8 +43,9 @@ export default function OrgOverviewTab({
         </div>
 
         <div className="bg-card border border-border/40 rounded-xl p-5 shadow-sm space-y-2">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Total Registrations</span>
+          <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Confirmed Registrations</span>
           <h3 className="text-2xl font-bold font-mono text-foreground">{formatNumber(organization.participantCount ?? 0)}</h3>
+          <RegistrationCountsLine counts={organization.registrations} showTotal />
           <span className="text-[11px] text-muted-foreground block">Registrations and assigned learners, all contests</span>
         </div>
 

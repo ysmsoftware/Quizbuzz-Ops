@@ -10,6 +10,8 @@ import { accessModelOf, computeEffectiveFlagState } from './flag-state';
  * here; this IS the source of truth.
  *
  * GLOBAL vs OPT_IN semantics live in flag-state.ts (same rules as the main app).
+ * Org types are deliberately not applied here: the main app's type rules are about the org's
+ * own participants (e.g. no registration fees for companies), not what ops itself sells them.
  */
 export async function isFeatureEnabled(key: string, organizationId?: string): Promise<boolean> {
   const flag = await featureFlagsRepository.getFlagByKey(key);

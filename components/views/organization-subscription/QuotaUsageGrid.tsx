@@ -8,10 +8,9 @@ interface QuotaUsageGridProps {
   /** Only `effectiveLimits` is read — already computed server-side (see effective-limits.ts), never re-derived here. */
   subscription: OrganizationSubscription;
   usage: UsageSnapshot | null;
-  onGiveAiCredits: () => void;
 }
 
-export default function QuotaUsageGrid({ subscription, usage, onGiveAiCredits }: QuotaUsageGridProps) {
+export default function QuotaUsageGrid({ subscription, usage }: QuotaUsageGridProps) {
   const { effectiveLimits } = subscription;
 
   const quotas = [
@@ -63,13 +62,6 @@ export default function QuotaUsageGrid({ subscription, usage, onGiveAiCredits }:
           <span className="text-muted-foreground">
             Balance: <span className="font-bold text-foreground">{usage?.aiCreditsBalance ?? 0}</span>
           </span>
-          <button
-            type="button"
-            onClick={onGiveAiCredits}
-            className="px-2.5 py-1 text-[11px] font-semibold rounded-md border border-pink-500/40 text-pink-600 hover:bg-pink-500/10 transition-colors"
-          >
-            Give bonus credits
-          </button>
         </div>
       ),
     },

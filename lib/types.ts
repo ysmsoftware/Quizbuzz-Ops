@@ -1,3 +1,4 @@
+import type { OrgProfileType } from './constants/org-profile-types';
 /**
  * TypeScript Types, Interfaces, and Enums for the QuizBuzz Ops Super Admin Dashboard.
  */
@@ -36,6 +37,16 @@ export interface Member {
   joinedDate: string;
 }
 
+/** Everyone who started registering, split so support can see what didn't complete. */
+export interface RegistrationCounts {
+  total: number;
+  confirmed: number;
+  /** Unpaid: no attempt yet, or checkout still open. */
+  pending: number;
+  /** Unpaid: the last payment attempt failed or was cancelled. */
+  failed: number;
+}
+
 export interface Organization {
   id: string;
   name: string;
@@ -54,8 +65,12 @@ export interface Organization {
   hasCustomLogo?: boolean;
   contestCount?: number;
   participantCount?: number;
+  registrations?: RegistrationCounts;
   /** false = the plan shown is only the free default (no subscription record). */
   hasSubscription?: boolean;
+  /** Main app org type (detail view only). */
+  /** null = never set (acts as Individual). */
+  profileType?: OrgProfileType | null;
   /** Institution flags this organization effectively has (list view only). */
   features?: string[];
   notes: SupportNote[];
@@ -85,6 +100,7 @@ export interface Contest {
   registrationFee: number;
   currency: string;
   participantCount: number;
+  registrations?: RegistrationCounts;
   revenueCollected: number;
   createdAt: string;
   // Real fields from the main DB (institution mode adds timing mode, audience and question selection).
@@ -140,14 +156,24 @@ export interface SubscriptionPlan {
   // annual-only with a fixed rate unrelated to any monthly figure.
   allowsMonthly: boolean;
   allowsAnnual: boolean;
+  allowsHalfYearly: boolean;
   monthlyPrice: number | null;
   annualPrice: number | null;
+  halfYearlyPrice: number | null;
   isActive: boolean;
+  isSellable: boolean;
+  kind: 'FREE' | 'STANDARD' | 'CUSTOM';
+  audience: 'ORGANIZER' | 'EDUCATION' | 'BUSINESS' | null;
+  /** Set on a private plan: only this org can be put on it or buy it. */
+  organizationId: string | null;
   limits: {
     maxContestsPerCycle: number | null; // null represents "unlimited"
     maxParticipantsPerContest: number | null;
     maxQuestionsPerContest: number | null;
     maxOrgMembers: number | null;
+    maxLearners: number | null;
+    maxCandidatesPerMonth: number | null;
+    aiCreditsPerMonth: number | null;
   };
   features: {
     proctoring: boolean;
@@ -155,6 +181,10 @@ export interface SubscriptionPlan {
     prioritySupport: boolean;
     analyticsExport: boolean;
     customDomain: boolean;
+    learnerGroups: boolean;
+    gradebook: boolean;
+    ambassadorCampaigns: boolean;
+    manualEmails: boolean;
   };
   createdAt: string;
   updatedAt: string;
@@ -171,7 +201,7 @@ export type OverrideMode = 'ADDITIVE' | 'ABSOLUTE';
 export interface SubscriptionOverride {
   id: string;
   field: string; // e.g. "maxContestsPerCycle"
-  value: number | null; // null for Unlimited
+  value: number | boolean | null; // null for Unlimited; a feature override is on or off
   mode: OverrideMode;
   reason: string;
   expiresAt: string | null; // nullable
@@ -187,7 +217,8 @@ export interface EffectiveLimit {
 }
 
 export type EffectiveLimits = Record<
-  'maxContestsPerCycle' | 'maxParticipantsPerContest' | 'maxQuestionsPerContest' | 'maxOrgMembers' | 'aiCreditsPerMonth',
+  | 'maxContestsPerCycle' | 'maxParticipantsPerContest' | 'maxQuestionsPerContest' | 'maxOrgMembers'
+  | 'maxLearners' | 'maxCandidatesPerMonth' | 'aiCreditsPerMonth',
   EffectiveLimit
 >;
 
@@ -195,11 +226,27 @@ export interface OrganizationSubscription {
   id: string;
   organizationId: string;
   planId: string;
-  status: 'active' | 'past_due' | 'cancelled';
-  billingCycle?: 'MONTHLY' | 'ANNUAL';
+  status: 'active' | 'past_due' | 'restricted' | 'expired' | 'cancelled';
+  billingCycle?: 'MONTHLY' | 'HALF_YEARLY' | 'ANNUAL' | 'CUSTOM';
   periodMonths?: number;
   currentPeriodStart: string;
   currentPeriodEnd: string;
+  graceDays: number;
+  collectionMethod: 'AUTO_DEBIT' | 'PAY_ONLINE' | 'OFFLINE' | 'COMPLIMENTARY';
+  /** The live Razorpay mandate, when collectionMethod is AUTO_DEBIT. */
+  autoDebit: { id: string; status: string; paymentMethod: string | null; nextChargeAt: string | null } | null;
+  lastPaymentError: string | null;
+  /** Waiting for the period end. */
+  scheduledChange: { planId: string; billingCycle: string | null; reason: string | null; on: string } | null;
+  contractStart: string | null;
+  contractEnd: string | null;
+  poNumber: string | null;
+  contractNotes: string | null;
+  /** From here nothing new can be created. Null on the Free plan. */
+  restrictAt: string | null;
+  /** From here Free limits apply. Null on the Free plan. */
+  downgradeAt: string | null;
+  planKind: 'FREE' | 'STANDARD' | 'CUSTOM';
   overrides: SubscriptionOverride[];
   effectiveLimits: EffectiveLimits;
 }
@@ -376,7 +423,12 @@ export interface BookingPricingBreakdown {
   addOnsCost: number;
   subtotal: number;
   margin: number;
+  /** What the booking charges before GST: the Event Pass price, or the cost-plus total on older bookings. */
   total: number;
+  /** The Event Pass quote the price came from. Absent on bookings made before it. */
+  eventPass?: import('@/lib/pricing/event-pass').EventPassQuote;
+  /** Our cost plus margin, kept as a floor check. */
+  costFloor?: number;
 }
 
 export interface ContestBooking {
@@ -440,7 +492,13 @@ export type OpsMessageTemplate =
   | 'BILLING_PAYMENT_SUCCESS'
   | 'BILLING_RECEIPT'
   | 'BILLING_PAYMENT_FAILED'
+  | 'BILLING_AUTOPAY_STOPPED'
   | 'SUBSCRIPTION_RENEWAL_REMINDER'
+  | 'INVOICE_ISSUED'
+  | 'INVOICE_REMINDER'
+  | 'CONTRACT_ENDING'
+  | 'SUBSCRIPTION_PAST_DUE'
+  | 'SUBSCRIPTION_RESTRICTED'
   | 'SUBSCRIPTION_EXPIRED'
   | 'SUBSCRIPTION_CANCELLED'
   | 'SUBSCRIPTION_PLAN_CHANGED'

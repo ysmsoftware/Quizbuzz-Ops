@@ -17,7 +17,8 @@ import { OpsMessageChannel, OpsMessageStatus, OpsMessageTemplate } from '@prisma
 export const SendMessageSchema = z.object({
   organizationId: z.string().min(1),
   template: z.nativeEnum(OpsMessageTemplate),
-  recipient: z.string().min(1),
+  // channel is always EMAIL (below), so the recipient has to be an email address.
+  recipient: z.string().trim().email('Enter a valid email address'),
   subject: z.string().optional(),
   channel: z.literal('EMAIL').default('EMAIL'),
   params: z.record(z.string(), z.any()).optional(),

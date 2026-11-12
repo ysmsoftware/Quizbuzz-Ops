@@ -91,7 +91,7 @@ function accessCopy(flag: FeatureFlag) {
         addLabel: 'Grant access',
       }
     : {
-        badge: 'On for everyone',
+        badge: flag.isEnabled ? 'On for everyone' : 'Off for everyone',
         switchHelp: 'Applies to every organization unless one has its own override.',
         panelLabel: 'Organization overrides',
         empty: 'No overrides — every organization follows the global switch.',

@@ -1,26 +1,19 @@
 'use client';
 
 import React, { useState } from 'react';
-import { usePaymentTimeline, useNeedsAttention, useRetryTransfer } from '@/lib/hooks/usePayouts';
-import { useToast } from '@/components/ui/Toast';
+import { usePaymentTimeline, useNeedsAttention } from '@/lib/hooks/usePayouts';
 import { format } from 'date-fns';
 import {
   Search,
   CheckCircle2,
   Clock,
   AlertTriangle,
-  RotateCcw,
   IndianRupee,
   Building2,
   Receipt,
   ShieldAlert,
 } from 'lucide-react';
 import { formatNumber } from '@/lib/format';
-import { errorMessage } from '@/lib/errors';
-
-interface PayoutInvestigationPanelProps {
-  canEdit: boolean;
-}
 
 const severityStyles: Record<string, { dot: string; icon: React.ReactNode; text: string }> = {
   ok: { dot: 'bg-emerald-500', icon: <CheckCircle2 className="h-4 w-4" />, text: 'text-emerald-600' },
@@ -28,8 +21,7 @@ const severityStyles: Record<string, { dot: string; icon: React.ReactNode; text:
   problem: { dot: 'bg-rose-500', icon: <AlertTriangle className="h-4 w-4" />, text: 'text-rose-600' },
 };
 
-export default function PayoutInvestigationPanel({ canEdit }: PayoutInvestigationPanelProps) {
-  const { toast } = useToast();
+export default function PayoutInvestigationPanel() {
   const [searchInput, setSearchInput] = useState('');
   const [activeSearch, setActiveSearch] = useState('');
   const [needsAttentionPage] = useState(1);
@@ -42,7 +34,6 @@ export default function PayoutInvestigationPanel({ canEdit }: PayoutInvestigatio
     page: needsAttentionPage,
     limit: 10,
   });
-  const retryMutation = useRetryTransfer();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,15 +43,6 @@ export default function PayoutInvestigationPanel({ canEdit }: PayoutInvestigatio
   const handleInvestigate = (paymentId: string) => {
     setSearchInput(paymentId);
     setActiveSearch(paymentId);
-  };
-
-  const handleRetry = async (paymentId: string) => {
-    try {
-      await retryMutation.mutateAsync(paymentId);
-      toast('Retry Enqueued', 'The transfer will be attempted again shortly. Refresh the timeline in a moment to see the outcome.', 'success');
-    } catch (err) {
-      toast('Retry Failed', errorMessage(err) || 'Could not enqueue the retry', 'error');
-    }
   };
 
   return (
@@ -214,16 +196,6 @@ export default function PayoutInvestigationPanel({ canEdit }: PayoutInvestigatio
                   </div>
                 </div>
 
-                {canEdit && timeline.canRetry && (
-                  <button
-                    onClick={() => handleRetry(timeline.paymentId!)}
-                    disabled={retryMutation.isPending}
-                    className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-sm disabled:opacity-50 flex items-center gap-1.5"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    {retryMutation.isPending ? 'Retrying...' : 'Retry Transfer'}
-                  </button>
-                )}
               </div>
 
               <ol className="space-y-0">

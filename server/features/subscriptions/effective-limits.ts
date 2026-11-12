@@ -15,6 +15,8 @@ export type LimitField =
   | 'maxParticipantsPerContest'
   | 'maxQuestionsPerContest'
   | 'maxOrgMembers'
+  | 'maxLearners'
+  | 'maxCandidatesPerMonth'
   | 'aiCreditsPerMonth';
 
 export const LIMIT_FIELDS: readonly LimitField[] = [
@@ -22,14 +24,23 @@ export const LIMIT_FIELDS: readonly LimitField[] = [
   'maxParticipantsPerContest',
   'maxQuestionsPerContest',
   'maxOrgMembers',
+  'maxLearners',
+  'maxCandidatesPerMonth',
   'aiCreditsPerMonth',
 ] as const;
 
-/**
- * Plans carry no AI credit column yet: every plan starts from the main app's
- * monthly default (its AI_DEFAULT_MONTHLY_CREDITS), and overrides add to or replace it.
- */
-export const AI_CREDITS_BASE = Number(process.env.AI_DEFAULT_MONTHLY_CREDITS ?? 100);
+/** Key in the main app's cache -> plan column, which is also the override field name. */
+export const PLAN_FEATURES = {
+  proctoring: 'featureProctoring',
+  certBranding: 'featureCertBranding',
+  prioritySupport: 'featurePrioritySupport',
+  analyticsExport: 'featureAnalyticsExport',
+  customDomain: 'featureCustomDomain',
+  learnerGroups: 'featureLearnerGroups',
+  gradebook: 'featureGradebook',
+  ambassadorCampaigns: 'featureAmbassadorCampaigns',
+  manualEmails: 'featureManualEmails',
+} as const;
 
 export type OverrideMode = 'ADDITIVE' | 'ABSOLUTE';
 

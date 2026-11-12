@@ -19,8 +19,8 @@ export function initializeBackgroundJobs() {
     }
   });
 
-  // Nightly subscription limits cache reconciliation
-  cron.schedule('0 2 * * *', async () => {
+  // Subscription lifecycle and limits cache reconciliation
+  cron.schedule('15 * * * *', async () => {
     try {
       await runSubscriptionReconciliationJob();
     } catch (err) {

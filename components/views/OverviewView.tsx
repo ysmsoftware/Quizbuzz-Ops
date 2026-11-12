@@ -33,6 +33,7 @@ import {
 import { format } from 'date-fns';
 import { formatInr, formatNumber } from '@/lib/format';
 import StatusBadge from '@/components/ui/StatusBadge';
+import RegistrationCountsLine from '@/components/ui/RegistrationCountsLine';
 import { INSTITUTION_FLAGS } from '@/lib/constants/institution';
 
 export default function OverviewPlaceholder() {
@@ -204,8 +205,9 @@ export default function OverviewPlaceholder() {
         {/* Total Participants */}
         <div className="rounded-xl border border-border/50 bg-card p-6 shadow-sm flex items-center justify-between hover:shadow-md transition-all">
           <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Participants</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Confirmed Registrations</p>
             <h3 className="text-3xl font-bold font-mono tracking-tight text-foreground">{formatNumber(stats.participants.total)}</h3>
+            <RegistrationCountsLine counts={stats.participants.registrations} showTotal />
             <p className="text-[10px] text-muted-foreground">
               {participantBreakdown}
             </p>
@@ -448,7 +450,10 @@ export default function OverviewPlaceholder() {
                           ? `${format(new Date(c.startTime), 'dd MMM')} – ${format(new Date(c.endTime), 'dd MMM, hh:mm a')}`
                           : format(new Date(c.startTime), 'dd MMM, hh:mm a')}
                       </td>
-                      <td className="py-2.5 text-right font-mono font-bold text-foreground/80">{c.participantCount}</td>
+                      <td className="py-2.5 text-right font-mono font-bold text-foreground/80">
+                        {c.participantCount}
+                        <RegistrationCountsLine counts={c.registrations} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

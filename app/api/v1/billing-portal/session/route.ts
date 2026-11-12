@@ -1,11 +1,15 @@
+import { planFeatureList } from '@/server/features/plans/plan-feature-list';
 import { prisma } from '@/server/db/ops-prisma';
 import { queryMainDb } from '@/server/db/main-db-pool';
 import { verifyJwt, type BillingHandoffPayload } from '@/server/utils/jwt';
-import { env } from '@/server/config/env';
+import { handoffSecret } from '@/server/features/invoices/handoff-secret';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
 import { okResponse, errorResponse } from '@/server/http/envelope';
 import { errorMessage } from '@/lib/errors';
+import { canBuyPlan } from '@/server/features/plans/can-buy-plan';
+import { isFeatureEnabled } from '@/server/features/feature-flags/is-feature-enabled';
+import { changeTiming } from '@/server/features/subscriptions/plan-change';
 
 export async function POST(req: Request) {
   try {
@@ -16,7 +20,10 @@ export async function POST(req: Request) {
       return errorResponse('Token is required', 'VALIDATION_ERROR', null, 400);
     }
 
-    const secret = env.BILLING_HANDOFF_SECRET;
+    const secret = handoffSecret();
+    if (!secret) {
+      return errorResponse('Billing is not available right now. Please contact support.', 'GATEWAY_NOT_CONFIGURED', null, 503);
+    }
     let payload: BillingHandoffPayload;
     try {
       payload = verifyJwt(token, secret);
@@ -35,7 +42,7 @@ export async function POST(req: Request) {
       where: { slug: planSlug },
     });
 
-    if (!plan || !plan.isActive) {
+    if (!plan) {
       return errorResponse('The requested plan is invalid or inactive', 'NOT_FOUND', null, 404);
     }
 
@@ -46,8 +53,12 @@ export async function POST(req: Request) {
     // server-side and is the only source of truth for what's actually charged.
     const currentSub = await prisma.organizationSubscription.findUnique({
       where: { organizationId },
-      include: { plan: { select: { id: true, name: true, monthlyPrice: true, annualPrice: true } } },
+      include: { plan: true },
     });
+
+    if (!canBuyPlan(plan, organizationId, currentSub?.planId)) {
+      return errorResponse('The requested plan is invalid or inactive', 'NOT_FOUND', null, 404);
+    }
 
     let currentSubscription: {
       planId: string;
@@ -56,8 +67,6 @@ export async function POST(req: Request) {
       currentPeriodStart: string;
       currentPeriodEnd: string;
       lastPaidBaseAmount: number | null;
-      planMonthlyPrice: number | null;
-      planAnnualPrice: number | null;
     } | null = null;
     if (currentSub && currentSub.status === 'ACTIVE' && currentSub.currentPeriodEnd > new Date()) {
       const lastPaidPayment = await prisma.opsPayment.findFirst({
@@ -77,8 +86,6 @@ export async function POST(req: Request) {
         currentPeriodStart: currentSub.currentPeriodStart.toISOString(),
         currentPeriodEnd: currentSub.currentPeriodEnd.toISOString(),
         lastPaidBaseAmount: lastPaidPayment?.baseAmount != null ? Number(lastPaidPayment.baseAmount) : null,
-        planMonthlyPrice: currentSub.plan.monthlyPrice != null ? Number(currentSub.plan.monthlyPrice) : null,
-        planAnnualPrice: currentSub.plan.annualPrice != null ? Number(currentSub.plan.annualPrice) : null,
       };
     }
 
@@ -121,22 +128,28 @@ export async function POST(req: Request) {
       }
     );
 
-    // Build human readable feature list
-    const featureList: string[] = [];
-    if (plan.maxContestsPerCycle !== null) {
-      featureList.push(`${plan.maxContestsPerCycle} contest${plan.maxContestsPerCycle === 1 ? '' : 's'} per month`);
-    } else {
-      featureList.push('Unlimited contests');
-    }
-    if (plan.maxParticipantsPerContest !== null) {
-      featureList.push(`Up to ${plan.maxParticipantsPerContest} participants per contest`);
-    } else {
-      featureList.push('Unlimited participants');
-    }
-    if (plan.featureProctoring) featureList.push('Advanced proctoring');
-    if (plan.featureCertBranding) featureList.push('Custom certificate branding');
-    if (plan.featureAnalyticsExport) featureList.push('Analytics data export');
-    if (plan.featurePrioritySupport) featureList.push('Priority support');
+    const featureList = planFeatureList(plan);
+
+    // Same rule as startAutoDebit: with paid time left, the first automatic charge is when it ends.
+    const paidUntil =
+      currentSub && currentSub.plan.kind !== 'FREE' && currentSub.currentPeriodEnd.getTime() > Date.now() + 15 * 60_000
+        ? currentSub.currentPeriodEnd.toISOString()
+        : null;
+    // Per cycle, because a shorter cycle on the same plan also waits for the period end.
+    const scheduledCycles = (['MONTHLY', 'HALF_YEARLY', 'ANNUAL'] as const).filter(
+      (cycle) => currentSub && changeTiming(currentSub, { plan, cycle }) === 'period_end',
+    );
+    const change = {
+      scheduledCycles,
+      on: currentSub?.currentPeriodEnd.toISOString() ?? null,
+      currentPlanName: currentSub?.plan.name ?? null,
+    };
+    const autoDebit = {
+      available: (await isFeatureEnabled('razorpay_gateway_active', organizationId)) && (await isFeatureEnabled('auto_debit', organizationId)),
+      firstChargeAt: paidUntil,
+      // Set when this org already pays this way: choosing it again changes the payment method.
+      current: currentSub?.collectionMethod === 'AUTO_DEBIT' ? { planId: currentSub.planId, billingCycle: currentSub.billingCycle } : null,
+    };
 
     return okResponse(
       {
@@ -149,6 +162,8 @@ export async function POST(req: Request) {
           adminName: adminName || null,
         },
         currentSubscription,
+        autoDebit,
+        change,
         plan: {
           id: plan.id,
           name: plan.name,
@@ -156,8 +171,10 @@ export async function POST(req: Request) {
           description: plan.description || '',
           currency: plan.currency,
           allowsMonthly: plan.allowsMonthly,
+          allowsHalfYearly: plan.allowsHalfYearly,
           allowsAnnual: plan.allowsAnnual,
           monthlyPrice: plan.monthlyPrice != null ? Number(plan.monthlyPrice) : null,
+          halfYearlyPrice: plan.halfYearlyPrice != null ? Number(plan.halfYearlyPrice) : null,
           annualPrice: plan.annualPrice != null ? Number(plan.annualPrice) : null,
           features: featureList,
         },

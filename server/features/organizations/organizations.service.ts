@@ -1,3 +1,5 @@
+import { stopAutoDebit } from '../autodebit/autodebit.service';
+import { usageWindow } from '../subscriptions/access-dates';
 import { IOrganizationsRepository, OrganizationsRepository } from './organizations.repository';
 import { writeAuditLogEntry, AuditActor } from '../../audit/audit-writer';
 import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
@@ -6,14 +8,27 @@ import { orgLogoFallback } from '../../../lib/format';
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../../http/errors';
 import { env } from '../../config/env';
 import { RESERVED_ORG_SLUGS, slugify } from './org-slug';
+import { TYPE_FLAG_PRESET, TYPE_DENIED_FLAGS, type OrgProfileType } from '../../../lib/constants/org-profile-types';
 import type { CreateOrgInput, UpdateOrgInput, OrgParticipantsQueryInput } from './organizations.validator';
 import type { OrgListParams } from './organizations.repository';
 import { OrgListMember, OrgProfileDetail, OrgMemberDetail, OrgContestDetail, OrgParticipantDetail, OrgPaymentDetail, SupportNoteDetail } from './organizations.types';
 
+export interface TypeChangePreview {
+  from: OrgProfileType;
+  to: OrgProfileType;
+  flagsGained: string[];
+  flagsLost: string[];
+  flagsDenied: string[];
+  openPublicContests: number;
+  openPaidContests: number;
+  liveAssignedContests: number;
+}
+
 export interface IOrganizationsService {
   getOrganizationsList(params: OrgListParams): Promise<{ data: OrgListMember[]; total: number; page: number; limit: number }>;
-  createOrganization(actor: AuditActor, input: CreateOrgInput): Promise<{ id: string; slug: string; createdAccount: boolean }>;
+  createOrganization(actor: AuditActor, input: CreateOrgInput): Promise<{ id: string; slug: string; createdAccount: boolean; ownerNotified: boolean }>;
   updateOrganization(orgId: string, actor: AuditActor, input: UpdateOrgInput): Promise<void>;
+  previewTypeChange(orgId: string, to: OrgProfileType): Promise<TypeChangePreview>;
   softDelete(orgId: string, actor: AuditActor, reason: string): Promise<void>;
   restore(orgId: string, actor: AuditActor, reason?: string): Promise<void>;
   getOrganizationDetail(orgId: string): Promise<OrgProfileDetail | null>;
@@ -64,8 +79,8 @@ export class OrganizationsService implements IOrganizationsService {
           }
         : {
             // Not a real subscription: the free default, flagged so the UI can say so.
-            slug: 'starter',
-            name: 'Starter (Free)',
+            slug: 'free',
+            name: 'Free',
             status: 'NONE',
             hasSubscription: false,
           };
@@ -78,9 +93,11 @@ export class OrganizationsService implements IOrganizationsService {
         ownerEmail: r.ownerEmail,
         logoUrl: r.logoUrl || orgLogoFallback(r.name),
         features: r.features ?? [],
+        profileType: r.profileType ?? null,
         memberCount: r.memberCount,
         contestCount: r.contestCount,
         participantCount: r.participantCount,
+        registrations: r.registrations,
         status: r.isDeleted ? 'DELETED' : r.isActive ? 'ACTIVE' : 'SUSPENDED',
         plan: planInfo,
         createdAt: new Date(r.createdAt).toISOString(),
@@ -110,8 +127,8 @@ export class OrganizationsService implements IOrganizationsService {
           hasSubscription: true,
         }
       : {
-          slug: 'starter',
-          name: 'Starter (Free)',
+          slug: 'free',
+          name: 'Free',
           status: 'NONE',
           hasSubscription: false,
         };
@@ -144,8 +161,10 @@ export class OrganizationsService implements IOrganizationsService {
       memberCount: rawOrg.memberCount,
       contestCount: rawOrg.contestCount,
       participantCount: rawOrg.participantCount,
+      registrations: rawOrg.registrations,
       onboardingStep: rawOrg.onboardingStep,
       onboardingCompleted: rawOrg.onboardingCompleted,
+      profileType: rawOrg.profileType ?? null,
       plan: planInfo,
       suspension: suspensionInfo,
     };
@@ -175,18 +194,15 @@ export class OrganizationsService implements IOrganizationsService {
   }> {
     const sub = await this.repo.getSubscriptionForOrg(orgId);
 
-    // No subscription synced yet — nothing meaningfully "used this cycle"
-    // to report; fall back to an all-time window so the numbers are at
-    // least not wrong, just not cycle-scoped.
-    const periodStart: Date = sub?.currentPeriodStart ?? new Date(0);
-    const periodEnd: Date = sub?.currentPeriodEnd ?? new Date(8640000000000000);
-
-    const usage = await this.repo.getUsageSnapshot(orgId, periodStart, periodEnd);
+    // Contest limits are per month on every billing cycle. With no subscription yet there's
+    // no anchor, so report all time rather than a made-up window.
+    const window = sub ? usageWindow(sub.currentPeriodStart) : null;
+    const usage = await this.repo.getUsageSnapshot(orgId, window?.start ?? new Date(0), window?.end ?? new Date(8640000000000000));
 
     return {
       ...usage,
-      periodStart: sub?.currentPeriodStart ? sub.currentPeriodStart.toISOString() : null,
-      periodEnd: sub?.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
+      periodStart: window ? window.start.toISOString() : null,
+      periodEnd: window ? window.end.toISOString() : null,
     };
   }
 
@@ -262,6 +278,7 @@ export class OrganizationsService implements IOrganizationsService {
         ownerFirstName: firstName,
         ownerLastName: rest.join(' '),
         ownerEmail: input.ownerEmail,
+        profileType: input.profileType,
       });
     } catch (err: any) {
       if (err?.code === '23505') throw new ConflictError('An organization or account with these details already exists');
@@ -276,7 +293,7 @@ export class OrganizationsService implements IOrganizationsService {
     });
 
     const frontend = env.MAIN_APP_FRONTEND_URL.replace(/\/$/, '');
-    await orgOwnerNotifier.notify(created.organizationId, 'ORG_CREATED', {
+    const ownerNotified = await orgOwnerNotifier.notify(created.organizationId, 'ORG_CREATED', {
       organizationName: input.name,
       ownerEmail: input.ownerEmail,
       newAccount: created.createdAdmin,
@@ -284,7 +301,7 @@ export class OrganizationsService implements IOrganizationsService {
       forgotPasswordUrl: `${frontend}/forgot-password`,
     });
 
-    return { id: created.organizationId, slug, createdAccount: created.createdAdmin };
+    return { id: created.organizationId, slug, createdAccount: created.createdAdmin, ownerNotified };
   }
 
   async updateOrganization(orgId: string, actor: AuditActor, input: UpdateOrgInput) {
@@ -295,12 +312,45 @@ export class OrganizationsService implements IOrganizationsService {
     if (input.name !== undefined) fields.name = input.name;
     if (input.logoUrl !== undefined) fields.logoUrl = input.logoUrl === '' ? null : input.logoUrl;
 
-    await this.repo.updateMainDbOrganization(orgId, fields);
+    if (Object.keys(fields).length > 0) {
+      await this.repo.updateMainDbOrganization(orgId, fields);
+      await writeAuditLogEntry(actor, 'org.updated', AuditTargetType.ORGANIZATION, orgId, fields.name ?? org.name, {
+        before: { name: org.name, logoUrl: org.logoUrl ?? null },
+        after: fields,
+      });
+    }
 
-    await writeAuditLogEntry(actor, 'org.updated', AuditTargetType.ORGANIZATION, orgId, fields.name ?? org.name, {
-      before: { name: org.name, logoUrl: org.logoUrl ?? null },
-      after: fields,
-    });
+    // The main app picks the new type up within a minute (its type and flag caches).
+    const currentType = org.profileType ?? 'INDIVIDUAL';
+    if (input.profileType !== undefined && input.profileType !== currentType) {
+      await this.repo.setMainDbProfileType(orgId, input.profileType);
+      await writeAuditLogEntry(actor, 'org.type_changed', AuditTargetType.ORGANIZATION, orgId, fields.name ?? org.name, {
+        before: currentType,
+        after: input.profileType,
+      });
+    }
+  }
+
+  /** What switching to `to` changes, so ops can confirm before saving. Flags with an org override are not listed. */
+  async previewTypeChange(orgId: string, to: OrgProfileType) {
+    const org = await this.repo.getOrganizationDetail(orgId);
+    if (!org) throw new NotFoundError('Organization not found');
+    const from: OrgProfileType = org.profileType ?? 'INDIVIDUAL';
+    const on = (t: OrgProfileType) => new Set(TYPE_FLAG_PRESET[t].filter((k) => !TYPE_DENIED_FLAGS[t].includes(k)));
+    const [before, after] = [on(from), on(to)];
+    const impact = await this.repo.getTypeChangeImpact(orgId);
+    const toCompany = TYPE_DENIED_FLAGS[to].length > 0;
+    return {
+      from,
+      to,
+      flagsGained: [...after].filter((k) => !before.has(k)),
+      flagsLost: [...before].filter((k) => !after.has(k)),
+      // Denied flags turn off whatever the override says.
+      flagsDenied: TYPE_DENIED_FLAGS[to].filter((k) => !TYPE_DENIED_FLAGS[from].includes(k)),
+      openPublicContests: toCompany ? impact.openPublicContests : 0,
+      openPaidContests: toCompany ? impact.openPaidContests : 0,
+      liveAssignedContests: before.has('participant_portal') && !after.has('participant_portal') ? impact.liveAssignedContests : 0,
+    };
   }
 
   /**
@@ -314,6 +364,8 @@ export class OrganizationsService implements IOrganizationsService {
     if (org.isDeleted) throw new ConflictError('Organization is already deleted');
 
     await this.repo.setMainDbOrganizationDeleted(orgId, true, false);
+    // Never charge a deleted org. Restoring it doesn't bring the mandate back: the owner sets it up again.
+    await stopAutoDebit(orgId, actor, `Organization deleted: ${reason}`);
 
     await writeAuditLogEntry(actor, 'org.deleted', AuditTargetType.ORGANIZATION, orgId, org.name, {
       reason,

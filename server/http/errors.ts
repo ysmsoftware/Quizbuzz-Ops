@@ -9,7 +9,7 @@ export class AppError extends Error {
     public details?: any
   ) {
     super(message);
-    Object.setPrototypeOf(this, AppError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 

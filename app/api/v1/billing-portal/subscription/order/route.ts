@@ -2,6 +2,7 @@ import { prisma } from '@/server/db/ops-prisma';
 import { redis } from '@/server/lib/redis';
 import { verifyJwt, type BillingHandoffPayload } from '@/server/utils/jwt';
 import { env } from '@/server/config/env';
+import { handoffSecret } from '@/server/features/invoices/handoff-secret';
 import { generateUlid } from '@/server/utils/ulid';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
 import { AuditTargetType } from '@prisma/client';
@@ -13,9 +14,12 @@ import {
   resolvePlanCyclePrice,
   periodMonthsForCycle,
   isValidBillingCycle,
+  cycleLabel,
   type BillingCycleChoice,
 } from '@/lib/pricing/subscriptionPricing';
 import { errorMessage } from '@/lib/errors';
+import { canBuyPlan } from '@/server/features/plans/can-buy-plan';
+import { changeTiming } from '@/server/features/subscriptions/plan-change';
 
 // Short-lived per org+plan+cycle lock so a double-click, two open tabs, or a
 // retried request can't race two concurrent calls past the active-subscription
@@ -40,10 +44,13 @@ export async function POST(req: Request) {
     }
 
     if (!isValidBillingCycle(billingCycle)) {
-      return errorResponse('billingCycle must be MONTHLY or ANNUAL', 'VALIDATION_ERROR', null, 400);
+      return errorResponse('billingCycle must be MONTHLY, HALF_YEARLY or ANNUAL', 'VALIDATION_ERROR', null, 400);
     }
 
-    const secret = env.BILLING_HANDOFF_SECRET;
+    const secret = handoffSecret();
+    if (!secret) {
+      return errorResponse('Billing is not available right now. Please contact support.', 'GATEWAY_NOT_CONFIGURED', null, 503);
+    }
     let payload: BillingHandoffPayload;
     try {
       payload = verifyJwt(token, secret);
@@ -70,7 +77,11 @@ export async function POST(req: Request) {
       where: { slug: planSlug },
     });
 
-    if (!plan || !plan.isActive) {
+    const ownSubscription = await prisma.organizationSubscription.findUnique({
+      where: { organizationId },
+      select: { planId: true },
+    });
+    if (!plan || !canBuyPlan(plan, organizationId, ownSubscription?.planId)) {
       return errorResponse('Target plan not found or inactive', 'NOT_FOUND', null, 404);
     }
 
@@ -92,8 +103,10 @@ export async function POST(req: Request) {
       baseAmount = resolvePlanCyclePrice(
         {
           allowsMonthly: plan.allowsMonthly,
+          allowsHalfYearly: plan.allowsHalfYearly,
           allowsAnnual: plan.allowsAnnual,
           monthlyPrice: plan.monthlyPrice ? Number(plan.monthlyPrice) : null,
+          halfYearlyPrice: plan.halfYearlyPrice ? Number(plan.halfYearlyPrice) : null,
           annualPrice: plan.annualPrice ? Number(plan.annualPrice) : null,
         },
         billingCycle
@@ -113,8 +126,19 @@ export async function POST(req: Request) {
     // downgrade/early-renewal flow, and gets prorated below instead of blocked.
     const currentSub = await prisma.organizationSubscription.findUnique({
       where: { organizationId },
+      include: { plan: true },
     });
     const now = new Date();
+
+    // Downgrades and shorter cycles wait for the period end: nothing to pay now.
+    if (currentSub && changeTiming(currentSub, { plan, cycle: billingCycle }, now) === 'period_end') {
+      return errorResponse(
+        `This change starts when your current plan ends on ${currentSub.currentPeriodEnd.toISOString().slice(0, 10)}. Schedule it instead.`,
+        'SCHEDULE_INSTEAD',
+        { on: currentSub.currentPeriodEnd.toISOString() },
+        409
+      );
+    }
     const hasActiveSub =
       !!currentSub && currentSub.status === 'ACTIVE' && currentSub.currentPeriodEnd > now;
 
@@ -124,7 +148,7 @@ export async function POST(req: Request) {
       currentSub!.billingCycle === billingCycle
     ) {
       return errorResponse(
-        `You already have an active ${plan.name} (${billingCycle === 'ANNUAL' ? 'annual' : 'monthly'}) subscription until ${currentSub!.currentPeriodEnd.toISOString().slice(0, 10)}.`,
+        `You already have an active ${plan.name} (${cycleLabel(billingCycle).toLowerCase()}) subscription until ${currentSub!.currentPeriodEnd.toISOString().slice(0, 10)}.`,
         'ALREADY_SUBSCRIBED',
         null,
         409
@@ -157,8 +181,6 @@ export async function POST(req: Request) {
           currentPeriodEnd: currentSub!.currentPeriodEnd,
           billingCycle: currentSub!.billingCycle as BillingCycleChoice,
           lastPaidBaseAmount: lastPaidPayment?.baseAmount != null ? Number(lastPaidPayment.baseAmount) : null,
-          planMonthlyPrice: plan.monthlyPrice ? Number(plan.monthlyPrice) : null,
-          planAnnualPrice: plan.annualPrice ? Number(plan.annualPrice) : null,
         },
         now
       );
@@ -170,10 +192,22 @@ export async function POST(req: Request) {
     const pricing = calculateSubscriptionPricing(proratedBaseAmount);
     const amountInPaise = Math.round(pricing.totalAmount * 100);
 
-    // Idempotency: reuse an existing non-terminal order for this exact
-    // org + plan + cycle instead of minting a new Razorpay order every time
-    // the admin double-clicks Pay, reloads, or retries after a network blip.
-    const existing = await prisma.opsPayment.findFirst({
+    // Unused credit can cover the whole price (e.g. yearly Basic -> monthly Pro). Razorpay can't take
+    // an order under ₹1, and a free switch must not be a checkout, so stop with a clear message.
+    if (amountInPaise < 100) {
+      return errorResponse(
+        'Your unused time already covers this plan. Please contact us to switch without paying.',
+        'CREDIT_COVERS_PRICE',
+        null,
+        409
+      );
+    }
+
+    // Idempotency: reuse an open order for this exact org + plan + cycle instead of minting a new one on
+    // a double-click, reload or retry. Only while its price is still today's: the credit for unused time
+    // shrinks daily and plan prices change, so an old order would otherwise buy a full period too cheap.
+    const REUSE_WINDOW_MS = 30 * 60_000;
+    const openOrders = await prisma.opsPayment.findMany({
       where: {
         organizationId,
         planId: plan.id,
@@ -184,6 +218,14 @@ export async function POST(req: Request) {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const isFresh = (p: (typeof openOrders)[number]) =>
+      Math.round(Number(p.amount) * 100) === amountInPaise && now.getTime() - p.createdAt.getTime() < REUSE_WINDOW_MS;
+    const existing = openOrders.find(isFresh);
+    // A late payment on a closed order is still honoured: the webhook accepts any non-PAID row.
+    const stale = openOrders.filter((p) => !isFresh(p));
+    if (stale.length) {
+      await prisma.opsPayment.updateMany({ where: { id: { in: stale.map((p) => p.id) } }, data: { status: 'FAILED' } });
+    }
 
     if (existing) {
       return okResponse(

@@ -20,5 +20,15 @@ export async function register() {
     } catch (err) {
       console.error('[feature-flags] registry sync failed (existing flags are unaffected):', err);
     }
+
+    // Same idea for the plan catalogue: inserts missing plans, never edits ops' numbers.
+    try {
+      const { prisma } = await import('./server/db/ops-prisma');
+      const { syncPlanCatalogue } = await import('./server/features/plans/plan-catalogue');
+      const created = await syncPlanCatalogue(prisma);
+      if (created.length) console.log('[plans] catalogue sync created:', created);
+    } catch (err) {
+      console.error('[plans] catalogue sync failed (existing plans are unaffected):', err);
+    }
   }
 }

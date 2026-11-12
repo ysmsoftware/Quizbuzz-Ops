@@ -5,8 +5,7 @@ import { SubscriptionPlan } from '@/lib/types';
 import { 
   Edit3, EyeOff, Check, X, Users, Trophy, HelpCircle, 
   ShieldCheck, Download, Globe, Lock, Layers, Building2,
-  type LucideIcon,
-} from 'lucide-react';
+  type LucideIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 import { formatInr } from '@/lib/format';
 
@@ -14,10 +13,12 @@ interface PlanCardProps {
   plan: SubscriptionPlan;
   onEdit: (plan: SubscriptionPlan) => void;
   onDeactivate: (plan: SubscriptionPlan) => void;
+  /** Move everyone on this plan to another. Super admins only. */
+  onMoveSubscribers?: (plan: SubscriptionPlan) => void;
   orgCount?: number;
 }
 
-export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: PlanCardProps) {
+export default function PlanCard({ plan, onEdit, onDeactivate, onMoveSubscribers, orgCount = 0 }: PlanCardProps) {
   const isFree =
     (plan.allowsMonthly ? plan.monthlyPrice === 0 : true) &&
     (plan.allowsAnnual ? plan.annualPrice === 0 : true);
@@ -61,6 +62,17 @@ export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: P
             >
               <Edit3 className="h-4 w-4" />
             </button>
+            {onMoveSubscribers && activeCount > 0 && (
+              <button
+                type="button"
+                onClick={() => onMoveSubscribers(plan)}
+                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                title="Move subscribers to another plan"
+                aria-label="Move subscribers to another plan"
+              >
+                <Users className="h-4 w-4" />
+              </button>
+            )}
             {plan.isActive && (
               <button
                 type="button"
@@ -137,18 +149,38 @@ export default function PlanCard({ plan, onEdit, onDeactivate, orgCount = 0 }: P
               <span className="text-muted-foreground">Members:</span>
               <span className="font-semibold ml-auto">{plan.limits.maxOrgMembers ?? 'Unlimited'}</span>
             </div>
+            <div className="flex items-center space-x-1.5 p-2 rounded-lg bg-muted/40 border border-border/30">
+              <Users className="h-3.5 w-3.5 text-teal-500 shrink-0" />
+              <span className="text-muted-foreground">Learners:</span>
+              <span className="font-semibold ml-auto">{plan.limits.maxLearners ?? 'Unlimited'}</span>
+            </div>
+            <div className="flex items-center space-x-1.5 p-2 rounded-lg bg-muted/40 border border-border/30">
+              <Building2 className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+              <span className="text-muted-foreground">Candidates/mo:</span>
+              <span className="font-semibold ml-auto">{plan.limits.maxCandidatesPerMonth ?? 'Unlimited'}</span>
+            </div>
           </div>
         </div>
+
+        {!plan.isSellable && (
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            {plan.organizationId ? 'Private to one organization.' : 'Not on sale. Ops can still assign it.'}
+          </p>
+        )}
 
         {/* Feature Toggles */}
         <div className="mt-4 space-y-1.5">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Features Included</p>
           <ul className="space-y-1 text-xs">
-            <FeatureItem icon={ShieldCheck} label="AI Proctoring" enabled={plan.features.proctoring} />
+            <FeatureItem icon={ShieldCheck} label="Webcam Proctoring" enabled={plan.features.proctoring} />
             <FeatureItem icon={Lock} label="Custom Branding" enabled={plan.features.customCertificateBranding} />
-            <FeatureItem icon={Download} label="Analytics Export" enabled={plan.features.analyticsExport} />
+            <FeatureItem icon={Download} label="CSV Export" enabled={plan.features.analyticsExport} />
             <FeatureItem icon={Globe} label="Custom Domain" enabled={plan.features.customDomain} />
             <FeatureItem icon={ShieldCheck} label="Priority Support" enabled={plan.features.prioritySupport} />
+            <FeatureItem icon={Users} label="Learner Groups" enabled={plan.features.learnerGroups} />
+            <FeatureItem icon={Layers} label="Gradebook" enabled={plan.features.gradebook} />
+            <FeatureItem icon={Trophy} label="Ambassador Campaigns" enabled={plan.features.ambassadorCampaigns} />
+            <FeatureItem icon={Globe} label="Broadcast Emails" enabled={plan.features.manualEmails} />
           </ul>
         </div>
       </div>

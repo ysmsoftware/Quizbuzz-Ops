@@ -21,6 +21,7 @@ import {
   type PlanCyclePricing,
   type CurrentSubscriptionForProration,
   availableCyclesForPlan,
+  cycleLabel,
   type BillingCycleChoice,
 } from '@/lib/pricing/subscriptionPricing';
 import { formatInr } from '@/lib/format';
@@ -51,11 +52,21 @@ interface CheckoutSessionData {
   };
   plan: PlanCyclePricing & { id: string; name: string; description: string; features: string[] };
   currentSubscription: (CurrentSubscriptionForProration & { planId: string; planName: string }) | null;
+  autoDebit: { available: boolean; firstChargeAt: string | null; current: { planId: string; billingCycle: string } | null };
+  /** Cycles of this plan that would be a downgrade now: they start at the period end instead of being charged. */
+  change: { scheduledCycles: string[]; on: string | null; currentPlanName: string | null };
 }
+
+type PayMode = 'auto' | 'once';
+const AUTO_CYCLES: string[] = ['MONTHLY', 'HALF_YEARLY'];
 
 const RAZORPAY_BRAND_TEAL = '#0d9488';
 const POLL_INTERVAL_MS = 2500;
-const POLL_MAX_ATTEMPTS = 36; // 90 seconds
+const POLL_MAX_MS = 3 * 60 * 1000;
+// A UPI payment can read "failed" and then flip to paid seconds later, so a failure is shown only once it has held this long.
+const FAILED_GRACE_MS = 45 * 1000;
+/** What a check can be about: only ever one of these two, never anything the URL says. */
+const RESUME_PATTERN = /^(paymentId|subscriptionId)=[A-Za-z0-9_-]{4,64}$/;
 
 type PayState = 'idle' | 'creating_order' | 'checkout_open' | 'confirming' | 'timeout';
 
@@ -71,8 +82,13 @@ function CheckoutContent() {
   const [payState, setPayState] = useState<PayState>('idle');
   const [payError, setPayError] = useState<string | null>(null);
   const [cycle, setCycle] = useState<BillingCycleChoice | null>(null);
+  const asked = searchParams.get('mode');
+  const [chosenMode, setMode] = useState<PayMode | null>(asked === 'once' || asked === 'auto' ? asked : null);
 
   const pollStopRef = useRef<(() => void) | null>(null);
+  // Runs one check right now; set while a check is running. A phone coming back from its UPI app calls it.
+  const checkNowRef = useRef<(() => void) | null>(null);
+  const lastQueryRef = useRef<string | null>(null);
 
   const mainAppUrl = process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://localhost:3000';
   // Organizer URLs are /org/[orgSlug]/…; bare /org opens the signed-in user's active org (keeps the query).
@@ -99,7 +115,12 @@ function CheckoutContent() {
         if (res.success) {
           setSessionData(res.data);
           const cycles = availableCyclesForPlan(res.data.plan);
-          setCycle(cycles[0] || null);
+          // The Billing page passes the cycle the org is on, so "turn on automatic renewal" lands on it.
+          const asked = searchParams.get('cycle') as BillingCycleChoice | null;
+          setCycle(asked && cycles.includes(asked) ? asked : cycles[0] || null);
+          // Back from a UPI app (or the page was reloaded while paying): carry on checking the same payment.
+          const resume = searchParams.get('resume');
+          if (resume && RESUME_PATTERN.test(resume)) pollPaymentStatus(resume);
         } else {
           setError(res.message || 'Failed to verify checkout session.');
         }
@@ -110,9 +131,22 @@ function CheckoutContent() {
       })
       .finally(() => setLoading(false));
 
+    // iPhone Safari pauses this page while a UPI app is in front. The moment it is shown again, check at once
+    // instead of waiting for a timer that was frozen.
+    const onShown = () => {
+      if (document.visibilityState === 'visible') checkNowRef.current?.();
+    };
+    document.addEventListener('visibilitychange', onShown);
+    window.addEventListener('pageshow', onShown);
+    window.addEventListener('focus', onShown);
+
     return () => {
+      document.removeEventListener('visibilitychange', onShown);
+      window.removeEventListener('pageshow', onShown);
+      window.removeEventListener('focus', onShown);
       if (pollStopRef.current) pollStopRef.current();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read once on load
   }, [token]);
 
   const availableCycles = useMemo(
@@ -120,10 +154,22 @@ function CheckoutContent() {
     [sessionData]
   );
 
+  const canAuto = !!sessionData?.autoDebit?.available && !!cycle && AUTO_CYCLES.includes(cycle);
+  // Unasked, a change of plan with paid time left defaults to paying now: automatic renewal would only switch at the period end.
+  const mode: PayMode = chosenMode ?? (sessionData?.autoDebit?.firstChargeAt ? 'once' : 'auto');
+  const auto = canAuto && mode === 'auto';
+  // Already paying this plan automatically: going through again swaps the card, UPI or bank mandate.
+  const changingMethod =
+    auto && sessionData?.autoDebit.current?.planId === sessionData?.plan.id && sessionData?.autoDebit.current?.billingCycle === cycle;
+  const firstChargeAt = sessionData?.autoDebit?.firstChargeAt ?? null;
+  const scheduled = !auto && !!cycle && !!sessionData?.change?.scheduledCycles.includes(cycle);
+
   const pricing = useMemo(() => {
     if (!sessionData?.plan || !cycle) return null;
     try {
       const baseAmount = resolvePlanCyclePrice(sessionData.plan, cycle);
+      // Automatic renewal charges the full price each cycle; the first charge waits for paid time to run out instead of crediting it.
+      if (auto) return { ...calculateSubscriptionPricing(baseAmount), creditApplied: 0 };
       const currentSub = sessionData.currentSubscription;
 
       // Same-plan-same-cycle renewal while still active isn't priceable here —
@@ -142,53 +188,90 @@ function CheckoutContent() {
     } catch {
       return null;
     }
-  }, [sessionData, cycle]);
+  }, [sessionData, cycle, auto]);
 
   const alreadySubscribedToSelected =
+    !auto &&
     sessionData?.currentSubscription &&
     sessionData.currentSubscription.planId === sessionData?.plan?.id &&
     sessionData.currentSubscription.billingCycle === cycle;
 
   function stopPolling() {
+    checkNowRef.current = null;
     if (pollStopRef.current) {
       pollStopRef.current();
       pollStopRef.current = null;
     }
   }
 
-  function pollPaymentStatus(paymentId: string) {
-    let attempts = 0;
-    setPayState('confirming');
+  /**
+   * Waits until the payment or mandate is settled. The server asks Razorpay itself on every check, so this
+   * does not depend on the webhook, on Razorpay's popup calling back, or on this page staying in front.
+   * One-time orders end PAID or FAILED; a mandate ends authorised or cancelled.
+   */
+  function pollPaymentStatus(query: string, quiet = false) {
+    stopPolling();
+    lastQueryRef.current = query;
+    const startedAt = Date.now();
+    let failedSince: number | null = null;
+    let running = false;
+    let done = false;
+    // quiet: started while Razorpay's window is open, so a phone that never gets the window's callback
+    // still lands on the result.
+    if (!quiet) setPayState('confirming');
 
-    const intervalId = setInterval(async () => {
-      attempts++;
+    const finish = (result: 'success' | 'failed') => {
+      done = true;
+      stopPolling();
+      window.location.href = billingUrl(`&subscription=${result}`);
+    };
+
+    const check = async () => {
+      if (running || done) return;
+      running = true;
       try {
-        const res = await fetch(`/api/v1/billing-portal/subscription/status?paymentId=${paymentId}`);
+        const res = await fetch(`/api/v1/billing-portal/subscription/status?${query}`, { cache: 'no-store' });
         const body = await res.json();
         const status = body?.data?.status;
 
-        if (status === 'PAID') {
-          stopPolling();
-          window.location.href = billingUrl('&subscription=success');
-          return;
-        }
-        if (status === 'FAILED') {
-          stopPolling();
-          window.location.href = billingUrl('&subscription=failed');
-          return;
+        if (status === 'PAID' || status === 'authenticated' || status === 'active') return finish('success');
+        if (status === 'FAILED' || status === 'cancelled' || status === 'expired') {
+          failedSince ??= Date.now();
+          if (Date.now() - failedSince >= FAILED_GRACE_MS) return finish('failed');
+        } else {
+          failedSince = null;
         }
       } catch {
-        // transient network error while polling — keep trying until max attempts
+        // transient network error: keep trying until the time is up
+      } finally {
+        running = false;
       }
-
-      if (attempts >= POLL_MAX_ATTEMPTS) {
+      if (!done && Date.now() - startedAt >= POLL_MAX_MS) {
         stopPolling();
-        setPayState('timeout');
+        if (!quiet) setPayState('timeout');
       }
-    }, POLL_INTERVAL_MS);
+    };
 
+    const intervalId = setInterval(check, POLL_INTERVAL_MS);
     pollStopRef.current = () => clearInterval(intervalId);
+    checkNowRef.current = check;
+    void check();
   }
+
+  /** The address Razorpay sends a phone back to when it cannot call this page: it comes straight back here, checking. */
+  const returnUrl = (query: string) =>
+    `${window.location.origin}/billing/checkout/return?token=${encodeURIComponent(token ?? '')}&resume=${encodeURIComponent(query)}`;
+
+  /** Keeps the payment in the address, so a reload (iOS may reload a tab it paused) carries on checking it. */
+  const rememberPayment = (query: string) => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('resume', query);
+      window.history.replaceState(null, '', url.toString());
+    } catch {
+      /* address bar only; nothing depends on it */
+    }
+  };
 
   const handlePay = async () => {
     if (!cycle) {
@@ -198,6 +281,9 @@ function CheckoutContent() {
 
     setPayError(null);
     setPayState('creating_order');
+
+    if (auto) return startAutoDebit(cycle);
+    if (scheduled) return scheduleChange(cycle);
 
     try {
       const res = await fetch('/api/v1/billing-portal/subscription/order', {
@@ -228,8 +314,11 @@ function CheckoutContent() {
         amount,
         currency,
         name: 'QuizBuzz Subscription',
-        description: `Plan: ${planName} (${cycle === 'ANNUAL' ? 'Annual' : 'Monthly'})`,
+        description: `Plan: ${planName} (${cycle ? cycleLabel(cycle) : ''})`,
         order_id: orderId,
+        // Phones: when a UPI app finishes and this page can't be called back, Razorpay opens this instead.
+        callback_url: returnUrl(`paymentId=${paymentId}`),
+        redirect: false,
         prefill: {
           name: session.adminName || '',
           email: session.adminEmail || '',
@@ -249,13 +338,14 @@ function CheckoutContent() {
           } catch (err) {
             console.error('Payment verify call failed, will still poll for webhook confirmation:', err);
           }
-          pollPaymentStatus(paymentId);
+          pollPaymentStatus(`paymentId=${paymentId}`);
         },
         modal: {
           ondismiss: function () {
             // No status-changing call — the order simply stays CREATED/PENDING
             // and the admin can retry. The webhook remains the only writer
             // of a terminal status.
+            stopPolling();
             setPayState('idle');
           },
         },
@@ -264,9 +354,75 @@ function CheckoutContent() {
       setPayState('checkout_open');
       const rzp = new window.Razorpay(options);
       rzp.open();
+      rememberPayment(`paymentId=${paymentId}`);
+      pollPaymentStatus(`paymentId=${paymentId}`, true);
     } catch (err) {
       console.error('Payment error:', err);
       setPayError(errorMessage(err) || 'An unexpected error occurred processing payment.');
+      setPayState('idle');
+    }
+  };
+
+  /** A downgrade: nothing is charged, the plan switches when the paid period ends. */
+  const scheduleChange = async (billingCycle: BillingCycleChoice) => {
+    try {
+      const res = await fetch('/api/v1/billing-portal/subscription/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, billingCycle }),
+      });
+      const body = await res.json();
+      if (!body.success) {
+        setPayError(body.message || 'Could not schedule the change.');
+        setPayState('idle');
+        return;
+      }
+      window.location.href = billingUrl('&subscription=scheduled');
+    } catch (err) {
+      setPayError(errorMessage(err) || 'An unexpected error occurred.');
+      setPayState('idle');
+    }
+  };
+
+  /** Razorpay's checkout with a subscription_id asks the customer to approve a UPI AutoPay, card or bank mandate. */
+  const startAutoDebit = async (billingCycle: BillingCycleChoice) => {
+    try {
+      const res = await fetch('/api/v1/billing-portal/subscription/autodebit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, billingCycle }),
+      });
+      const body = await res.json();
+      if (!body.success) {
+        setPayError(body.message || 'Could not set up automatic payment.');
+        setPayState('idle');
+        return;
+      }
+      const session = sessionData?.session;
+      if (!session || typeof window === 'undefined' || !window.Razorpay) {
+        setPayError('Payment gateway failed to load. Please refresh the page and try again.');
+        setPayState('idle');
+        return;
+      }
+      const { subscriptionId, keyId, planName } = body.data;
+      setPayState('checkout_open');
+      new window.Razorpay({
+        key: keyId,
+        subscription_id: subscriptionId,
+        callback_url: returnUrl(`subscriptionId=${subscriptionId}`),
+        redirect: false,
+        name: 'QuizBuzz Subscription',
+        description: `${planName}, renews ${cycleLabel(billingCycle).toLowerCase()}`,
+        prefill: { name: session.adminName || '', email: session.adminEmail || '' },
+        theme: { color: RAZORPAY_BRAND_TEAL },
+        // Only the webhook changes anything; this just starts waiting for it.
+        handler: () => pollPaymentStatus(`subscriptionId=${subscriptionId}`),
+        modal: { ondismiss: () => { stopPolling(); setPayState('idle'); } },
+      }).open();
+      rememberPayment(`subscriptionId=${subscriptionId}`);
+      pollPaymentStatus(`subscriptionId=${subscriptionId}`, true);
+    } catch (err) {
+      setPayError(errorMessage(err) || 'An unexpected error occurred.');
       setPayState('idle');
     }
   };
@@ -331,10 +487,18 @@ function CheckoutContent() {
             </h2>
             <p className="text-muted-foreground text-sm mt-2">
               {payState === 'timeout'
-                ? "This is taking longer than usual. Your payment may still be processing — check back on the billing page in a few minutes before retrying."
+                ? "We haven't heard back yet. If money left your account, don't pay again: tap Check again and we'll confirm it with Razorpay. Any amount taken for a failed payment is refunded automatically."
                 : "We're verifying your payment with Razorpay. This usually takes a few seconds."}
             </p>
           </div>
+          {payState === 'timeout' && lastQueryRef.current && (
+            <button
+              onClick={() => pollPaymentStatus(lastQueryRef.current!)}
+              className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-colors text-sm cursor-pointer"
+            >
+              Check again
+            </button>
+          )}
           {payState === 'timeout' && (
             <button
               onClick={() => (window.location.href = billingUrl())}
@@ -398,7 +562,7 @@ function CheckoutContent() {
 
             {/* Billing cycle toggle */}
             {availableCycles.length > 1 ? (
-              <div className="grid grid-cols-2 gap-2 mb-4">
+              <div className={`grid gap-2 mb-4 ${availableCycles.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 {availableCycles.map((c) => (
                   <button
                     key={c}
@@ -410,16 +574,39 @@ function CheckoutContent() {
                         : 'bg-background text-muted-foreground border-border/60 hover:border-primary/40'
                     }`}
                   >
-                    {c === 'ANNUAL' ? 'Annual' : 'Monthly'}
+                    {cycleLabel(c)}
                   </button>
                 ))}
               </div>
             ) : (
               availableCycles.length === 1 && (
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium mb-4">
-                  Billing: {availableCycles[0] === 'ANNUAL' ? 'Annual' : 'Monthly'}
+                  Billing: {cycleLabel(availableCycles[0])}
                 </div>
               )
+            )}
+
+            {canAuto && (
+              <div role="radiogroup" aria-label="How to pay" className="grid grid-cols-2 gap-2 mb-4">
+                {([
+                  ['auto', 'Renew automatically', 'UPI AutoPay, card or bank mandate'],
+                  ['once', 'Pay once', 'Renew yourself each time'],
+                ] as const).map(([value, label, hint]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === value}
+                    onClick={() => setMode(value)}
+                    className={`text-left py-2.5 px-3 rounded-xl border transition-colors cursor-pointer ${
+                      mode === value ? 'border-primary bg-primary/10' : 'border-border/60 hover:border-primary/40'
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold text-foreground">{label}</span>
+                    <span className="block text-[11px] text-muted-foreground">{hint}</span>
+                  </button>
+                ))}
+              </div>
             )}
 
             {/* Features */}
@@ -439,7 +626,15 @@ function CheckoutContent() {
           </div>
 
           {/* Price Breakdown */}
-          {alreadySubscribedToSelected ? (
+          {scheduled && pricing ? (
+            <div className="text-xs text-muted-foreground pt-5 border-t border-border/50 mb-2 bg-muted/30 rounded-xl p-4 space-y-1">
+              <p className="text-foreground font-semibold">Nothing to pay now.</p>
+              <p>
+                You stay on {sessionData.change.currentPlanName} until {new Date(sessionData.change.on ?? '').toLocaleDateString()}. From then you&apos;re on {plan.name},{' '}
+                {formatInr(pricing.totalAmount, { fixed: 2 })} including GST each {cycle ? cycleLabel(cycle).toLowerCase() : ''} renewal.
+              </p>
+            </div>
+          ) : alreadySubscribedToSelected ? (
             <div className="text-xs text-muted-foreground pt-5 border-t border-border/50 mb-2 bg-muted/30 rounded-xl p-4">
               You&apos;re already subscribed to this plan until{' '}
               {new Date(sessionData.currentSubscription?.currentPeriodEnd ?? '').toLocaleDateString()}. Pick a different plan
@@ -450,7 +645,7 @@ function CheckoutContent() {
               {pricing.creditApplied > 0 && (
                 <>
                   <div className="flex justify-between text-muted-foreground">
-                    <span>{sessionData.currentSubscription?.planName || 'Current plan'} — full price ({cycle === 'ANNUAL' ? 'annual' : 'monthly'})</span>
+                    <span>{sessionData.currentSubscription?.planName || 'Current plan'} — full price ({cycleLabel(sessionData.currentSubscription?.billingCycle ?? cycle ?? '').toLowerCase()})</span>
                     <span>{formatInr(pricing.baseAmount + pricing.creditApplied, { fixed: 2 })}</span>
                   </div>
                   <div className="flex justify-between text-success">
@@ -460,21 +655,20 @@ function CheckoutContent() {
                 </>
               )}
               <div className="flex justify-between text-muted-foreground">
-                <span>Subscription ({cycle === 'ANNUAL' ? 'annual' : 'monthly'}){pricing.creditApplied > 0 ? ', after credit' : ''}</span>
+                <span>Subscription ({cycle ? cycleLabel(cycle).toLowerCase() : ''}){pricing.creditApplied > 0 ? ', after credit' : ''}</span>
                 <span>{formatInr(pricing.baseAmount, { fixed: 2 })}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
-                <span>Payment gateway fee (2%)</span>
-                <span>{formatInr(pricing.gatewayFeeAmount, { fixed: 2 })}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>GST on gateway fee (18%)</span>
+                <span>GST (18%)</span>
                 <span>{formatInr(pricing.gstAmount, { fixed: 2 })}</span>
               </div>
               <div className="flex justify-between text-base font-bold text-foreground pt-3 border-t border-dashed border-border/60">
-                <span>Total Amount Due Now</span>
+                <span>{auto && firstChargeAt ? `First charge on ${new Date(firstChargeAt).toLocaleDateString()}` : auto ? 'Charged today, then each cycle' : 'Total Amount Due Now'}</span>
                 <span className="text-primary text-lg">{formatInr(pricing.totalAmount, { fixed: 2 })}</span>
               </div>
+              {auto && firstChargeAt && (
+                <p className="text-[11px] text-muted-foreground">Nothing is charged today: your current plan is already paid until then.</p>
+              )}
               {pricing.creditApplied > 0 && (
                 <p className="text-[11px] text-muted-foreground italic">
                   Estimated — the exact amount is recalculated when you click Pay.
@@ -488,7 +682,11 @@ function CheckoutContent() {
           )}
 
           <p className="text-[11px] text-muted-foreground mb-6">
-            This is a one-time charge for the selected period — no auto-renewal. You&apos;ll need to return here to renew when the period ends.
+            {auto
+              ? `Razorpay will ask you to approve automatic payments of ${pricing ? formatInr(pricing.totalAmount, { fixed: 2 }) : 'this amount'} ${cycle === 'HALF_YEARLY' ? 'every 6 months' : 'every month'}. Turn them off any time from your Billing page.`
+              : scheduled
+                ? 'You can keep your current plan from the Billing page until then.'
+                : 'This is a one-time charge for the selected period — no auto-renewal. You’ll need to return here to renew when the period ends.'}
           </p>
 
           {payError && (
@@ -515,7 +713,15 @@ function CheckoutContent() {
               ) : (
                 <>
                   <CreditCard className="w-5 h-5" />
-                  <span>Pay {pricing ? `${formatInr(pricing.totalAmount, { fixed: 2 })}` : ''} via Razorpay</span>
+                  <span>
+                    {scheduled
+                      ? `Switch to ${plan.name} on ${new Date(sessionData.change.on ?? '').toLocaleDateString()}`
+                      : changingMethod
+                      ? 'Update payment method'
+                      : auto && firstChargeAt
+                        ? 'Set up automatic renewal'
+                        : `Pay ${pricing ? formatInr(pricing.totalAmount, { fixed: 2 }) : ''}${auto ? ' and renew automatically' : ' via Razorpay'}`}
+                  </span>
                   <ArrowRight className="w-5 h-5 ml-1" />
                 </>
               )}

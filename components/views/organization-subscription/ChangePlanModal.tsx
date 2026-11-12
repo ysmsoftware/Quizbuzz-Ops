@@ -9,10 +9,14 @@ import { formatInr } from '@/lib/format';
 interface ChangePlanModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (selectedPlanId: string, reason: string) => Promise<void>;
+  onSubmit: (input: { planId: string; reason: string; when: 'now' | 'period_end'; billingCycle?: 'MONTHLY' | 'HALF_YEARLY' | 'ANNUAL' }) => Promise<void>;
+  /** Set when the org has paid time left, so the change can wait for it. */
+  periodEnd?: string | null;
   plans: SubscriptionPlan[];
   currentPlanId: string;
   isSubmitting: boolean;
+  /** Opens the org's Invoices tab, for a plan whose money has not come in yet. */
+  onUseInvoice?: () => void;
 }
 
 export default function ChangePlanModal({
@@ -22,16 +26,33 @@ export default function ChangePlanModal({
   plans,
   currentPlanId,
   isSubmitting,
+  periodEnd,
+  onUseInvoice,
 }: ChangePlanModalProps) {
   const [selectedPlanId, setSelectedPlanId] = useState(currentPlanId);
   const [reason, setReason] = useState('');
+  const [when, setWhen] = useState<'now' | 'period_end'>('now');
+  const [cycle, setCycle] = useState<'' | 'MONTHLY' | 'HALF_YEARLY' | 'ANNUAL'>('');
+  // Switching a plan here gives a full paid period at once, so for a plan that costs money say whether it was paid.
+  const [payment, setPayment] = useState<'' | 'received' | 'invoice'>('');
+  const [reference, setReference] = useState('');
+  const selected = plans.find((p) => p.id === selectedPlanId);
+  const cycles = selected ? ([['MONTHLY', selected.allowsMonthly], ['HALF_YEARLY', selected.allowsHalfYearly], ['ANNUAL', selected.allowsAnnual]] as const).filter(([, ok]) => ok).map(([c]) => c) : [];
+
+  const priceOfCycle = selected
+    ? ({ MONTHLY: selected.monthlyPrice, HALF_YEARLY: selected.halfYearlyPrice, ANNUAL: selected.annualPrice } as const)[cycle || cycles[0] || 'MONTHLY']
+    : null;
+  const needsPaymentAnswer = !!selected && selectedPlanId !== currentPlanId && (priceOfCycle ?? 0) > 0 && when === 'now';
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlanId || selectedPlanId === currentPlanId) return;
-    await onSubmit(selectedPlanId, reason);
+    if (needsPaymentAnswer && payment === 'invoice') return onUseInvoice?.();
+    // The payment note rides in the audit reason, so the history shows what was received and where from.
+    const note = needsPaymentAnswer && payment === 'received' ? `Payment received${reference.trim() ? ` (ref: ${reference.trim()})` : ''}` : '';
+    await onSubmit({ planId: selectedPlanId, reason: [note, reason.trim()].filter(Boolean).join('. '), when, billingCycle: cycle || undefined });
   };
 
   return (
@@ -101,6 +122,42 @@ export default function ChangePlanModal({
               </div>
             </div>
 
+            {cycles.length > 1 && (
+              <div>
+                <label htmlFor="cp-cycle" className="block font-semibold text-foreground mb-1">Billing cycle</label>
+                <select id="cp-cycle" value={cycle} onChange={(e) => setCycle(e.target.value as typeof cycle)} className="w-full px-3 py-2 rounded-md bg-background border border-input">
+                  <option value="">The plan&apos;s default</option>
+                  {cycles.map((c) => <option key={c} value={c}>{c === 'MONTHLY' ? 'Monthly' : c === 'HALF_YEARLY' ? 'Every 6 months' : 'Yearly'}</option>)}
+                </select>
+              </div>
+            )}
+
+            {periodEnd && new Date(periodEnd) > new Date() && (
+              <fieldset className="space-y-1">
+                <legend className="block font-semibold text-foreground mb-1">When</legend>
+                <label className="flex items-center gap-2"><input type="radio" name="cp-when" checked={when === 'now'} onChange={() => setWhen('now')} /> Now, with a fresh period</label>
+                <label className="flex items-center gap-2"><input type="radio" name="cp-when" checked={when === 'period_end'} onChange={() => setWhen('period_end')} /> At the period end, {new Date(periodEnd).toLocaleDateString()}: they keep what they paid for</label>
+              </fieldset>
+            )}
+
+            {needsPaymentAnswer && (
+              <fieldset className="space-y-1.5 rounded-lg border border-border/60 p-3">
+                <legend className="px-1 font-semibold text-foreground">Has {formatInr(priceOfCycle ?? 0)} been paid?</legend>
+                <p className="text-muted-foreground">Switching now gives a full paid period straight away, and the next charge is a period later.</p>
+                <label className="flex items-center gap-2"><input type="radio" name="cp-pay" checked={payment === 'received'} onChange={() => setPayment('received')} /> Yes, the payment is received</label>
+                {payment === 'received' && (
+                  <input
+                    type="text"
+                    value={reference}
+                    onChange={(e) => setReference(e.target.value)}
+                    placeholder="Reference: UTR, cheque number or note (optional)"
+                    className="w-full px-3 py-2 rounded-md bg-background border border-input"
+                  />
+                )}
+                <label className="flex items-center gap-2"><input type="radio" name="cp-pay" checked={payment === 'invoice'} onChange={() => setPayment('invoice')} /> Not yet: issue an invoice and start the plan when it is paid</label>
+              </fieldset>
+            )}
+
             <div>
               <label className="block font-semibold text-foreground mb-1">Reason / Notes for Audit Log</label>
               <input
@@ -122,10 +179,10 @@ export default function ChangePlanModal({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || !selectedPlanId || selectedPlanId === currentPlanId}
+                disabled={isSubmitting || !selectedPlanId || selectedPlanId === currentPlanId || (needsPaymentAnswer && !payment)}
                 className="px-3.5 py-1.5 text-xs font-semibold rounded-md bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50"
               >
-                {isSubmitting ? 'Migrating...' : 'Confirm Plan Switch'}
+                {isSubmitting ? 'Saving...' : needsPaymentAnswer && payment === 'invoice' ? 'Go to Invoices' : when === 'period_end' ? 'Schedule change' : 'Confirm Plan Switch'}
               </button>
             </div>
           </form>

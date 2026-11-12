@@ -1,3 +1,4 @@
+import type { OrgProfileType } from '../../../lib/constants/org-profile-types';
 import { prisma } from '../../db/ops-prisma';
 import { queryMainDb } from '../../db/main-db-pool';
 import { FeatureFlag, FeatureFlagOrgOverride } from '@prisma/client';
@@ -29,6 +30,9 @@ export interface IFeatureFlagsRepository {
   listActiveOverridesForOrg(organizationId: string): Promise<FeatureFlagOrgOverride[]>;
   /** The same org's overrides as the main app holds them. */
   getMainOverridesForOrg(organizationId: string): Promise<Array<MainOverrideRow & { key: string }>>;
+  /** The org's type as the main app sees it (not set = INDIVIDUAL). */
+  getMainOrgProfileType(organizationId: string): Promise<OrgProfileType>;
+  getMainOrgPlanFeatures(organizationId: string): Promise<Record<string, boolean> | null>;
   /** flagKey → organizations with an active, enabled, non-expired override. */
   countGrantedByFlag(): Promise<Map<string, number>>;
 }
@@ -139,6 +143,23 @@ export class FeatureFlagsRepository implements IFeatureFlagsRepository {
       `SELECT key, "organizationId", "isEnabled", "expiresAt" FROM organization_feature_flag_overrides WHERE "organizationId" = $1`,
       [organizationId]
     );
+  }
+
+  /** The plan's feature switches as the main app sees them. Null: no cache yet, so Free applies. */
+  async getMainOrgPlanFeatures(organizationId: string): Promise<Record<string, boolean> | null> {
+    const rows = await queryMainDb<{ cache: { features?: Record<string, boolean> } | null }>(
+      `SELECT "planLimitsCache" AS cache FROM organizations WHERE id = $1`,
+      [organizationId],
+    );
+    return rows[0]?.cache ? (rows[0].cache.features ?? {}) : null;
+  }
+
+  async getMainOrgProfileType(organizationId: string): Promise<OrgProfileType> {
+    const rows = await queryMainDb<{ profileType: OrgProfileType | null }>(
+      `SELECT "profileType" FROM organization_profiles WHERE "organizationId" = $1`,
+      [organizationId]
+    );
+    return rows[0]?.profileType ?? 'INDIVIDUAL';
   }
 
   async countGrantedByFlag() {

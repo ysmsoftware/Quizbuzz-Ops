@@ -6,7 +6,7 @@ import { useOrganizationDetail } from '@/lib/hooks/useOrganizations';
 import { usePlans } from '@/lib/hooks/usePlans';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
-import { Globe, Users, Trophy, User, CreditCard, Notebook, Layers, Landmark, GraduationCap, ToggleRight, type LucideIcon } from 'lucide-react';
+import { Globe, Users, Trophy, User, CreditCard, FileText, Notebook, Layers, Landmark, GraduationCap, ToggleRight, type LucideIcon } from 'lucide-react';
 
 import OrgDetailHeader from './organization-detail/OrgDetailHeader';
 import OrgOverviewTab from './organization-detail/tabs/OrgOverviewTab';
@@ -18,10 +18,12 @@ import OrgPayoutAccountTab from './organization-detail/tabs/OrgPayoutAccountTab'
 import OrgNotesTab from './organization-detail/tabs/OrgNotesTab';
 import OrgInstitutionTab from './organization-detail/tabs/OrgInstitutionTab';
 import OrgFeaturesTab from './organization-detail/tabs/OrgFeaturesTab';
+import OrgInvoicesTab from './invoices/OrgInvoicesTab';
 import OrganizationSubscriptionTab from './OrganizationSubscriptionTab';
 
-import OrgEditModal from './organization-detail/modals/OrgEditModal';
+import OrgEditModal, { type OrgEditFields } from './organization-detail/modals/OrgEditModal';
 import OrgSuspendModal from './organization-detail/modals/OrgSuspendModal';
+import OrgReactivateModal from './organization-detail/modals/OrgReactivateModal';
 import OrgDeleteModal from './organization-detail/modals/OrgDeleteModal';
 import { useResetOnChange } from '@/lib/hooks/useResetOnChange';
 import { errorMessage } from '@/lib/errors';
@@ -31,7 +33,7 @@ interface DetailViewProps {
   onBack?: () => void;
 }
 
-type DetailTab = 'overview' | 'members' | 'contests' | 'participants' | 'institution' | 'features' | 'payments' | 'payout_account' | 'notes' | 'subscription';
+type DetailTab = 'overview' | 'members' | 'contests' | 'participants' | 'institution' | 'features' | 'payments' | 'invoices' | 'payout_account' | 'notes' | 'subscription';
 
 export default function OrganizationDetailView({ orgId, onBack }: DetailViewProps) {
   const router = useRouter();
@@ -69,22 +71,25 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
 
   // Dialog States
   const [isSuspendOpen, setIsSuspendOpen] = useState(false);
+  const [isReactivateOpen, setIsReactivateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
 
   // Edit Form Fields State
-  const [editFields, setEditFields] = useState({
+  const [editFields, setEditFields] = useState<OrgEditFields>({
     name: '',
     logoUrl: '',
+    profileType: 'INDIVIDUAL',
   });
 
   // Populate Edit Fields when organization is loaded
-  useResetOnChange(`${organization?.id}|${organization?.name}|${organization?.logoUrl}|${organization?.hasCustomLogo}`, () => {
+  useResetOnChange(`${organization?.id}|${organization?.name}|${organization?.logoUrl}|${organization?.hasCustomLogo}|${organization?.profileType}`, () => {
     if (organization) {
       setEditFields({
         name: organization.name,
         logoUrl: organization.hasCustomLogo ? organization.logoUrl : '',
+        profileType: organization.profileType ?? 'INDIVIDUAL',
       });
     }
   });
@@ -136,7 +141,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateOrg({ name: editFields.name.trim(), logoUrl: editFields.logoUrl.trim() || null });
+      await updateOrg({ name: editFields.name.trim(), logoUrl: editFields.logoUrl.trim() || null, profileType: editFields.profileType });
       toast('Profile Updated', 'Organization modifications have been saved.', 'success');
       setIsEditOpen(false);
     } catch (err) {
@@ -163,6 +168,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
   const handleReactivateClick = async () => {
     try {
       await activateOrg();
+      setIsReactivateOpen(false);
       toast('Organization Reactivated', `"${organization.name}" operations are restored.`, 'success');
     } catch (err) {
       toast('Activation Failed', errorMessage(err) || 'Operation failed.', 'error');
@@ -196,6 +202,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
     { id: 'institution', label: 'Institution', icon: GraduationCap },
     { id: 'features', label: 'Features', icon: ToggleRight },
     { id: 'payments', label: 'Payments', icon: CreditCard },
+    { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'payout_account', label: 'Payout Account', icon: Landmark },
     { id: 'notes', label: 'Support Notes', icon: Notebook },
     { id: 'subscription', label: 'Subscription', icon: Layers },
@@ -210,7 +217,7 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
         onBackClick={handleBackClick}
         onOpenEdit={() => setIsEditOpen(true)}
         onOpenSuspend={() => setIsSuspendOpen(true)}
-        onReactivate={handleReactivateClick}
+        onReactivate={() => setIsReactivateOpen(true)}
         onOpenDelete={() => setIsDeleteOpen(true)}
         onRestore={handleRestore}
         isActivating={isActivating}
@@ -285,6 +292,8 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
           />
         )}
 
+        {activeTab === 'invoices' && <OrgInvoicesTab orgId={organization.id} role={admin?.role} />}
+
         {activeTab === 'payout_account' && (
           <OrgPayoutAccountTab
             orgId={organization.id}
@@ -302,18 +311,28 @@ export default function OrganizationDetailView({ orgId, onBack }: DetailViewProp
         )}
 
         {activeTab === 'subscription' && (
-          <OrganizationSubscriptionTab organization={organization} payments={payments} />
+          <OrganizationSubscriptionTab organization={organization} payments={payments} onOpenInvoices={() => setActiveTab('invoices')} />
         )}
       </div>
 
       {/* Modals */}
       <OrgEditModal
+        orgId={orgId}
+        savedType={organization.profileType ?? null}
         isOpen={isEditOpen}
         onClose={() => setIsEditOpen(false)}
         editFields={editFields}
         setEditFields={setEditFields}
         isUpdating={isUpdating}
         onSubmit={handleEditSubmit}
+      />
+
+      <OrgReactivateModal
+        isOpen={isReactivateOpen}
+        onClose={() => setIsReactivateOpen(false)}
+        orgName={organization.name}
+        isActivating={isActivating}
+        onConfirm={handleReactivateClick}
       />
 
       <OrgSuspendModal

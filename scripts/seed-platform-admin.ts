@@ -5,12 +5,13 @@
  * design), so the very first admin account has to be inserted directly.
  * Safe to re-run — upserts by email, so it won't create duplicates.
  *
- * Usage:
- *   npx tsx scripts/seed-platform-admin.ts
- *
- * Override the defaults via env vars if you ever need to seed a different
- * account without editing this file:
- *   SEED_ADMIN_EMAIL=someone@else.com SEED_ADMIN_PASSWORD=... npx tsx scripts/seed-platform-admin.ts
+ * The email and password come only from environment variables set in the terminal. Never put
+ * them in this file, in .env, or anywhere else in the repo. To keep the password out of shell
+ * history, type it at the prompt:
+ *   export SEED_ADMIN_EMAIL=you@example.com
+ *   read -rs SEED_ADMIN_PASSWORD && export SEED_ADMIN_PASSWORD
+ *   npm run seed:platform-admin
+ *   unset SEED_ADMIN_EMAIL SEED_ADMIN_PASSWORD
  */
 import bcrypt from 'bcryptjs';
 import { PlatformAdminRole } from '@prisma/client';
@@ -52,11 +53,17 @@ async function seedPlatformAdmin(input: SeedAdminInput): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  const email = process.env.SEED_ADMIN_EMAIL;
+  const password = process.env.SEED_ADMIN_PASSWORD;
+  if (!email || !password) {
+    throw new Error('SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD must be set');
+  }
+
   const input: SeedAdminInput = {
-    email: process.env.SEED_ADMIN_EMAIL || 'admin@example.com',
-    password: process.env.SEED_ADMIN_PASSWORD || 'REMOVED-rotate-me',
-    firstName: process.env.SEED_ADMIN_FIRST_NAME || 'Austin',
-    lastName: process.env.SEED_ADMIN_LAST_NAME || 'Makasare',
+    email,
+    password,
+    firstName: process.env.SEED_ADMIN_FIRST_NAME || 'Admin',
+    lastName: process.env.SEED_ADMIN_LAST_NAME,
     role: PlatformAdminRole.SUPER_ADMIN,
   };
 

@@ -98,7 +98,8 @@ export class MessagingRepository implements IMessagingRepository {
 
   /**
    * Forward-only state transitions: QUEUED -> PROCESSING -> SENT/DELIVERED,
-   * with FAILED -> QUEUED allowed explicitly as a retry, and a same-state
+   * with FAILED/SENT/DELIVERED -> QUEUED allowed explicitly as a retry or
+   * operator resend (only retryMessage/retryFailedMessages do this), and a same-state
    * write treated as a no-op (BullMQ can redeliver a stalled job and hit
    * this twice). Prevents a delayed/duplicate worker tick from reverting an
    * already-SENT message back to PROCESSING.
@@ -111,8 +112,8 @@ export class MessagingRepository implements IMessagingRepository {
     const targetOrder = STATUS_ORDER[toStatus] ?? -1;
 
     if (toStatus === 'QUEUED') {
-      if (current.status !== 'FAILED') {
-        throw new Error(`Cannot reset status to QUEUED unless it is FAILED. Current status: ${current.status}`);
+      if (current.status === 'QUEUED' || current.status === 'PROCESSING') {
+        throw new Error(`Cannot re-queue a message that is still ${current.status}`);
       }
     } else if (current.status === 'FAILED' && toStatus === 'PROCESSING') {
       // BullMQ retry re-enters PROCESSING directly without cycling through QUEUED first — valid.

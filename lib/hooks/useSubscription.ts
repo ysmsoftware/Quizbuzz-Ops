@@ -5,12 +5,15 @@ import {
   getOrganizationSubscription,
   assignInitialSubscriptionPlan,
   changeOrganizationPlan,
+  cancelScheduledPlanChange,
+  type PlanChangeInput,
   addSubscriptionOverride,
   removeSubscriptionOverride,
   getPlanChangeHistory,
   getUsageSnapshot,
   resendRenewalReminder,
-  grantAiBonusCredits,
+  updateSubscriptionAccess,
+  AccessUpdate,
 } from '@/lib/api/organizations';
 import { SubscriptionOverride } from '@/lib/types';
 
@@ -45,7 +48,7 @@ export function useSubscription(orgId: string) {
   });
 
   const changePlanMutation = useMutation({
-    mutationFn: ({ planId }: { planId: string }) => changeOrganizationPlan(orgId, planId),
+    mutationFn: (input: PlanChangeInput) => changeOrganizationPlan(orgId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations'] });
       queryClient.invalidateQueries({ queryKey: ['plans'] });
@@ -73,10 +76,18 @@ export function useSubscription(orgId: string) {
     }
   });
 
-  const grantAiBonusMutation = useMutation({
-    mutationFn: ({ amount, reason }: { amount: number; reason: string }) => grantAiBonusCredits(orgId, amount, reason),
+  const updateAccessMutation = useMutation({
+    mutationFn: (input: AccessUpdate) => updateSubscriptionAccess(orgId, input),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organizations', 'usage', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+    },
+  });
+
+  const cancelScheduledMutation = useMutation({
+    mutationFn: () => cancelScheduledPlanChange(orgId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
       queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
     },
   });
@@ -108,9 +119,10 @@ export function useSubscription(orgId: string) {
     removeOverride: removeOverrideMutation.mutateAsync,
     isRemovingOverride: removeOverrideMutation.isPending,
 
-    grantAiBonus: grantAiBonusMutation.mutateAsync,
-    isGrantingAiBonus: grantAiBonusMutation.isPending,
+    updateAccess: updateAccessMutation.mutateAsync,
+    isUpdatingAccess: updateAccessMutation.isPending,
 
+    cancelScheduledChange: cancelScheduledMutation.mutateAsync,
     resendReminder: resendReminderMutation.mutateAsync,
     isResendingReminder: resendReminderMutation.isPending,
   };

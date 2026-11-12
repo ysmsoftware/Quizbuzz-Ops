@@ -4,6 +4,7 @@ import { flagUpdateSchema, orgOverrideSetSchema, orgOverrideRemoveSchema, syncRe
 import { IFeatureFlagsService, FeatureFlagsService } from './feature-flags.service';
 import { okResponse, errorResponse } from '../../http/envelope';
 import { PlatformAdminRole } from '@prisma/client';
+import { assertOrgExists } from '../organizations/org-exists';
 import { AuditActor } from '../../audit/audit-writer';
 
 function toActor(admin: { id: string; email: string; name: string; role: string }): AuditActor {
@@ -44,6 +45,7 @@ export class FeatureFlagsController {
   async setOrgOverride(req: Request, key: string, orgId: string) {
     const admin = await requireRole([PlatformAdminRole.SUPER_ADMIN]);
     const input = await parseRequest(req, orgOverrideSetSchema);
+    await assertOrgExists(orgId);
     const result = await this.service.setOrgOverride(
       key,
       orgId,

@@ -5,8 +5,11 @@ import { generateUlid } from '../../utils/ulid';
 import { ISubscriptionsRepository, SubscriptionsRepository } from './subscriptions.repository';
 import { IEntitlementsService, EntitlementsService } from '../entitlements/entitlements.service';
 import { periodMonthsForCycle } from '../../../lib/pricing/subscriptionPricing';
-import { AI_CREDITS_BASE, computeEffectiveLimits } from './effective-limits';
+import { computeEffectiveLimits, LIMIT_FIELDS, LimitField } from './effective-limits';
+import { computeAccessDates, lapseStatusAt } from './access-dates';
+import { oldestUnpaidDueAt } from './access-input';
 import { orgOwnerNotifier } from '../../notifications/org-owner-notifier';
+import { ConflictError, NotFoundError, ValidationError } from '../../http/errors';
 
 /** Human-readable labels for override/limit-change emails — display only. */
 const FIELD_LABELS: Record<string, string> = {
@@ -14,7 +17,13 @@ const FIELD_LABELS: Record<string, string> = {
   maxParticipantsPerContest: 'Participants per Contest',
   maxQuestionsPerContest: 'Questions per Contest',
   maxOrgMembers: 'Organization Members',
+  maxLearners: 'Learners',
+  maxCandidatesPerMonth: 'Candidates per Month',
   aiCreditsPerMonth: 'AI Credits per Month',
+  featureLearnerGroups: 'Learner Groups',
+  featureGradebook: 'Gradebook',
+  featureAmbassadorCampaigns: 'Ambassador Campaigns',
+  featureManualEmails: 'Broadcast Emails',
   featureProctoring: 'Advanced Proctoring',
   featureCertBranding: 'Custom Certificate Branding',
   featureAnalyticsExport: 'Analytics Export',
@@ -23,6 +32,17 @@ const FIELD_LABELS: Record<string, string> = {
 };
 function fieldLabel(field: string): string {
   return FIELD_LABELS[field] || field;
+}
+
+export interface UpdateAccessFields {
+  currentPeriodStart?: Date;
+  currentPeriodEnd?: Date;
+  graceDays?: number;
+  contractStart?: Date | null;
+  contractEnd?: Date | null;
+  poNumber?: string | null;
+  contractNotes?: string | null;
+  reason: string;
 }
 
 export interface ISubscriptionsService {
@@ -46,6 +66,7 @@ export interface ISubscriptionsService {
     mode?: OverrideMode,
   ): Promise<any>;
   removeOverride(orgId: string, overrideId: string, reason: string, actor: AuditActor): Promise<any>;
+  updateAccess(orgId: string, input: UpdateAccessFields, actor: AuditActor): Promise<any>;
   resendRenewalReminder(orgId: string, actor: AuditActor): Promise<{ sent: boolean }>;
   resendReceipt(orgId: string, paymentId: string, actor: AuditActor): Promise<{ sent: boolean }>;
 }
@@ -70,15 +91,16 @@ export class SubscriptionsService implements ISubscriptionsService {
     if (!sub) return null;
 
     const effectiveLimits = computeEffectiveLimits(
-      {
-        maxContestsPerCycle: sub.plan.maxContestsPerCycle,
-        maxParticipantsPerContest: sub.plan.maxParticipantsPerContest,
-        maxQuestionsPerContest: sub.plan.maxQuestionsPerContest,
-        maxOrgMembers: sub.plan.maxOrgMembers,
-        aiCreditsPerMonth: AI_CREDITS_BASE,
-      },
+      Object.fromEntries(LIMIT_FIELDS.map((field) => [field, sub.plan[field]])) as Record<LimitField, number | null>,
       sub.overrides,
     );
+    const accessDates = computeAccessDates({
+      kind: sub.plan.kind,
+      currentPeriodEnd: sub.currentPeriodEnd,
+      graceDays: sub.graceDays,
+      overdueInvoiceDueAt: await oldestUnpaidDueAt(orgId),
+    });
+    const mandate = sub.razorpaySubscriptionId ? await prisma.razorpaySubscription.findUnique({ where: { id: sub.razorpaySubscriptionId } }) : null;
 
     return {
       subscription: {
@@ -89,11 +111,30 @@ export class SubscriptionsService implements ISubscriptionsService {
         periodMonths: sub.periodMonths,
         currentPeriodStart: sub.currentPeriodStart.toISOString(),
         currentPeriodEnd: sub.currentPeriodEnd.toISOString(),
+        graceDays: sub.graceDays,
+        collectionMethod: sub.collectionMethod,
+        autoDebit: mandate && {
+          id: mandate.id,
+          status: mandate.status,
+          paymentMethod: mandate.paymentMethod,
+          nextChargeAt: (mandate.currentEnd ?? mandate.startAt)?.toISOString() ?? null,
+        },
+        lastPaymentError: sub.lastPaymentError,
+        scheduledChange: sub.scheduledPlanId
+          ? { planId: sub.scheduledPlanId, billingCycle: sub.scheduledBillingCycle, reason: sub.scheduledReason, on: sub.currentPeriodEnd.toISOString() }
+          : null,
+        contractStart: sub.contractStart?.toISOString() ?? null,
+        contractEnd: sub.contractEnd?.toISOString() ?? null,
+        poNumber: sub.poNumber,
+        contractNotes: sub.contractNotes,
+        restrictAt: accessDates.restrictAt?.toISOString() ?? null,
+        downgradeAt: accessDates.downgradeAt?.toISOString() ?? null,
       },
       plan: {
         id: sub.plan.id,
         slug: sub.plan.slug,
         name: sub.plan.name,
+        kind: sub.plan.kind,
       },
       effectiveLimits,
       overrides: sub.overrides.map((o: any) => ({
@@ -121,21 +162,27 @@ export class SubscriptionsService implements ISubscriptionsService {
    * offer. A plan offering both cycles requires an explicit choice.
    */
   private resolveBillingCycle(
-    plan: { allowsMonthly: boolean; allowsAnnual: boolean; slug: string },
+    plan: { allowsMonthly: boolean; allowsHalfYearly: boolean; allowsAnnual: boolean; slug: string },
     requested?: BillingCycle
   ): BillingCycle {
     if (requested) {
       if (requested === 'MONTHLY' && !plan.allowsMonthly) {
-        throw new Error(`Plan "${plan.slug}" does not offer monthly billing`);
+        throw new ValidationError(null, `Plan "${plan.slug}" does not offer monthly billing`);
       }
       if (requested === 'ANNUAL' && !plan.allowsAnnual) {
-        throw new Error(`Plan "${plan.slug}" does not offer annual billing`);
+        throw new ValidationError(null, `Plan "${plan.slug}" does not offer annual billing`);
+      }
+      if (requested === 'HALF_YEARLY' && !plan.allowsHalfYearly) {
+        throw new ValidationError(null, `Plan "${plan.slug}" does not offer 6-month billing`);
+      }
+      if (requested === 'CUSTOM') {
+        throw new ValidationError(null, 'A contract with its own end date is set up by issuing an invoice');
       }
       return requested;
     }
     if (plan.allowsMonthly) return 'MONTHLY';
     if (plan.allowsAnnual) return 'ANNUAL';
-    throw new Error(`Plan "${plan.slug}" does not offer any billing cycle`);
+    throw new ValidationError(null, `Plan "${plan.slug}" does not offer any billing cycle`);
   }
 
   /**
@@ -159,8 +206,8 @@ export class SubscriptionsService implements ISubscriptionsService {
     linkedPaymentId?: string
   ) {
     const plan = await this.repo.findPlanById(planId);
-    if (!plan) throw new Error('Subscription plan not found');
-    if (!plan.isActive) throw new Error('Cannot assign an inactive plan');
+    if (!plan) throw new NotFoundError('Subscription plan not found');
+    if (!plan.isActive) throw new ConflictError('Cannot assign an inactive plan');
 
     const resolvedCycle = this.resolveBillingCycle(plan, billingCycle);
     const periodMonths = periodMonthsForCycle(resolvedCycle);
@@ -226,14 +273,32 @@ export class SubscriptionsService implements ISubscriptionsService {
 
     const fromPlanId = currentSub.planId;
     const toPlan = await this.repo.findPlanById(toPlanId);
-    if (!toPlan) throw new Error('Target plan not found');
-    if (!toPlan.isActive) throw new Error('Cannot switch to an inactive plan');
+    if (!toPlan) throw new NotFoundError('Target plan not found');
+    if (!toPlan.isActive) throw new ConflictError('Cannot switch to an inactive plan');
 
     const resolvedCycle = this.resolveBillingCycle(toPlan, billingCycle);
     const periodMonths = periodMonthsForCycle(resolvedCycle);
 
+    // Keep the paid dates on a like-for-like change. Anything else starts a fresh period, so an
+    // expired org moved to a new plan isn't still expired, and leaving Free gets a real end date.
+    const fromPlan = await this.repo.findPlanById(fromPlanId);
+    const now = new Date();
+    const startFresh =
+      currentSub.status !== 'ACTIVE' ||
+      currentSub.currentPeriodEnd <= now ||
+      fromPlan?.kind === 'FREE' ||
+      currentSub.billingCycle !== resolvedCycle;
+    const end = new Date(now);
+    end.setMonth(end.getMonth() + periodMonths);
+
     // Update subscription in ops DB
-    const updatedSub = await this.repo.updateSubscriptionPlan(orgId, toPlanId, resolvedCycle, periodMonths);
+    const updatedSub = await this.repo.updateSubscriptionPlan(
+      orgId,
+      toPlanId,
+      resolvedCycle,
+      periodMonths,
+      startFresh ? { currentPeriodStart: now, currentPeriodEnd: end, status: 'ACTIVE' } : undefined,
+    );
 
     // Record change log
     await this.repo.createChangeLog({
@@ -257,7 +322,6 @@ export class SubscriptionsService implements ISubscriptionsService {
       { organizationId: orgId, fromPlanId, toPlanId }
     );
 
-    const fromPlan = await this.repo.findPlanById(fromPlanId);
     await orgOwnerNotifier.notify(orgId, 'SUBSCRIPTION_PLAN_CHANGED', {
       fromPlan: fromPlan?.name || 'your previous plan',
       toPlan: toPlan.name,
@@ -282,14 +346,16 @@ export class SubscriptionsService implements ISubscriptionsService {
     mode: OverrideMode = OverrideMode.ADDITIVE,
   ) {
     const sub = await this.repo.findSubscriptionByOrgId(orgId);
-    if (!sub) throw new Error('Organization does not have an active subscription');
+    if (!sub) throw new NotFoundError('Organization does not have an active subscription');
 
+    // A feature is on or off, and "unlimited" can only replace a limit: adding null to one would do nothing.
+    const isFeature = typeof value === 'boolean';
     const override = await this.repo.createOverride({
       id: generateUlid(),
       subscriptionId: sub.id,
       field,
-      value: value === null ? null : (typeof value === 'number' ? value : parseInt(value, 10)),
-      mode,
+      value: isFeature ? (value ? 1 : 0) : value === null ? null : (typeof value === 'number' ? value : parseInt(value, 10)),
+      mode: isFeature || value === null ? OverrideMode.ABSOLUTE : mode,
       reason,
       createdById: actor.id!,
       expiresAt,
@@ -320,7 +386,7 @@ export class SubscriptionsService implements ISubscriptionsService {
 
   async removeOverride(orgId: string, overrideId: string, reason: string, actor: AuditActor) {
     const sub = await this.repo.findSubscriptionByOrgId(orgId);
-    if (!sub) throw new Error('Subscription not found');
+    if (!sub) throw new NotFoundError('Subscription not found');
 
     const override = await this.repo.removeOverride(overrideId, actor.id!, reason);
 
@@ -345,6 +411,50 @@ export class SubscriptionsService implements ISubscriptionsService {
     return override;
   }
 
+  /** Ops moves the end date (trusted payment on its way) or the grace days. The status follows the dates at once. */
+  async updateAccess(orgId: string, input: UpdateAccessFields, actor: AuditActor) {
+    const sub = await this.repo.findSubscriptionByOrgId(orgId);
+    if (!sub) throw new NotFoundError('Organization does not have a subscription');
+    const plan = await this.repo.findPlanById(sub.planId);
+    if (!plan) throw new NotFoundError('Subscription plan not found');
+    if (plan.kind === 'FREE') throw new ConflictError('The Free plan has no end date. Change the plan first.');
+
+    const currentPeriodStart = input.currentPeriodStart ?? sub.currentPeriodStart;
+    const currentPeriodEnd = input.currentPeriodEnd ?? sub.currentPeriodEnd;
+    if (currentPeriodEnd <= currentPeriodStart) throw new ValidationError(null, 'The cycle must end after it starts.');
+    const graceDays = input.graceDays ?? sub.graceDays;
+    const status = sub.status === 'CANCELLED'
+      ? 'CANCELLED'
+      : lapseStatusAt({ kind: plan.kind, currentPeriodEnd, graceDays, overdueInvoiceDueAt: await oldestUnpaidDueAt(orgId) });
+    const contract = {
+      contractStart: input.contractStart,
+      contractEnd: input.contractEnd,
+      poNumber: input.poNumber,
+      contractNotes: input.contractNotes,
+    };
+    const updated = await this.repo.updateAccess(orgId, {
+      // The start also anchors the monthly usage window in the main app.
+      currentPeriodStart,
+      currentPeriodEnd,
+      graceDays,
+      status,
+      ...contract,
+      // A new end date earns a fresh set of contract reminders.
+      ...(input.contractEnd !== undefined ? { contractReminderDays: null } : {}),
+    });
+
+    await this.entitlementsService.syncOrgPlanLimitsCache(orgId);
+    await writeAuditLogEntry(actor, 'subscription.access_updated', AuditTargetType.SUBSCRIPTION, sub.id, plan.name, {
+      organizationId: orgId,
+      reason: input.reason,
+      from: { currentPeriodStart: sub.currentPeriodStart.toISOString(), currentPeriodEnd: sub.currentPeriodEnd.toISOString(), graceDays: sub.graceDays, status: sub.status },
+      to: { currentPeriodStart: currentPeriodStart.toISOString(), currentPeriodEnd: currentPeriodEnd.toISOString(), graceDays, status, ...contract },
+      // Razorpay charges on its own schedule: moving dates doesn't move an auto-debit charge.
+      autoDebit: sub.collectionMethod === 'AUTO_DEBIT',
+    });
+    return updated;
+  }
+
   /**
    * Ops-admin-triggered "remind them again" — bypasses the nightly job's
    * once-per-period guard entirely (renewalReminderSentAt is still updated
@@ -354,11 +464,11 @@ export class SubscriptionsService implements ISubscriptionsService {
    */
   async resendRenewalReminder(orgId: string, actor: AuditActor): Promise<{ sent: boolean }> {
     const sub = await this.repo.findSubscriptionByOrgId(orgId);
-    if (!sub) throw new Error('Organization does not have a subscription');
-    if (sub.status !== 'ACTIVE') throw new Error(`Cannot send a renewal reminder — subscription status is ${sub.status}`);
+    if (!sub) throw new NotFoundError('Organization does not have a subscription');
+    if (sub.status !== 'ACTIVE') throw new ConflictError(`Cannot send a renewal reminder — subscription status is ${sub.status}`);
 
     const now = new Date();
-    if (sub.currentPeriodEnd <= now) throw new Error('Subscription period has already ended — resend the expired notice instead');
+    if (sub.currentPeriodEnd <= now) throw new ConflictError('Subscription period has already ended — resend the expired notice instead');
 
     const plan = await this.repo.findPlanById(sub.planId);
     const daysRemaining = Math.max(1, Math.ceil((sub.currentPeriodEnd.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
@@ -391,10 +501,10 @@ export class SubscriptionsService implements ISubscriptionsService {
    * Only meaningful for a payment that actually completed.
    */
   async resendReceipt(orgId: string, paymentId: string, actor: AuditActor): Promise<{ sent: boolean }> {
-    const payment = await prisma.opsPayment.findUnique({ where: { id: paymentId } });
-    if (!payment) throw new Error('Payment not found');
-    if (payment.organizationId !== orgId) throw new Error('Payment does not belong to this organization');
-    if (payment.status !== 'PAID') throw new Error(`Cannot resend a receipt — payment status is ${payment.status}`);
+    const payment = await prisma.opsPayment.findUnique({ where: { id: paymentId }, include: { invoice: { select: { invoiceNumber: true } } } });
+    if (!payment) throw new NotFoundError('Payment not found');
+    if (payment.organizationId !== orgId) throw new NotFoundError('Payment does not belong to this organization');
+    if (payment.status !== 'PAID') throw new ConflictError(`Cannot resend a receipt — payment status is ${payment.status}`);
 
     const plan = payment.planId ? await this.repo.findPlanById(payment.planId) : null;
 
@@ -407,8 +517,11 @@ export class SubscriptionsService implements ISubscriptionsService {
       gstAmount: payment.gstAmount ? Number(payment.gstAmount) : 0,
       amount: Number(payment.amount),
       paidAt: payment.paidAt ? payment.paidAt.toISOString().slice(0, 10) : null,
-      razorpayPaymentId: payment.razorpayPaymentId,
+      razorpayPaymentId: payment.razorpayPaymentId ?? payment.reference,
       paymentId: payment.id,
+      receiptNumber: payment.receiptNumber,
+      invoiceNumber: payment.invoice?.invoiceNumber ?? null,
+      tdsAmount: payment.tdsAmount ? Number(payment.tdsAmount) : 0,
     });
 
     await writeAuditLogEntry(

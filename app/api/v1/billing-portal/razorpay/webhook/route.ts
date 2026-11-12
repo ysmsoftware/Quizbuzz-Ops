@@ -2,12 +2,56 @@ import crypto from 'crypto';
 import { prisma } from '@/server/db/ops-prisma';
 import { env } from '@/server/config/env';
 import SubscriptionsService from '@/server/features/subscriptions/subscriptions.service';
+import { invoicesService } from '@/server/features/invoices/invoices.service';
+import { settleCapture } from '@/server/features/invoices/settle-capture';
+import { handleSubscriptionEvent, recordChargeFailure, stopAutoDebit, type RzpSubscription } from '@/server/features/autodebit/autodebit.service';
 import { orgOwnerNotifier } from '@/server/notifications/org-owner-notifier';
 import { writeAuditLogEntry } from '@/server/audit/audit-writer';
 import { AuditTargetType, BillingCycle } from '@prisma/client';
 import { okResponse, errorResponse } from '@/server/http/envelope';
 
 const subscriptionsService = new SubscriptionsService();
+
+interface LinkAwareBody {
+  event?: string;
+  payload?: {
+    payment_link?: { entity?: { id?: string } };
+    payment?: { entity?: { id?: string; amount?: number } };
+    subscription?: { entity?: RzpSubscription };
+  };
+}
+
+const WEBHOOK_ACTOR = { id: null, email: 'razorpay', name: 'Razorpay webhook', role: 'razorpay-webhook' };
+
+/** Razorpay can repeat an event. A failed attempt stays unprocessed, so its retry runs again. */
+async function onceOnly(req: Request, rawBody: string, type: string, work: () => Promise<void>) {
+  const eventId = req.headers.get('x-razorpay-event-id');
+  if (eventId) {
+    const seen = await prisma.razorpayWebhookEvent.findUnique({ where: { eventId } });
+    if (seen?.processedAt) return okResponse(null, 'Already processed');
+    if (!seen) {
+      await prisma.razorpayWebhookEvent
+        .create({ data: { eventId, type, payload: JSON.parse(rawBody) } })
+        .catch((e: { code?: string }) => { if (e.code !== 'P2002') throw e; });
+    }
+  }
+  await work();
+  if (eventId) await prisma.razorpayWebhookEvent.update({ where: { eventId }, data: { processedAt: new Date() } });
+  return okResponse(null, 'Event processed');
+}
+
+async function handlePaymentLinkEvent(body: LinkAwareBody) {
+  const linkId = body.payload?.payment_link?.entity?.id;
+  const payment = body.payload?.payment?.entity;
+  if (linkId) {
+    if ((body.event === 'payment_link.paid' || body.event === 'payment_link.partially_paid') && payment?.id && payment.amount) {
+      await invoicesService.applyLinkPayment(linkId, { id: payment.id, amountPaise: payment.amount }, WEBHOOK_ACTOR);
+      await invoicesService.setLinkStatus(linkId, body.event === 'payment_link.paid' ? 'paid' : 'partially_paid');
+    } else if (body.event === 'payment_link.expired' || body.event === 'payment_link.cancelled') {
+      await invoicesService.setLinkStatus(linkId, body.event.slice('payment_link.'.length));
+    }
+  }
+}
 
 /**
  * Razorpay-only. This is the single source of truth for whether a payment
@@ -48,10 +92,13 @@ export async function POST(req: Request) {
       id?: string;
       order_id?: string;
       amount?: number;
+      invoice_id?: string | null;
+      error_code?: string | null;
+      error_reason?: string | null;
       error_description?: string;
       notes?: { adminEmail?: string; adminName?: string };
     }
-    let body: { event?: string; payload?: { payment?: { entity?: RazorpayPaymentEntity } } };
+    let body: LinkAwareBody & { payload?: { payment?: { entity?: RazorpayPaymentEntity } } };
     try {
       body = JSON.parse(rawBody);
     } catch {
@@ -59,9 +106,31 @@ export async function POST(req: Request) {
     }
 
     const event = body.event;
+
+    if (event?.startsWith('payment_link.')) {
+      return await onceOnly(req, rawBody, event, () => handlePaymentLinkEvent(body));
+    }
+
+    const subscriptionEntity = body.payload?.subscription?.entity;
+    if (event?.startsWith('subscription.') && subscriptionEntity?.id) {
+      return await onceOnly(req, rawBody, event, async () => {
+        await handleSubscriptionEvent(event, subscriptionEntity, body.payload?.payment?.entity);
+      });
+    }
+
     const paymentEntity = body.payload?.payment?.entity;
 
     if (!paymentEntity) {
+      return okResponse(null, 'Event acknowledged');
+    }
+
+    // Auto-debit charges and other apps' payments on this account aren't our orders. Answering 400
+    // here would make Razorpay retry, then switch the whole webhook off after a day.
+    const ownOrder = paymentEntity.order_id
+      ? await prisma.opsPayment.findFirst({ where: { razorpayOrderId: paymentEntity.order_id }, select: { id: true } })
+      : null;
+    if (!ownOrder) {
+      if (event === 'payment.failed') await recordChargeFailure(paymentEntity);
       return okResponse(null, 'Event acknowledged');
     }
 
@@ -87,119 +156,8 @@ export async function POST(req: Request) {
         return okResponse(null, 'Event acknowledged for unknown order');
       }
 
-      const expectedPaise = Math.round(Number(opsPayment.amount) * 100);
-      if (typeof paymentEntity.amount === 'number' && paymentEntity.amount !== expectedPaise) {
-        console.error('Razorpay webhook amount mismatch — refusing to mark payment PAID.', {
-          opsPaymentId: opsPayment.id,
-          expectedPaise,
-          razorpayPaise: paymentEntity.amount,
-        });
-        return okResponse(null, 'Event acknowledged, amount mismatch flagged');
-      }
-
-      let updatedPayment;
-      try {
-        updatedPayment = await prisma.opsPayment.update({
-          where: { razorpayOrderId, status: { notIn: ['PAID'] } },
-          data: {
-            status: 'PAID',
-            paidAt: new Date(),
-            razorpayPaymentId: razorpayPaymentId || opsPayment.razorpayPaymentId,
-            razorpaySignature: signature,
-          },
-        });
-      } catch (e) {
-        if ((e as { code?: string })?.code === 'P2025') {
-          // Already PAID. If the plan was already assigned (subscriptionId
-          // set), a concurrent delivery fully handled this — true no-op. If
-          // not, a prior delivery marked PAID but failed before finishing
-          // assignPlan/backfill/audit-log (e.g. a transient entitlements-
-          // sync error) — fall through and finish that work instead of
-          // leaving it stuck forever on every future retry.
-          if (opsPayment.subscriptionId) {
-            return okResponse(null, 'Already processed');
-          }
-          updatedPayment = opsPayment;
-        } else {
-          throw e;
-        }
-      }
-
-      if (updatedPayment.subscriptionId) {
-        return okResponse(null, 'Already processed');
-      }
-
-      if (!updatedPayment.planId) {
-        console.error('OpsPayment has no planId — cannot auto-assign subscription.', updatedPayment.id);
-        return okResponse(null, 'Payment marked PAID but plan could not be auto-assigned (missing planId)');
-      }
-
-      const billingCycle = (updatedPayment.billingCycle || 'MONTHLY') as BillingCycle;
-      // linkedPaymentId makes the subscription upsert + this payment's
-      // subscriptionId backfill one atomic transaction — see the comment on
-      // assignPlan() for why that matters on webhook retry.
-      await subscriptionsService.assignPlan(
-        updatedPayment.organizationId,
-        updatedPayment.planId,
-        actor,
-        billingCycle,
-        undefined,
-        updatedPayment.id
-      );
-
-      await writeAuditLogEntry(
-        actor,
-        'billing_portal.payment_succeeded',
-        AuditTargetType.PAYMENT,
-        updatedPayment.id,
-        `Payment Succeeded - ₹${Number(updatedPayment.amount)}`,
-        {
-          organizationId: updatedPayment.organizationId,
-          razorpayOrderId,
-          razorpayPaymentId: updatedPayment.razorpayPaymentId,
-          planId: updatedPayment.planId,
-          billingCycle,
-          periodMonths: updatedPayment.periodMonths,
-          baseAmount: updatedPayment.baseAmount ? Number(updatedPayment.baseAmount) : null,
-          gatewayFeeAmount: updatedPayment.gatewayFeeAmount ? Number(updatedPayment.gatewayFeeAmount) : null,
-          gstAmount: updatedPayment.gstAmount ? Number(updatedPayment.gstAmount) : null,
-          amount: Number(updatedPayment.amount),
-          currency: updatedPayment.currency,
-        }
-      );
-
-      // Two separate emails by design: PAYMENT_SUCCESS is a short immediate
-      // confirmation, RECEIPT is the itemized record meant to be kept /
-      // resent later (see the resend-receipt admin action). Both queue-only —
-      // orgOwnerNotifier never sends synchronously and never throws, so a
-      // notification problem here can't undo the payment processing above.
-      const plan = await prisma.subscriptionPlan.findUnique({
-        where: { id: updatedPayment.planId },
-        select: { name: true },
-      });
-      const planName = plan?.name || 'your plan';
-      const receiptParams = {
-        planName,
-        billingCycle,
-        baseAmount: updatedPayment.baseAmount ? Number(updatedPayment.baseAmount) : 0,
-        creditApplied: updatedPayment.creditApplied ? Number(updatedPayment.creditApplied) : 0,
-        gatewayFeeAmount: updatedPayment.gatewayFeeAmount ? Number(updatedPayment.gatewayFeeAmount) : 0,
-        gstAmount: updatedPayment.gstAmount ? Number(updatedPayment.gstAmount) : 0,
-        amount: Number(updatedPayment.amount),
-        paidAt: updatedPayment.paidAt ? updatedPayment.paidAt.toISOString().slice(0, 10) : null,
-        razorpayPaymentId: updatedPayment.razorpayPaymentId,
-        paymentId: updatedPayment.id,
-      };
-      await orgOwnerNotifier.notify(updatedPayment.organizationId, 'BILLING_PAYMENT_SUCCESS', {
-        planName,
-        amount: Number(updatedPayment.amount),
-      });
-      await orgOwnerNotifier.notify(updatedPayment.organizationId, 'BILLING_RECEIPT', receiptParams);
-
-      return okResponse(
-        { paymentId: updatedPayment.id, status: 'PAID' },
-        'Payment processed and subscription updated successfully'
-      );
+      const done = await settleCapture({ opsPayment, razorpayOrderId, razorpayPaymentId, signature, amountPaise: paymentEntity.amount, actor });
+      return okResponse(done.data, done.message);
     }
 
     if (event === 'payment.failed') {

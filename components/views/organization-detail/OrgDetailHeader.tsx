@@ -15,6 +15,7 @@ import {
 import { format } from 'date-fns';
 import { Organization } from '@/lib/types';
 import StatusBadge from '@/components/ui/StatusBadge';
+import { orgTypeLabel } from '@/lib/constants/org-profile-types';
 
 interface OrgDetailHeaderProps {
   organization: Organization;
@@ -80,6 +81,12 @@ export default function OrgDetailHeader({
               <span className="font-mono text-[11px] uppercase tracking-wider">{organization.slug}</span>
               <span>•</span>
               <span>Joined {format(new Date(organization.createdAt), 'dd MMM yyyy')}</span>
+              <span>•</span>
+              {organization.profileType ? (
+                <StatusBadge tone="accent">{orgTypeLabel(organization.profileType)}</StatusBadge>
+              ) : (
+                <span title="No type recorded; the main app treats it as an Individual organizer.">Type not set (acts as Individual)</span>
+              )}
             </div>
           </div>
         </div>

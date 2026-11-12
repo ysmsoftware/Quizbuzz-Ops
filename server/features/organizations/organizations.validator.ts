@@ -1,3 +1,4 @@
+import { ORG_PROFILE_TYPE_VALUES } from '../../../lib/constants/org-profile-types';
 import { z } from 'zod';
 import { paginationFields } from '../../http/query-schemas';
 import { SLUG_PATTERN } from './org-slug';
@@ -16,6 +17,8 @@ export const orgListQuerySchema = z.object({
   planSlug: z.string().trim().optional(),
   // Only organizations that effectively have this institution feature ('any' = at least one of them).
   feature: z.enum([...INSTITUTION_FLAG_KEYS, 'any']).optional(),
+  // 'unset' = orgs that never got a type (they act as Individual).
+  type: z.enum([...ORG_PROFILE_TYPE_VALUES, 'unset']).optional(),
   sort: z.enum(ORG_SORT_FIELDS).default('createdAt'),
   order: z.enum(['asc', 'desc']).default('desc'),
 });
@@ -42,24 +45,30 @@ export const createOrgSchema = z.object({
   slug: z.string().trim().toLowerCase().max(60).regex(SLUG_PATTERN, 'Slug may contain lowercase letters, numbers and single hyphens').optional(),
   ownerName: z.string().trim().min(2, 'Owner name is required').max(100),
   ownerEmail: z.string().trim().toLowerCase().email('A valid owner email is required'),
-  // Ops subscription plan id; defaults to the free "starter" plan when omitted.
+  // Ops subscription plan id; defaults to the Free plan when omitted.
   planId: z.string().trim().optional(),
+  // Optional: the owner then sees it read-only in onboarding instead of choosing.
+  profileType: z.enum(ORG_PROFILE_TYPE_VALUES).optional(),
 });
+
+export const typeChangePreviewSchema = z.object({ to: z.enum(ORG_PROFILE_TYPE_VALUES) });
 
 export const updateOrgSchema = z
   .object({
     name: orgName.optional(),
     // '' or null clears the logo. The slug is deliberately not editable.
     logoUrl: z.union([z.string().trim().url().max(500), z.literal(''), z.null()]).optional(),
+    // Changes what the whole main app shows and allows for this org (audited).
+    profileType: z.enum(ORG_PROFILE_TYPE_VALUES).optional(),
   })
-  .refine((v) => v.name !== undefined || v.logoUrl !== undefined, { message: 'Nothing to update' });
+  .refine((v) => v.name !== undefined || v.logoUrl !== undefined || v.profileType !== undefined, { message: 'Nothing to update' });
 
 export const deleteOrgSchema = z.object({
   reason: z.string().trim().min(3, 'A reason is required for the audit trail'),
 });
 
 export const createNoteSchema = z.object({
-  body: z.string().min(1, 'Note body cannot be empty'),
+  body: z.string().trim().min(1, 'Note body cannot be empty'),
   tags: z.array(z.string()).default([]),
 });
 

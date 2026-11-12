@@ -20,6 +20,10 @@ const WHATSAPP_TEMPLATES: Record<OpsMessageTemplate, WhatsAppTemplateBuilder> = 
     campaignName: 'ops_billing_payment_success',
     templateParams: [p.adminName, p.planName, String(p.amount)],
   }),
+  BILLING_AUTOPAY_STOPPED: (p) => ({
+    campaignName: 'ops_billing_autopay_stopped',
+    templateParams: [p.adminName, p.planName, String(p.paidUntil)],
+  }),
   BILLING_PAYMENT_FAILED: (p) => ({
     campaignName: 'ops_billing_payment_failed',
     templateParams: [p.adminName, p.planName, String(p.amount)],
@@ -31,6 +35,34 @@ const WHATSAPP_TEMPLATES: Record<OpsMessageTemplate, WhatsAppTemplateBuilder> = 
   SUBSCRIPTION_RENEWAL_REMINDER: (p) => ({
     campaignName: 'ops_subscription_renewal_reminder',
     templateParams: [p.adminName, p.planName, String(p.daysRemaining)],
+  }),
+  INVOICE_ISSUED: (p) => ({
+    campaignName: 'ops_invoice_issued',
+    templateParams: [p.adminName, p.invoiceNumber, String(p.total), p.dueDate],
+  }),
+  INVOICE_REMINDER: (p) => ({
+    campaignName: 'ops_invoice_reminder',
+    templateParams: [p.adminName, p.invoiceNumber, String(p.balance), p.dueDate],
+  }),
+  CONTRACT_ENDING: (p) => ({
+    campaignName: 'ops_contract_ending',
+    templateParams: [p.adminName, p.planName, p.contractEnd],
+  }),
+  CREDIT_NOTE_ISSUED: (p) => ({
+    campaignName: 'ops_credit_note_issued',
+    templateParams: [p.adminName, p.creditNoteNumber, p.invoiceNumber],
+  }),
+  SUBSCRIPTION_CHANGE_SCHEDULED: (p) => ({
+    campaignName: 'ops_subscription_change_scheduled',
+    templateParams: [p.adminName, p.toPlan, p.on],
+  }),
+  SUBSCRIPTION_PAST_DUE: (p) => ({
+    campaignName: 'ops_subscription_past_due',
+    templateParams: [p.adminName, p.planName, String(p.restrictAt)],
+  }),
+  SUBSCRIPTION_RESTRICTED: (p) => ({
+    campaignName: 'ops_subscription_restricted',
+    templateParams: [p.adminName, p.planName],
   }),
   SUBSCRIPTION_EXPIRED: (p) => ({
     campaignName: 'ops_subscription_expired',

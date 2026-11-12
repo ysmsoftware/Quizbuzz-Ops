@@ -1,4 +1,5 @@
 'use client';
+import type { OrgProfileType } from '@/lib/constants/org-profile-types';
 
 import { ContestStatus, ParticipantStatus, ParticipantPaymentStatus, Organization, Contest, Participant, SupportNote, OrganizationSubscription, SubscriptionOverride, PlanChangeEvent, UsageSnapshot } from '@/lib/types';
 import { apiRequest } from '@/lib/api/utils';
@@ -27,9 +28,9 @@ interface RawNote {
 interface RawSubscriptionResponse {
   subscription: Pick<
     OrganizationSubscription,
-    'id' | 'organizationId' | 'billingCycle' | 'periodMonths' | 'currentPeriodStart' | 'currentPeriodEnd'
+    'id' | 'organizationId' | 'billingCycle' | 'periodMonths' | 'currentPeriodStart' | 'currentPeriodEnd' | 'graceDays' | 'restrictAt' | 'downgradeAt' | 'collectionMethod' | 'autoDebit' | 'lastPaymentError' | 'scheduledChange' | 'contractStart' | 'contractEnd' | 'poNumber' | 'contractNotes'
   > & { status: string };
-  plan: { id?: string; slug: string };
+  plan: { id?: string; slug: string; kind: OrganizationSubscription['planKind'] };
   overrides?: Array<Omit<SubscriptionOverride, 'value' | 'createdByAdminName'> & { value: unknown; createdByAdminName?: string }>;
   effectiveLimits: OrganizationSubscription['effectiveLimits'];
   changeHistory?: Array<{ id: string; fromPlanId: string; toPlanId: string; changedAt: string }>;
@@ -51,6 +52,8 @@ export interface GetOrganizationsParams {
   planSlug?: string;
   /** Only organizations that effectively have this institution feature ('any' = at least one). */
   feature?: string;
+  /** An org type, or 'unset'. */
+  type?: string;
   sort?: OrgSortField;
   order?: 'asc' | 'desc';
 }
@@ -63,6 +66,7 @@ export async function getOrganizations(params: GetOrganizationsParams = {}): Pro
   if (params.status && params.status !== 'all') query.append('status', params.status);
   if (params.planSlug && params.planSlug !== 'all') query.append('planSlug', params.planSlug);
   if (params.feature && params.feature !== 'all') query.append('feature', params.feature);
+  if (params.type && params.type !== 'all') query.append('type', params.type);
   if (params.sort) query.append('sort', params.sort);
   if (params.order) query.append('order', params.order);
 
@@ -81,12 +85,14 @@ export async function getOrganizations(params: GetOrganizationsParams = {}): Pro
     planId: item.plan.slug,
     hasSubscription: item.plan.hasSubscription,
     features: item.features ?? [],
+    profileType: item.profileType,
     createdAt: item.createdAt,
     updatedAt: item.createdAt,
     memberCount: item.memberCount,
     membersCount: item.memberCount,
     contestCount: item.contestCount,
     participantCount: item.participantCount,
+    registrations: item.registrations,
     ownerEmail: item.ownerEmail,
     ownerName: item.ownerName || item.ownerEmail.split('@')[0],
     contactPerson: {
@@ -149,6 +155,8 @@ export async function getOrganizationDetail(orgId: string): Promise<Organization
       hasCustomLogo: raw.hasCustomLogo,
       contestCount: raw.contestCount,
       participantCount: raw.participantCount,
+      registrations: raw.registrations,
+      profileType: raw.profileType,
       suspendReason: raw.suspension?.reason,
       suspendedAt: raw.suspension?.suspendedAt,
       notes: notes,
@@ -166,16 +174,26 @@ export interface CreateOrganizationInput {
   ownerEmail: string;
   /** Ops subscription plan id; the free starter plan when omitted. */
   planId?: string;
+  /** Set now, the owner sees it read-only in onboarding; omit to let them choose. */
+  profileType?: OrgProfileType;
 }
 
-export async function createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string; createdAccount: boolean; planAssigned: boolean }> {
+export async function createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string; createdAccount: boolean; planAssigned: boolean ; ownerNotified: boolean }> {
   return apiRequest(`/api/v1/ops/organizations`, {
     method: 'POST',
-    body: JSON.stringify({ ...input, slug: input.slug || undefined, planId: input.planId || undefined }),
+    body: JSON.stringify({ ...input, slug: input.slug || undefined, planId: input.planId || undefined, profileType: input.profileType || undefined }),
   });
 }
 
-export async function updateOrganization(orgId: string, input: { name?: string; logoUrl?: string | null }): Promise<void> {
+import type { TypeChangePreview } from '@/server/features/organizations/organizations.service';
+export type { TypeChangePreview };
+
+/** What switching the org to `to` would change; read-only. */
+export async function getTypeChangePreview(orgId: string, to: OrgProfileType) {
+  return apiRequest<TypeChangePreview>(`/api/v1/ops/organizations/${orgId}/type-change?to=${to}`);
+}
+
+export async function updateOrganization(orgId: string, input: { name?: string; logoUrl?: string | null; profileType?: OrgProfileType }): Promise<void> {
   await apiRequest(`/api/v1/ops/organizations/${orgId}`, {
     method: 'PATCH',
     body: JSON.stringify(input),
@@ -343,6 +361,28 @@ export async function resendPaymentReceipt(orgId: string, paymentId: string): Pr
   });
 }
 
+/** Moves a subscription's end date or grace period. */
+export interface AccessUpdate {
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  graceDays?: number;
+  contractStart?: string | null;
+  contractEnd?: string | null;
+  poNumber?: string | null;
+  contractNotes?: string | null;
+  reason: string;
+}
+
+export async function updateSubscriptionAccess(
+  orgId: string,
+  input: AccessUpdate,
+): Promise<void> {
+  await apiRequest(`/api/v1/ops/organizations/${orgId}/subscription/access`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 /** Resends the SUBSCRIPTION_RENEWAL_REMINDER email to the organization owner. */
 export async function resendRenewalReminder(orgId: string): Promise<ResendResult> {
   return apiRequest<ResendResult>(`/api/v1/ops/organizations/${orgId}/subscription/resend-reminder`, {
@@ -373,6 +413,7 @@ export async function getOrganizationContests(orgId: string): Promise<Contest[]>
     audience: c.audience,
     questionSelection: c.questionSelection,
     participantCount: c.participantCount,
+    registrations: c.registrations,
     revenueCollected: c.revenueCollected,
     createdAt: c.createdAt,
     updatedAt: c.createdAt,
@@ -391,6 +432,18 @@ export async function getOrganizationSubscription(orgId: string): Promise<Organi
       periodMonths: res.subscription.periodMonths,
       currentPeriodStart: res.subscription.currentPeriodStart,
       currentPeriodEnd: res.subscription.currentPeriodEnd,
+      graceDays: res.subscription.graceDays,
+      collectionMethod: res.subscription.collectionMethod,
+      autoDebit: res.subscription.autoDebit ?? null,
+      lastPaymentError: res.subscription.lastPaymentError ?? null,
+      scheduledChange: res.subscription.scheduledChange ?? null,
+      contractStart: res.subscription.contractStart,
+      contractEnd: res.subscription.contractEnd,
+      poNumber: res.subscription.poNumber,
+      contractNotes: res.subscription.contractNotes,
+      restrictAt: res.subscription.restrictAt,
+      downgradeAt: res.subscription.downgradeAt,
+      planKind: res.plan.kind,
       overrides: (res.overrides || []).map((o) => ({
         id: o.id,
         field: o.field,
@@ -419,12 +472,38 @@ export async function assignInitialSubscriptionPlan(orgId: string, planId: strin
   return getOrganizationSubscription(orgId) as Promise<OrganizationSubscription>;
 }
 
-export async function changeOrganizationPlan(orgId: string, planId: string): Promise<OrganizationSubscription> {
+export interface PlanChangeInput {
+  planId: string;
+  reason?: string;
+  billingCycle?: 'MONTHLY' | 'HALF_YEARLY' | 'ANNUAL';
+  /** period_end keeps the current plan until its paid time runs out. */
+  when?: 'now' | 'period_end';
+}
+
+export async function changeOrganizationPlan(orgId: string, input: PlanChangeInput): Promise<OrganizationSubscription> {
   await apiRequest(`/api/v1/ops/organizations/${orgId}/subscription/change-plan`, {
     method: 'POST',
-    body: JSON.stringify({ planId }),
+    body: JSON.stringify(input),
   });
   return getOrganizationSubscription(orgId) as Promise<OrganizationSubscription>;
+}
+
+export async function cancelScheduledPlanChange(orgId: string): Promise<void> {
+  await apiRequest(`/api/v1/ops/organizations/${orgId}/subscription/scheduled-change`, { method: 'DELETE' });
+}
+
+export interface MigratePreview {
+  total: number;
+  movable: number;
+  skipped: number;
+  byMethod: Record<string, number>;
+  autoDebitNeedingApproval: number;
+  moved: number;
+}
+
+/** Moves everyone on a plan to another. dryRun only counts them. */
+export function migratePlanSubscribers(planId: string, body: { toPlanId: string; when: 'now' | 'renewal'; dryRun: boolean; reason: string }) {
+  return apiRequest<MigratePreview>(`/api/v1/ops/plans/${planId}/migrate`, { method: 'POST', body: JSON.stringify(body) });
 }
 
 export async function addSubscriptionOverride(
@@ -481,14 +560,6 @@ export async function getPlanChangeHistory(orgId: string): Promise<PlanChangeEve
  */
 export async function getUsageSnapshot(orgId: string): Promise<UsageSnapshot> {
   return apiRequest<UsageSnapshot>(`/api/v1/ops/organizations/${orgId}/usage`);
-}
-
-/** Adds bonus AI credits to the org's pool; they stay until used. */
-export async function grantAiBonusCredits(orgId: string, amount: number, reason: string): Promise<{ balance: number }> {
-  return apiRequest<{ balance: number }>(`/api/v1/ops/organizations/${orgId}/ai-credits`, {
-    method: 'POST',
-    body: JSON.stringify({ amount, reason }),
-  });
 }
 
 /** id → name for a set of organizations, in one request. */

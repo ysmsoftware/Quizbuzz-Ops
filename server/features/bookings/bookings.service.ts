@@ -2,6 +2,8 @@ import { IBookingsRepository, BookingsRepository } from './bookings.repository';
 import { BookingsListQueryParams, CreateBookingInput, UpdateBookingStatusInput, UpdatePricingConfigInput } from './bookings.types';
 import { PricingConfig, ContestBooking } from '@/lib/types';
 import { calculateBookingEstimate } from '@/lib/pricing/estimate';
+import { eventPassQuote } from '@/lib/pricing/event-pass';
+import { grantEventPass, revokeEventPass } from './event-pass-grants';
 import { AuditActor, writeAuditLogEntry } from '../../audit/audit-writer';
 import { AuditTargetType, BookingStatus } from '@prisma/client';
 import { NotFoundError, ConflictError } from '../../http/errors';
@@ -67,7 +69,7 @@ export class BookingsService implements IBookingsService {
 
     const currentConfig = await this.repo.getPricingConfig();
 
-    const pricingBreakdown = calculateBookingEstimate(
+    const costPlus = calculateBookingEstimate(
       {
         durationMinutes: input.durationMinutes,
         questionCount: input.questionCount,
@@ -76,6 +78,9 @@ export class BookingsService implements IBookingsService {
       },
       currentConfig
     );
+    // The price is the Event Pass price (value-based); cost plus margin stays as the floor check.
+    const eventPass = eventPassQuote({ participants: input.participantCount, engineer: input.addOnsSelected.prioritySupport });
+    const pricingBreakdown = { ...costPlus, total: eventPass.price, costFloor: costPlus.total, eventPass };
 
     const bookingInput = {
       ...input,
@@ -137,6 +142,14 @@ export class BookingsService implements IBookingsService {
       paymentReference: input.paymentReference,
       cancellationReason: input.cancellationReason,
     };
+
+    // Before anything is written: the pass needs an org, and its limits must apply.
+    if (newStatus === BookingStatus.PROVISIONED) {
+      await grantEventPass({ ...existing, id }, actor);
+    }
+    if (newStatus === BookingStatus.CANCELLED) {
+      await revokeEventPass(id, actor, input.cancellationReason ? `Booking cancelled: ${input.cancellationReason}` : 'Booking cancelled');
+    }
 
     const now = new Date();
     if (newStatus === BookingStatus.PAID) {

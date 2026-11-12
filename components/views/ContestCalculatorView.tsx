@@ -30,6 +30,7 @@ import { useOrganizations } from '@/lib/hooks/useOrganizations';
 import { usePricingConfig, useBookings } from '@/lib/hooks/useBookings';
 import { useCurrentAdmin } from '@/lib/hooks/useAuth';
 import { calculateBookingEstimate } from '@/lib/api/bookings';
+import { eventPassQuote } from '@/lib/pricing/event-pass';
 import { PricingConfig } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
 import { formatInr, formatNumber } from '@/lib/format';
@@ -918,11 +919,29 @@ Assisted by operator: ${admin?.name} (${admin?.role})
                         <span>{formatInr(estimate.subtotal)}</span>
                       </div>
                       <div className="flex justify-between items-center bg-secondary/30 p-3 rounded-lg border border-border/40">
-                        <span className="text-xs font-bold text-foreground">Total (incl. SLA margin):</span>
-                        <span className="text-lg font-black text-amber-500 font-mono">
+                        <span className="text-xs font-bold text-foreground">Cost floor (incl. SLA margin):</span>
+                        <span className="text-sm font-bold text-muted-foreground font-mono">
                           {formatInr(estimate.total)}
                         </span>
                       </div>
+                      {(() => {
+                        // What the booking charges: the Event Pass price, the same formula as the landing calculator.
+                        const pass = eventPassQuote({ participants: Number(watchedCalc.participantCount) || 1, engineer: !!watchedCalc.prioritySupport });
+                        return (
+                          <div className="bg-secondary/30 p-3 rounded-lg border border-border/40 space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-bold text-foreground">Event Pass price (charged):</span>
+                              <span className="text-lg font-black text-amber-500 font-mono">{formatInr(pass.price)}</span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground">
+                              + {formatInr(pass.gst)} GST = {formatInr(pass.total)} · {formatInr(pass.perHead)} a head
+                              {pass.price < estimate.total && <span className="text-destructive"> · below the cost floor</span>}
+                              {pass.talkToUs && ' · over 25,000: quote by hand'}
+                              {pass.soloIsCheaper && ' · Solo at ₹699/month covers this'}
+                            </p>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Action buttons */}

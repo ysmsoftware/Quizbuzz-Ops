@@ -815,9 +815,12 @@ export default function BookingsView() {
                           <span>{formatInr(booking.pricingBreakdown.margin)}</span>
                         </div>
                         <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 font-black rounded-lg flex justify-between items-center text-sm font-sans select-all">
-                          <span>Contract Total (₹):</span>
+                          <span>{booking.pricingBreakdown.eventPass ? 'Event Pass price (₹, before GST):' : 'Contract Total (₹):'}</span>
                           <span className="font-mono text-base font-black">{formatInr(booking.pricingBreakdown.total)}</span>
                         </div>
+                        {booking.pricingBreakdown.costFloor != null && (
+                          <p className="text-[10px] text-muted-foreground">Cost floor {formatInr(booking.pricingBreakdown.costFloor)}: the lines above.</p>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -206,6 +206,10 @@ export default function JobTimelineTable({ initialRequestId }: { initialRequestI
                         </td>
                         <td className="py-2.5 px-5">
                           <StatusBadge kind="job" value={job.status} />
+                          {job.error && (
+                            <span title={job.error} className="block mt-1 max-w-[260px] truncate text-[10px] text-rose-500">{job.error}</span>
+                          )}
+                          {job.retryCount > 0 && <span className="block text-[10px] text-muted-foreground">{job.retryCount} retries</span>}
                         </td>
                         <td className="py-2.5 px-5 font-mono text-[11px] text-muted-foreground">{formatMs(job.queueWaitMs)}</td>
                         <td className="py-2.5 px-5 font-mono text-[11px] text-muted-foreground">{formatMs(job.processingMs)}</td>

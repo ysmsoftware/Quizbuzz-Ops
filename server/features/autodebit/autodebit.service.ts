@@ -67,7 +67,7 @@ async function razorpayPlanId(plan: SubscriptionPlan, cycle: BillingCycle, amoun
     : (await razorpayCall<{ id: string }>('plans', 'POST', {
         period: p.period,
         interval: p.interval,
-        item: { name: `QuizBuzz ${plan.name}`, amount: amountPaise, currency: 'INR', description: `${cycleTerm(cycle)}, including GST` },
+        item: { name: `Qaselo ${plan.name}`, amount: amountPaise, currency: 'INR', description: `${cycleTerm(cycle)}, including GST` },
         notes: { planId: plan.id, billingCycle: cycle },
       })).id;
   await prisma.razorpayPlan.create({ data: { id, ...key } });

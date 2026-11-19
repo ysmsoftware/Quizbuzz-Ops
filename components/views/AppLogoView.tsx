@@ -36,7 +36,7 @@ export default function AppLogoView() {
       const dataUrl = e.target?.result as string;
       try {
         await uploadAppLogo({ fileData: dataUrl, fileName: file.name });
-        toast('App Logo Updated', 'The QuizBuzz application logo has been updated.', 'success');
+        toast('App Logo Updated', 'The Qaselo application logo has been updated.', 'success');
       } catch (err) {
         toast('Failed to Upload Logo', errorMessage(err) || 'Could not upload the app logo.', 'error');
       }
@@ -72,7 +72,7 @@ export default function AppLogoView() {
           Application Logo
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Manage the QuizBuzz brand logo shown across the main application (site header, public pages). This is
+          Manage the Qaselo brand logo shown across the main application (site header, public pages). This is
           separate from each organization&apos;s own logo, which organizations manage themselves.
         </p>
       </div>

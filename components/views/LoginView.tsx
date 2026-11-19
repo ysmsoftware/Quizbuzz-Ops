@@ -116,7 +116,7 @@ export default function LoginView() {
           </div>
 
           <h1 className="text-3xl font-bold tracking-tight text-foreground font-sans">
-            QuizBuzz <span className="text-primary font-light">— Ops</span>
+            Qaselo <span className="text-primary font-light">— Ops</span>
           </h1>
           <p className="text-xs text-muted-foreground mt-1.5 uppercase font-bold tracking-wider font-sans">
             SaaS Internal Platform Controller
@@ -139,7 +139,7 @@ export default function LoginView() {
                   {...register('email')}
                   type="text"
                   className="w-full pl-9 pr-4 py-2 text-sm bg-secondary/20 border border-border/50 rounded-lg outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-foreground placeholder:text-muted-foreground/50"
-                  placeholder="you@ysmquizbuzz.com"
+                  placeholder="you@qaselo.com"
                 />
               </div>
               {errors.email && (
@@ -228,7 +228,7 @@ export default function LoginView() {
 
         {/* Footer Credit */}
         <p className="text-center text-[10px] text-muted-foreground/60 mt-8 leading-none">
-          SECURE CHANNEL • QUIZBUZZ PLATFORM INTERNAL ONLY
+          SECURE CHANNEL • QASELO PLATFORM INTERNAL ONLY
         </p>
       </motion.div>
     </div>

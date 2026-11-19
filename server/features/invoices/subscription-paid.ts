@@ -8,7 +8,7 @@ import { invoicesService } from './invoices.service';
 export async function finishSubscriptionPayment(payment: OpsPayment, billingCycle: BillingCycle): Promise<void> {
   const plan = payment.planId ? await prisma.subscriptionPlan.findUnique({ where: { id: payment.planId }, select: { name: true } }) : null;
   const planName = plan?.name || 'your plan';
-  const invoiceNumber = await invoicesService.recordOrderInvoice(payment, `QuizBuzz ${planName} plan, ${cycleTerm(billingCycle)}`).catch((err) => {
+  const invoiceNumber = await invoicesService.recordOrderInvoice(payment, `Qaselo ${planName} plan, ${cycleTerm(billingCycle)}`).catch((err) => {
     console.error(`Could not make an invoice for payment ${payment.id}:`, err);
     return null;
   });

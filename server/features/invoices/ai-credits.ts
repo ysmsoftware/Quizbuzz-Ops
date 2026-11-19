@@ -36,7 +36,7 @@ export async function buyTopUp(organizationId: string, credits: number, actor: A
   if (!pack) throw new ValidationError(null, 'Pick one of the credit packs.');
   const { invoice, linkError } = await invoicesService.issue(
     organizationId,
-    { description: `QuizBuzz AI credits, ${pack.credits.toLocaleString('en-IN')} (valid ${AI_TOP_UP_VALID_MONTHS} months)`, collectionMethod: 'PAY_ONLINE', amount: pack.price, gstRate: 18, dueInDays: 7, accessMode: 'ON_PAYMENT' },
+    { description: `Qaselo AI credits, ${pack.credits.toLocaleString('en-IN')} (valid ${AI_TOP_UP_VALID_MONTHS} months)`, collectionMethod: 'PAY_ONLINE', amount: pack.price, gstRate: 18, dueInDays: 7, accessMode: 'ON_PAYMENT' },
     actor,
     { aiCredits: pack.credits },
   );

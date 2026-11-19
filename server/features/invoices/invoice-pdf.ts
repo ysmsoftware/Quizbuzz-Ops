@@ -137,7 +137,7 @@ async function drawDocument(inv: Invoice, spec: DocSpec): Promise<Uint8Array> {
 
   let y = A4.h - 50;
   text(spec.title, LEFT, y, 18, bold);
-  // The company that bills, as on the Anthropic invoice. QuizBuzz is the product, named in the item line.
+  // The company that bills, as on the Anthropic invoice. Qaselo is the product, named in the item line.
   rightText(s.legalName ?? '', RIGHT, y, 12, bold);
   y -= 28;
 

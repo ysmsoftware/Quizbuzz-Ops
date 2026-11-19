@@ -35,7 +35,7 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
     subject: `Payment received — ${p.planName}`,
     html: email(`Payment received for ${p.planName}`, 'Payment received', `
       <p style="${P}">Hi ${escape(p.adminName)},</p>
-      <p style="${P}">We've received your payment of <strong>₹${escape(p.amount)}</strong> for the <strong>${escape(p.planName)}</strong> plan. Thank you for staying with QuizBuzz.</p>
+      <p style="${P}">We've received your payment of <strong>₹${escape(p.amount)}</strong> for the <strong>${escape(p.planName)}</strong> plan. Thank you for staying with Qaselo.</p>
       ${emailButton('View billing', billingUrl())}
     `),
   }),
@@ -63,7 +63,7 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
     const credit = Number(p.creditApplied) > 0;
     const gatewayFee = Number(p.gatewayFeeAmount) > 0;
     return {
-      subject: `Your QuizBuzz receipt${p.receiptNumber ? ` ${p.receiptNumber}` : ''}`,
+      subject: `Your Qaselo receipt${p.receiptNumber ? ` ${p.receiptNumber}` : ''}`,
       html: email(`Receipt for ₹${inr(p.amount)}`, undefined, `
         <p style="${P}">Hi ${escape(p.adminName)},</p>
         ${bigAmount(`₹${inr(p.amount)}`, `Paid${p.paidAt ? ` on ${escape(p.paidAt)}` : ''} for ${escape(p.planName)}`, p.receiptNumber ? `Receipt ${escape(p.receiptNumber)}` : undefined)}
@@ -97,7 +97,7 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
     `),
   }),
   INVOICE_ISSUED: (p) => ({
-    subject: `Invoice ${p.invoiceNumber} from QuizBuzz: please pay by ${p.dueDate}`,
+    subject: `Invoice ${p.invoiceNumber} from Qaselo: please pay by ${p.dueDate}`,
     html: email(`Invoice ${p.invoiceNumber}: please pay by ${p.dueDate}`, `Invoice ${escape(p.invoiceNumber)} is due on ${escape(p.dueDate)}`, `
       <p style="${P}">Hi ${escape(p.adminName)},</p>
       <p style="${P}">Here's your invoice for ${escape(p.description)}.</p>
@@ -125,10 +125,10 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
     };
   },
   CONTRACT_ENDING: (p) => ({
-    subject: `Your QuizBuzz contract ends on ${p.contractEnd}`,
+    subject: `Your Qaselo contract ends on ${p.contractEnd}`,
     html: email(`Your contract ends on ${p.contractEnd}`, `Your contract ends on ${escape(p.contractEnd)}`, `
       <p style="${P}">Hi ${escape(p.adminName)},</p>
-      <p style="${P}">Your <strong>${escape(p.planName)}</strong> contract ends in ${escape(p.daysLeft)} days. Talk to your QuizBuzz contact to renew it.</p>
+      <p style="${P}">Your <strong>${escape(p.planName)}</strong> contract ends in ${escape(p.daysLeft)} days. Talk to your Qaselo contact to renew it.</p>
     `),
   }),
   CREDIT_NOTE_ISSUED: (p) => ({
@@ -254,8 +254,8 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
     `),
   }),
   ORG_CREATED: (p) => ({
-    subject: `Your organization ${p.organizationName} is ready on QuizBuzz`,
-    html: email(`${p.organizationName} is ready on QuizBuzz`, `${escape(p.organizationName)} is ready on QuizBuzz`, `
+    subject: `Your organization ${p.organizationName} is ready on Qaselo`,
+    html: email(`${p.organizationName} is ready on Qaselo`, `${escape(p.organizationName)} is ready on Qaselo`, `
       <p style="${P}">Hi ${escape(p.adminName)},</p>
       <p style="${P}">We've created the organization <strong>${escape(p.organizationName)}</strong> for you.</p>
       ${
@@ -270,14 +270,14 @@ const EMAIL_TEMPLATES: Record<OpsMessageTemplate, EmailTemplateBuilder> = {
     `),
   }),
   CUSTOM: (p) => ({
-    subject: p.subject || 'Notification from QuizBuzz',
-    html: email(p.subject || 'Notification from QuizBuzz', p.subject ? escape(p.subject) : undefined, `<p style="${P}">${escape(p.body || '')}</p>`),
+    subject: p.subject || 'Notification from Qaselo',
+    html: email(p.subject || 'Notification from Qaselo', p.subject ? escape(p.subject) : undefined, `<p style="${P}">${escape(p.body || '')}</p>`),
   }),
   PLATFORM_ADMIN_OTP: (p) => ({
-    subject: `${p.otpCode} is your QuizBuzz Ops verification code`,
+    subject: `${p.otpCode} is your Qaselo Ops verification code`,
     html: email(`Your verification code is ${p.otpCode}`, 'Your verification code', `
       <p style="${P}">Hi ${escape(p.firstName || 'there')},</p>
-      <p style="${P}">Use this code to sign in to QuizBuzz Ops. It expires in ${escape(p.expiryMinutes)} minute${p.expiryMinutes === 1 ? '' : 's'}.</p>
+      <p style="${P}">Use this code to sign in to Qaselo Ops. It expires in ${escape(p.expiryMinutes)} minute${p.expiryMinutes === 1 ? '' : 's'}.</p>
       ${otpBox(escape(p.otpCode))}
       <p style="${SMALL}">Didn't ask for this? Ignore this email. Nobody can sign in without the code.</p>
     `),

@@ -3,8 +3,8 @@ import './globals.css';
 import { Providers } from '@/components/providers';
 
 export const metadata: Metadata = {
-  title: 'QuizBuzz — Ops',
-  description: 'QuizBuzz Internal Operations Dashboard',
+  title: 'Qaselo — Ops',
+  description: 'Qaselo Internal Operations Dashboard',
 };
 
 export default function RootLayout({

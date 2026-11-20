@@ -11,7 +11,7 @@ import { SendMessageJobData } from '../queues/message.queue';
  * connection to poll for jobs; a Next.js route handler is request-scoped
  * and doesn't stay alive between requests. This mirrors the main app's
  * `backend/src/worker.ts`, which is likewise a dedicated process separate
- * from the Express API server (QuizBuzz scaling rule: workers must be
+ * from the Express API server (Qaselo scaling rule: workers must be
  * independent, no dependency on the API instance).
  */
 export function startMessageWorker(): Worker<SendMessageJobData> {

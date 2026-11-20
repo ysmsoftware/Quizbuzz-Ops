@@ -46,7 +46,7 @@ export default function IssueInvoiceModal({ plans, onClose, onSubmit, isSubmitti
     const price = priceOf(next, nextCycle);
     if (price != null) setAmount(String(price));
     const label = nextCycle === 'CUSTOM' ? 'contract' : nextCycle === 'HALF_YEARLY' ? '6 months' : nextCycle === 'ANNUAL' ? '1 year' : '1 month';
-    setDescription(`QuizBuzz ${next.name} plan, ${label}`);
+    setDescription(`Qaselo ${next.name} plan, ${label}`);
   };
 
   const submit = () =>

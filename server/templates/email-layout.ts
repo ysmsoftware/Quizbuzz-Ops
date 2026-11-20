@@ -5,7 +5,7 @@
  * change in one place. The main app has its own copy (backend/src/templates/email-layout.ts):
  * a change to the look has to be made in both.
  *
- * The look: a plain white page, the QuizBuzz logo, a left-aligned message, buttons that are clearly
+ * The look: a plain white page, the Qaselo logo, a left-aligned message, buttons that are clearly
  * buttons, and one fixed footer. Anything that varies per email (a reassurance, a note about a problem)
  * goes at the end of the body in small text, never in the footer. Emails are automated and nobody reads
  * replies, so never tell the reader to reply: the footer says where to contact us.
@@ -18,20 +18,21 @@ import { env } from "../config/env";
 export const FONT = "Arial, Helvetica, sans-serif";
 
 /** The only text in every footer. Fixed on purpose: never pass it per email. */
-export const FOOTER_BRAND = "QuizBuzz, powered by YSM Info Solution";
+export const FOOTER_BRAND = "Qaselo, powered by YSM Info Solution";
 export const SUPPORT_PHONE = "+91 898 308 3698";
 export const SUPPORT_EMAIL = "support@ysminfosolution.com";
 
 /** Emails can't load a relative path, so this is the public site's copy of the logo (frontend/public). */
-export const LOGO_FILE = "quizBuzz-logo.png";
+export const LOGO_FILE = "qaselo-mark.png";
 const LOGO_URL = `${env.MAIN_APP_FRONTEND_URL.replace(/\/$/, "")}/${LOGO_FILE}`;
 
 export const COLORS = {
-    primary: "#059669", // emerald-600
-    primaryDark: "#047857", // emerald-700
-    primaryEdge: "#065f46", // emerald-800: the button's bottom edge
-    primaryLight: "#ecfdf5", // emerald-50
-    primaryBorder: "#a7f3d0", // emerald-200
+    primary: "#11c789", // Qaselo luminous green: button fill (dark ink on it, never white)
+    primaryInk: "#06251d", // text on the green button
+    primaryDark: "#087e65", // Qaselo deep green: links, highlighted values (5:1 on white)
+    primaryEdge: "#0a9c6c", // the button's bottom edge
+    primaryLight: "#effaf5",
+    primaryBorder: "#bdebd7",
     text: "#0f172a", // slate-900 — headings / emphasis
     textBody: "#334155", // slate-700 — paragraph copy
     textMuted: "#64748b", // slate-500 — labels
@@ -66,7 +67,7 @@ export function renderEmailLayout(opts: EmailLayoutOptions): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-<title>QuizBuzz</title>
+<title>Qaselo</title>
 </head>
 <body style="margin:0;padding:0;background-color:${COLORS.bg};">
     <span style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;color:${COLORS.bg};">${preheader}</span>
@@ -76,7 +77,10 @@ export function renderEmailLayout(opts: EmailLayoutOptions): string {
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;text-align:left;">
                     <tr>
                         <td style="padding:0 0 16px 0;border-bottom:1px solid ${COLORS.border};">
-                            <img src="${LOGO_URL}" alt="QuizBuzz" width="84" style="display:block;width:84px;height:auto;border:0;font-family:${FONT};font-size:18px;font-weight:700;color:${COLORS.primaryDark};" />
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                                <td style="padding:0 8px 0 0;vertical-align:middle;"><img src="${LOGO_URL}" alt="" width="28" height="28" style="display:block;width:28px;height:28px;border:0;" /></td>
+                                <td style="vertical-align:middle;font-family:${FONT};font-size:20px;line-height:1;font-weight:700;letter-spacing:-0.5px;color:${COLORS.text};">qaselo</td>
+                            </tr></table>
                         </td>
                     </tr>
                     <tr>
@@ -117,7 +121,7 @@ export const LINK_STYLE = `color:${COLORS.primaryDark};font-weight:700;text-deco
 export function emailButton(label: string, href: string, variant: "primary" | "secondary" = "primary"): string {
     const primary = variant === "primary";
     const fill = primary ? COLORS.primary : "#ffffff";
-    const color = primary ? "#ffffff" : COLORS.primaryDark;
+    const color = primary ? COLORS.primaryInk : COLORS.primaryDark;
     const border = primary
         ? `border:1px solid ${COLORS.primary};border-bottom:3px solid ${COLORS.primaryEdge};`
         : `border:2px solid ${COLORS.primary};border-bottom:3px solid ${COLORS.primary};`;
@@ -155,9 +159,9 @@ export function linkFallback(url: string): string {
     </p>`;
 }
 
-/** Closing line, e.g. "Thanks, Team QuizBuzz". The brand details live in the footer. */
+/** Closing line, e.g. "Thanks, Team Qaselo". The brand details live in the footer. */
 export function signOff(closing: string = "Thanks"): string {
-    return `<p style="margin:20px 0 0 0;font-family:${FONT};font-size:15px;line-height:1.6;color:${COLORS.textBody};">${closing},<br/><strong style="color:${COLORS.text};">Team QuizBuzz</strong></p>`;
+    return `<p style="margin:20px 0 0 0;font-family:${FONT};font-size:15px;line-height:1.6;color:${COLORS.textBody};">${closing},<br/><strong style="color:${COLORS.text};">Team Qaselo</strong></p>`;
 }
 
 /** Two-column label/value rows, e.g. contest date, time, join code. */

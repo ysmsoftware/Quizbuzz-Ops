@@ -313,7 +313,7 @@ function CheckoutContent() {
         key: keyId,
         amount,
         currency,
-        name: 'QuizBuzz Subscription',
+        name: 'Qaselo Subscription',
         description: `Plan: ${planName} (${cycle ? cycleLabel(cycle) : ''})`,
         order_id: orderId,
         // Phones: when a UPI app finishes and this page can't be called back, Razorpay opens this instead.
@@ -411,7 +411,7 @@ function CheckoutContent() {
         subscription_id: subscriptionId,
         callback_url: returnUrl(`subscriptionId=${subscriptionId}`),
         redirect: false,
-        name: 'QuizBuzz Subscription',
+        name: 'Qaselo Subscription',
         description: `${planName}, renews ${cycleLabel(billingCycle).toLowerCase()}`,
         prefill: { name: session.adminName || '', email: session.adminEmail || '' },
         theme: { color: RAZORPAY_BRAND_TEAL },
@@ -523,7 +523,7 @@ function CheckoutContent() {
           <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center font-bold text-primary-foreground shadow-lg shadow-primary/20">
             QB
           </div>
-          <span className="font-semibold text-lg tracking-tight">QuizBuzz Billing Portal</span>
+          <span className="font-semibold text-lg tracking-tight">Qaselo Billing Portal</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full border border-border/50">
           <Lock className="w-3.5 h-3.5 text-primary" />
@@ -742,9 +742,9 @@ function CheckoutContent() {
       <footer className="max-w-4xl mx-auto w-full text-center py-4 text-xs text-muted-foreground border-t border-border/50">
         <div className="flex items-center justify-center gap-1 mb-1">
           <ShieldCheck className="w-4 h-4 text-primary" />
-          <span>Powered by QuizBuzz Operations Platform &amp; Razorpay</span>
+          <span>Powered by Qaselo Operations Platform &amp; Razorpay</span>
         </div>
-        <p>© 2026 QuizBuzz. All rights reserved.</p>
+        <p>© 2026 Qaselo. All rights reserved.</p>
       </footer>
     </div>
   );

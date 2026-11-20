@@ -15,9 +15,9 @@ interface OrgOverviewTabProps {
     collected: number;
     pending: number;
     refunded: number;
-    /** Paid by the org to QuizBuzz (plan subscriptions). */
+    /** Paid by the org to Qaselo (plan subscriptions). */
     subscriptionPaid: number;
-    /** Paid by participants to the org (registration fees). Org money, not QuizBuzz revenue. */
+    /** Paid by participants to the org (registration fees). Org money, not Qaselo revenue. */
     contestFeesCollected: number;
   };
   currentPlan?: SubscriptionPlan;
@@ -53,7 +53,7 @@ export default function OrgOverviewTab({
           <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Payments</span>
           <div className="space-y-1">
             <div className="flex items-baseline justify-between">
-              <span className="text-[11px] text-muted-foreground">Subscription paid to QuizBuzz</span>
+              <span className="text-[11px] text-muted-foreground">Subscription paid to Qaselo</span>
               <span className="font-mono font-bold text-foreground">{formatInr(paymentAggregates.subscriptionPaid)}</span>
             </div>
             <div className="flex items-baseline justify-between">

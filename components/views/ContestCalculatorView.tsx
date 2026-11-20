@@ -351,7 +351,7 @@ export default function ContestCalculator() {
 
     const textSummary = `
 ========================================
-QUIZBUZZ CONTEST BOOKING ESTIMATE
+QASELO CONTEST BOOKING ESTIMATE
 ========================================
 Contest: ${watchedCalc.contestName || 'Untitled Contest'}
 Client: ${orgText}
@@ -1286,7 +1286,7 @@ Assisted by operator: ${admin?.name} (${admin?.role})
 
             <div className="space-y-2 select-none">
               <p className="text-xs text-muted-foreground leading-relaxed">
-                You are about to commit structural modifications to the QuizBuzz automated booking engine.
+                You are about to commit structural modifications to the Qaselo automated booking engine.
               </p>
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-lg text-[10px] leading-normal font-medium space-y-1">
                 <p>⚠️ <strong>Quote Isolation Rule:</strong> This action impacts all FUTURE estimates only. All existing quotes, paid bookings, and running contests are frozen and fully isolated.</p>

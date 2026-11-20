@@ -220,7 +220,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="flex items-center justify-between border-b border-border/40 pb-4">
                   <div className="space-y-0.5">
                     <h1 className="text-xl font-bold tracking-tight text-foreground font-sans">
-                      QuizBuzz <span className="text-primary font-light">— Ops</span>
+                      Qaselo <span className="text-primary font-light">— Ops</span>
                     </h1>
                     <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-sans">
                       SaaS Internal Control
@@ -329,7 +329,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   className="min-w-0"
                 >
                   <h1 className="text-base font-bold tracking-tight text-foreground truncate">
-                    QuizBuzz <span className="text-primary font-light">— Ops</span>
+                    Qaselo <span className="text-primary font-light">— Ops</span>
                   </h1>
                   <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider truncate">
                     Internal Ops Panel

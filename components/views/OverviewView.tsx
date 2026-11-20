@@ -469,7 +469,7 @@ export default function OverviewPlaceholder() {
               <h3 className="font-semibold text-foreground text-sm font-sans flex items-center gap-1.5">
                 <Building2 className="h-4 w-4 text-primary" /> Newly Registered Tenants
               </h3>
-              <p className="text-[11px] text-muted-foreground">The five most recent organizations onboarded to QuizBuzz</p>
+              <p className="text-[11px] text-muted-foreground">The five most recent organizations onboarded to Qaselo</p>
             </div>
           </div>
 

@@ -1,6 +1,6 @@
 import type { OrgProfileType } from './constants/org-profile-types';
 /**
- * TypeScript Types, Interfaces, and Enums for the QuizBuzz Ops Super Admin Dashboard.
+ * TypeScript Types, Interfaces, and Enums for the Qaselo Ops Super Admin Dashboard.
  */
 
 export type AdminRole = 'SUPER_ADMIN' | 'SUPPORT' | 'BILLING_ADMIN';

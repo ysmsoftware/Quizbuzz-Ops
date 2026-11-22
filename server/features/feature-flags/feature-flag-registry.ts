@@ -261,6 +261,17 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     supportsOrgOverride: true,
     accessModel: 'OPT_IN',
   },
+  {
+    key: 'question_types_v2',
+    label: 'New Question Types',
+    description:
+      'Lets org staff create question types beyond single-answer multiple choice: true/false, multi-select (with partial-marking presets), numeric, short text and fill in the blanks. Questions and contests already using them keep working if this is turned off.',
+    // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
 ] as const satisfies readonly FeatureFlagRegistryEntry[];
 
 // Fails the build (not just a runtime surprise) if a copy-paste ever

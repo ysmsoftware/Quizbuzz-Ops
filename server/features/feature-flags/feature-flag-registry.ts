@@ -266,11 +266,12 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     label: 'New Question Types',
     description:
       'Lets org staff create question types beyond single-answer multiple choice: true/false, multi-select (with partial-marking presets), numeric, short text and fill in the blanks. Questions and contests already using them keep working if this is turned off.',
-    // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    // GLOBAL on purpose: every org gets every type (selling point). Kept as a flag so ops can turn
+    // one org, or everyone, off — e.g. when a future type needs a staged rollout.
     defaultEnabled: true,
     severity: FeatureFlagSeverity.STANDARD,
     supportsOrgOverride: true,
-    accessModel: 'OPT_IN',
+    accessModel: 'GLOBAL',
   },
 ] as const satisfies readonly FeatureFlagRegistryEntry[];
 

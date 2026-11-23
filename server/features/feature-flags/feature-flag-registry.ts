@@ -273,6 +273,17 @@ export const FEATURE_FLAG_REGISTRY: readonly FeatureFlagRegistryEntry[] = [
     supportsOrgOverride: true,
     accessModel: 'GLOBAL',
   },
+  {
+    key: 'proctoring_photo_review',
+    label: 'Proctoring photo review',
+    description:
+      'After a contest ends, the organizer can run a photo review: our own detector (the same one as the live check, no outside AI) re-checks every saved photo and sorts participants into Strong evidence / Needs review / Clear. Free; it only suggests, the organizer decides.',
+    // OPT_IN, mirrored in OPT_IN_ONLY_FLAGS on the main-app side.
+    defaultEnabled: true,
+    severity: FeatureFlagSeverity.STANDARD,
+    supportsOrgOverride: true,
+    accessModel: 'OPT_IN',
+  },
 ] as const satisfies readonly FeatureFlagRegistryEntry[];
 
 // Fails the build (not just a runtime surprise) if a copy-paste ever

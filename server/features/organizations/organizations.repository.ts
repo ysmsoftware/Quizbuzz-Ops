@@ -1,3 +1,4 @@
+import { quizModeOf } from './quiz-mode';
 import { cycleLabel as cycleLabelOf } from '../../../lib/pricing/subscriptionPricing';
 import type { OrgProfileType } from '../../../lib/constants/org-profile-types';
 import bcrypt from 'bcryptjs';
@@ -394,6 +395,8 @@ export class OrganizationsRepository implements IOrganizationsRepository {
         c."timingMode",
         c.audience,
         c."questionSelection",
+        c."quizSettings",
+        (SELECT COUNT(*)::int FROM contest_sections WHERE "contestId" = c.id) as "sectionCount",
         COALESCE(pc.amount, 0) as "registrationFee",
         c."createdAt",
         (SELECT COUNT(*)::int FROM participants WHERE "contestId" = c.id AND ${confirmedRegistrationSql()}) as "participantCount",
@@ -429,6 +432,7 @@ export class OrganizationsRepository implements IOrganizationsRepository {
       timingMode: r.timingMode,
       audience: r.audience,
       questionSelection: r.questionSelection,
+      quizMode: quizModeOf(r.quizSettings, r.sectionCount),
       // PaymentConfig.amount is stored in whole rupees (not paise) — see
       // contest.validator.ts / payment.service.ts's `* 100` conversion when
       // building the Razorpay order. No conversion needed here; dividing by

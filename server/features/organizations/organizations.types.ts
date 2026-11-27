@@ -1,3 +1,4 @@
+import type { QuizMode } from './quiz-mode';
 import type { RegistrationCounts } from '../../../lib/types';
 import type { OrgProfileType } from '../../../lib/constants/org-profile-types';
 import { PlatformAdminRole } from '@prisma/client';
@@ -92,6 +93,8 @@ export interface OrgContestDetail {
   audience: 'PUBLIC' | 'PRIVATE_LINK' | 'ASSIGNED';
   /** ALL questions, one of several SETS, or a difficulty POOL draw. */
   questionSelection: 'ALL' | 'SETS' | 'POOL';
+  /** Quiz settings (read-only): preset, attempts (null = unlimited) and how many sections. */
+  quizMode: QuizMode;
   createdAt: string;
 }
 

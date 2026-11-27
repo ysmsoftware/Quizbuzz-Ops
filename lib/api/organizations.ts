@@ -412,6 +412,7 @@ export async function getOrganizationContests(orgId: string): Promise<Contest[]>
     timingMode: c.timingMode,
     audience: c.audience,
     questionSelection: c.questionSelection,
+    quizMode: c.quizMode,
     participantCount: c.participantCount,
     registrations: c.registrations,
     revenueCollected: c.revenueCollected,

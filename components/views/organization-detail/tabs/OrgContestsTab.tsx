@@ -142,6 +142,15 @@ export default function OrgContestsTab({ contests }: OrgContestsTabProps) {
                           {c.questionSelection && c.questionSelection !== 'ALL' && (
                             <StatusBadge tone="neutral">{c.questionSelection === 'SETS' ? 'Question sets' : 'Question pool'}</StatusBadge>
                           )}
+                          {c.quizMode && c.quizMode.preset !== 'EXAM' && (
+                            <StatusBadge tone="info">{c.quizMode.preset === 'PRACTICE' ? 'Practice' : c.quizMode.preset === 'QUIZ' ? 'Quiz' : 'Custom rules'}</StatusBadge>
+                          )}
+                          {c.quizMode && c.quizMode.maxAttempts !== 1 && (
+                            <StatusBadge tone="neutral">{c.quizMode.maxAttempts === null ? 'Unlimited attempts' : `${c.quizMode.maxAttempts} attempts`}</StatusBadge>
+                          )}
+                          {c.quizMode && c.quizMode.sectionCount > 0 && (
+                            <StatusBadge tone="neutral">{c.quizMode.sectionCount} section{c.quizMode.sectionCount === 1 ? '' : 's'}</StatusBadge>
+                          )}
                         </div>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">

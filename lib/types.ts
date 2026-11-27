@@ -111,6 +111,8 @@ export interface Contest {
   timingMode?: 'SCHEDULED' | 'WINDOW';
   audience?: 'PUBLIC' | 'PRIVATE_LINK' | 'ASSIGNED';
   questionSelection?: 'ALL' | 'SETS' | 'POOL';
+  /** Quiz settings (read-only): preset, attempts (null = unlimited), sections. */
+  quizMode?: { preset: 'EXAM' | 'PRACTICE' | 'QUIZ' | 'CUSTOM'; maxAttempts: number | null; sectionCount: number };
 }
 
 // Mirrors the main app's ParticipantStatus enum (ASSIGNED = added by the org to an
